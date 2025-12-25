@@ -1280,3 +1280,390 @@ migraine:
         description: "Consider preventive if frequent (>4/month)"
       - category: "referral"
         description: "Neurology if refractory or atypical features"
+
+
+# =============================================================================
+# ACUTE CONDITIONS - GENERIC/SYMPTOM-BASED
+# These are common chief complaints that may not have a specific diagnosis
+# =============================================================================
+
+viral_syndrome:
+  display_name: "Viral Syndrome"
+  aliases: ["Viral illness", "Non-specific viral infection"]
+  icd10: ["B34.9"]
+  category: acute
+  system: infectious
+
+  age_ranges:
+    min_months: 0
+    peak_start_months: 6
+    peak_end_months: 72
+    max_months: 264
+
+  prevalence:
+    notes: "Very common; catch-all for non-specific viral illness"
+
+  seasonality:
+    peak_months: [10, 11, 12, 1, 2, 3]
+    weight_multiplier: 1.5
+
+  presentation:
+    symptoms: ["fever", "malaise", "decreased appetite", "fussiness", "mild URI symptoms"]
+    duration_days: [3, 7]
+
+  treatment:
+    approach: "supportive"
+    items:
+      - category: "other"
+        description: "Supportive care with rest and hydration"
+      - category: "medication"
+        description: "Acetaminophen or ibuprofen PRN for fever/discomfort"
+      - category: "education"
+        description: "Return if fever persists >3 days or new symptoms develop"
+
+undifferentiated_fever:
+  display_name: "Fever"
+  aliases: ["Fever without source", "FWS", "Undifferentiated fever"]
+  icd10: ["R50.9"]
+  category: acute
+  system: general
+
+  age_ranges:
+    min_months: 0
+    peak_start_months: 6
+    peak_end_months: 36
+    max_months: 264
+
+  prevalence:
+    notes: "Common chief complaint; requires age-based evaluation"
+
+  seasonality:
+    weight_multiplier: 1.0  # Year-round, follows infectious disease patterns
+
+  presentation:
+    symptoms: ["elevated temperature", "irritability", "decreased appetite"]
+    duration_days: [1, 5]
+
+  treatment:
+    approach: "evaluate_and_supportive"
+    items:
+      - category: "medication"
+        description: "Acetaminophen or ibuprofen for temperature control"
+      - category: "education"
+        description: "Monitor for source of infection"
+      - category: "education"
+        description: "Return if fever persists >3 days or child appears ill"
+
+non_specific_rash:
+  display_name: "Rash"
+  aliases: ["Non-specific rash", "Skin eruption", "Exanthem"]
+  icd10: ["R21"]
+  category: acute
+  system: dermatological
+
+  age_ranges:
+    min_months: 0
+    peak_start_months: 6
+    peak_end_months: 72
+    max_months: 264
+
+  prevalence:
+    notes: "Common chief complaint with many possible etiologies"
+
+  seasonality:
+    peak_months: [3, 4, 5, 6, 7, 8]  # Spring/summer slightly more common
+    weight_multiplier: 1.2
+
+  presentation:
+    symptoms: ["skin changes", "pruritus possible", "may be localized or generalized"]
+    duration_days: [3, 14]
+
+  treatment:
+    approach: "identify_cause"
+    items:
+      - category: "other"
+        description: "Evaluate rash characteristics to determine etiology"
+      - category: "education"
+        description: "Return if rash spreads, becomes painful, or fever develops"
+
+swimmers_ear:
+  display_name: "Swimmer's Ear"
+  aliases: ["Otitis externa", "External ear infection"]
+  icd10: ["H60.9"]
+  category: acute
+  system: ent
+
+  age_ranges:
+    min_months: 12
+    peak_start_months: 48
+    peak_end_months: 144
+    max_months: 264
+
+  prevalence:
+    notes: "Common in swimmers and humid climates"
+
+  seasonality:
+    peak_months: [5, 6, 7, 8, 9]  # Summer swimming season
+    weight_multiplier: 3.0
+
+  presentation:
+    symptoms: ["ear pain with tragal pressure", "ear discharge", "itching", "decreased hearing"]
+    duration_days: [7, 10]
+
+  treatment:
+    approach: "topical_antibiotic"
+    items:
+      - category: "medication"
+        description: "Otic antibiotic drops (ofloxacin or ciprofloxacin/dexamethasone)"
+      - category: "education"
+        description: "Keep ear dry; use ear plugs for swimming"
+      - category: "follow-up"
+        description: "Return if not improving in 48-72 hours"
+
+insect_bite_reaction:
+  display_name: "Insect Bite Reaction"
+  aliases: ["Bug bite", "Insect sting reaction"]
+  icd10: ["T63.4", "W57"]
+  category: acute
+  system: dermatological
+
+  age_ranges:
+    min_months: 6
+    peak_start_months: 12
+    peak_end_months: 120
+    max_months: 264
+
+  prevalence:
+    notes: "Very common in warmer months"
+
+  seasonality:
+    peak_months: [5, 6, 7, 8, 9]
+    weight_multiplier: 4.0
+
+  presentation:
+    symptoms: ["localized swelling", "erythema", "pruritus", "pain at site"]
+    duration_days: [3, 7]
+
+  treatment:
+    approach: "symptomatic"
+    items:
+      - category: "medication"
+        description: "Oral antihistamine for itching"
+      - category: "other"
+        description: "Cool compresses, topical hydrocortisone"
+      - category: "education"
+        description: "Return if signs of cellulitis or systemic reaction"
+
+acute_cough:
+  display_name: "Cough"
+  aliases: ["Acute cough", "Cough illness"]
+  icd10: ["R05"]
+  category: acute
+  system: respiratory
+
+  age_ranges:
+    min_months: 1
+    peak_start_months: 12
+    peak_end_months: 72
+    max_months: 264
+
+  prevalence:
+    notes: "Very common symptom; usually viral"
+
+  seasonality:
+    peak_months: [10, 11, 12, 1, 2, 3]
+    weight_multiplier: 2.0
+
+  presentation:
+    symptoms: ["cough", "may have URI symptoms", "may have fever"]
+    duration_days: [7, 21]  # Cough can persist 2-3 weeks
+
+  treatment:
+    approach: "supportive"
+    items:
+      - category: "education"
+        description: "Honey (>1 year) for cough; humidifier"
+      - category: "medication"
+        description: "Avoid OTC cough/cold medicines in young children"
+      - category: "education"
+        description: "Return if difficulty breathing, prolonged fever, or not improving"
+
+
+# =============================================================================
+# CHRONIC CONDITIONS - ADDITIONAL (from comorbidity patterns)
+# =============================================================================
+
+obstructive_sleep_apnea:
+  display_name: "Obstructive Sleep Apnea"
+  aliases: ["OSA", "Sleep apnea", "Pediatric OSA"]
+  icd10: ["G47.33"]
+  category: chronic
+  system: respiratory
+
+  age_ranges:
+    min_months: 24
+    typical_diagnosis_months: 48
+    peak_start_months: 24
+    peak_end_months: 84  # Peak 2-7 years (adenotonsillar hypertrophy)
+    max_months: 264
+
+  prevalence:
+    percent: 3
+    notes: "Often underdiagnosed; associated with adenotonsillar hypertrophy"
+
+  comorbidities:
+    strong: ["obesity", "adenotonsillar_hypertrophy"]
+    moderate: ["adhd", "behavioral_issues", "enuresis"]
+
+  presentation:
+    symptoms: ["snoring", "witnessed apneas", "restless sleep", "mouth breathing", "daytime sleepiness"]
+    behavioral: ["hyperactivity", "attention problems", "morning headaches"]
+
+  treatment:
+    approach: "surgical_or_cpap"
+    items:
+      - category: "referral"
+        description: "ENT evaluation for adenotonsillectomy consideration"
+      - category: "order"
+        description: "Polysomnography (sleep study) for diagnosis"
+      - category: "education"
+        description: "Weight loss if obesity is contributing factor"
+
+learning_disorder:
+  display_name: "Learning Disorder"
+  aliases: ["Learning disability", "Specific learning disorder", "LD"]
+  icd10: ["F81.9", "F81.0", "F81.81"]
+  category: chronic
+  system: developmental
+
+  age_ranges:
+    min_months: 60       # Usually identified in school
+    typical_diagnosis_months: 84
+    peak_start_months: 72
+    peak_end_months: 120
+    max_months: 264
+
+  prevalence:
+    percent: 8
+    notes: "Includes dyslexia, dyscalculia, dysgraphia"
+
+  comorbidities:
+    strong: ["adhd"]
+    moderate: ["anxiety", "depression", "speech_language_delay"]
+
+  subtypes:
+    - "Reading (dyslexia)"
+    - "Mathematics (dyscalculia)"
+    - "Written expression (dysgraphia)"
+
+  presentation:
+    symptoms: ["academic underperformance", "difficulty with reading/math/writing", "avoidance of schoolwork"]
+
+  treatment:
+    approach: "educational_intervention"
+    items:
+      - category: "referral"
+        description: "Psychoeducational evaluation"
+      - category: "referral"
+        description: "School evaluation for IEP or 504 plan"
+      - category: "education"
+        description: "Specialized tutoring and accommodations"
+      - category: "follow-up"
+        description: "Monitor academic progress"
+
+sleep_disorder:
+  display_name: "Sleep Disorder"
+  aliases: ["Insomnia", "Behavioral insomnia of childhood", "Sleep problems"]
+  icd10: ["G47.9", "F51.0"]
+  category: chronic
+  system: neurological
+
+  age_ranges:
+    min_months: 6
+    typical_diagnosis_months: 36
+    peak_start_months: 12
+    peak_end_months: 72
+    max_months: 264
+
+  prevalence:
+    percent: 25  # Sleep problems very common
+    notes: "Behavioral causes most common in young children"
+
+  comorbidities:
+    strong: ["adhd", "anxiety"]
+    moderate: ["autism", "depression"]
+
+  subtypes:
+    - "Sleep onset association disorder"
+    - "Limit-setting sleep disorder"
+    - "Nightmare disorder"
+    - "Night terrors"
+
+  presentation:
+    symptoms: ["difficulty falling asleep", "night wakings", "bedtime resistance", "daytime sleepiness"]
+
+  treatment:
+    approach: "behavioral"
+    items:
+      - category: "education"
+        description: "Sleep hygiene: consistent bedtime routine, dark room, no screens"
+      - category: "education"
+        description: "Graduated extinction or bedtime fading techniques"
+      - category: "medication"
+        description: "Melatonin may be considered for sleep onset"
+      - category: "follow-up"
+        description: "Return in 2-4 weeks to assess improvement"
+
+
+# =============================================================================
+# SEASONAL ILLNESS WEIGHTS
+# For use in encounter generation - defines base probability weights by season
+# =============================================================================
+
+_seasonal_weights:
+  winter:  # December, January, February
+    upper_respiratory_infection: 25
+    influenza: 15
+    viral_syndrome: 15
+    otitis_media: 15
+    croup: 10
+    bronchiolitis: 10
+    undifferentiated_fever: 5
+    viral_gastroenteritis: 5
+
+  spring:  # March, April, May
+    allergic_rhinitis: 20
+    upper_respiratory_infection: 15
+    viral_syndrome: 15
+    otitis_media: 15
+    conjunctivitis: 10
+    non_specific_rash: 10
+    undifferentiated_fever: 10
+    viral_gastroenteritis: 5
+
+  summer:  # June, July, August
+    viral_gastroenteritis: 20
+    impetigo: 15
+    swimmers_ear: 10
+    viral_syndrome: 15
+    insect_bite_reaction: 10
+    conjunctivitis: 10
+    undifferentiated_fever: 10
+    upper_respiratory_infection: 10
+
+  fall:  # September, October, November
+    upper_respiratory_infection: 25
+    viral_syndrome: 15
+    otitis_media: 15
+    undifferentiated_fever: 10
+    acute_cough: 10
+    viral_gastroenteritis: 10
+    conjunctivitis: 10
+    non_specific_rash: 5
+
+  infant_fallback:  # For infants < 6 months when most illnesses filtered out
+    viral_syndrome: 30
+    upper_respiratory_infection: 25
+    bronchiolitis: 25
+    undifferentiated_fever: 15
+    viral_gastroenteritis: 5

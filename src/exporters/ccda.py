@@ -304,7 +304,7 @@ class CCDAExporter:
         return section
 
     def _add_problems_section(self, parent: ET.Element, patient: Patient) -> None:
-        """Add problems/conditions section."""
+        """Add problems/conditions section with proper C-CDA structure."""
         section = self._add_section(
             parent,
             self.TEMPLATES["problems"],
@@ -316,21 +316,48 @@ class CCDAExporter:
         text = ET.SubElement(section, "text")
         if patient.problem_list:
             ul = ET.SubElement(text, "list")
-            for condition in patient.problem_list:
+            for idx, condition in enumerate(patient.problem_list):
                 li = ET.SubElement(ul, "item")
+                li.set("ID", f"problem{idx}")
                 li.text = f"{condition.display_name} - {condition.clinical_status.value}"
         else:
             para = ET.SubElement(text, "paragraph")
             para.text = "No known problems"
 
-        # Entries
-        for condition in patient.problem_list:
+        # Structured entries for each problem
+        for idx, condition in enumerate(patient.problem_list):
             entry = ET.SubElement(section, "entry")
+            entry.set("typeCode", "DRIV")
+
+            # Problem Concern Act
             act = ET.SubElement(entry, "act")
             act.set("classCode", "ACT")
             act.set("moodCode", "EVN")
 
-            # Problem concern
+            # Problem Concern Act template
+            act_template = ET.SubElement(act, "templateId")
+            act_template.set("root", "2.16.840.1.113883.10.20.22.4.3")
+            act_template.set("extension", "2015-08-01")
+
+            act_id = ET.SubElement(act, "id")
+            act_id.set("root", generate_uuid())
+
+            act_code = ET.SubElement(act, "code")
+            act_code.set("code", "CONC")
+            act_code.set("codeSystem", "2.16.840.1.113883.5.6")
+            act_code.set("displayName", "Concern")
+
+            act_status = ET.SubElement(act, "statusCode")
+            status_code = "active" if condition.clinical_status.value == "active" else "completed"
+            act_status.set("code", status_code)
+
+            # Effective time (when concern was recorded)
+            act_eff = ET.SubElement(act, "effectiveTime")
+            if condition.onset_date:
+                low = ET.SubElement(act_eff, "low")
+                low.set("value", format_date(condition.onset_date))
+
+            # Problem Observation (entryRelationship)
             entry_rel = ET.SubElement(act, "entryRelationship")
             entry_rel.set("typeCode", "SUBJ")
 
@@ -338,22 +365,46 @@ class CCDAExporter:
             obs.set("classCode", "OBS")
             obs.set("moodCode", "EVN")
 
-            # Problem code
-            code = ET.SubElement(obs, "code")
-            code.set("code", "55607006")
-            code.set("codeSystem", "2.16.840.1.113883.6.96")
-            code.set("displayName", "Problem")
+            # Problem Observation template
+            obs_template = ET.SubElement(obs, "templateId")
+            obs_template.set("root", "2.16.840.1.113883.10.20.22.4.4")
+            obs_template.set("extension", "2015-08-01")
 
-            # Value (the actual condition)
+            obs_id = ET.SubElement(obs, "id")
+            obs_id.set("root", generate_uuid())
+
+            # Problem type code (diagnosis)
+            obs_code = ET.SubElement(obs, "code")
+            obs_code.set("code", "282291009")
+            obs_code.set("codeSystem", "2.16.840.1.113883.6.96")
+            obs_code.set("codeSystemName", "SNOMED CT")
+            obs_code.set("displayName", "Diagnosis")
+
+            # Reference to narrative
+            obs_text = ET.SubElement(obs, "text")
+            ref = ET.SubElement(obs_text, "reference")
+            ref.set("value", f"#problem{idx}")
+
+            obs_status = ET.SubElement(obs, "statusCode")
+            obs_status.set("code", "completed")
+
+            # Onset date
+            obs_eff = ET.SubElement(obs, "effectiveTime")
+            if condition.onset_date:
+                onset_low = ET.SubElement(obs_eff, "low")
+                onset_low.set("value", format_date(condition.onset_date))
+
+            # Value (the actual condition code)
             value = ET.SubElement(obs, "value")
             value.set(f"{{{self.NS_XSI}}}type", "CD")
             if condition.code:
                 value.set("code", condition.code.code)
                 value.set("codeSystem", "2.16.840.1.113883.6.90")  # ICD-10-CM
+                value.set("codeSystemName", "ICD-10-CM")
             value.set("displayName", condition.display_name)
 
     def _add_medications_section(self, parent: ET.Element, patient: Patient) -> None:
-        """Add medications section."""
+        """Add medications section with structured entries."""
         section = self._add_section(
             parent,
             self.TEMPLATES["medications"],
@@ -365,18 +416,183 @@ class CCDAExporter:
         active_meds = [m for m in patient.medication_list if m.status.value == "active"]
 
         if active_meds:
-            ul = ET.SubElement(text, "list")
-            for med in active_meds:
-                li = ET.SubElement(ul, "item")
-                li.text = f"{med.display_name}"
-                if med.dosage:
-                    li.text += f" - {med.dosage}"
+            # Narrative table
+            table = ET.SubElement(text, "table")
+            thead = ET.SubElement(table, "thead")
+            tr = ET.SubElement(thead, "tr")
+            for header in ["Medication", "Dose", "Frequency", "Route", "Start Date"]:
+                th = ET.SubElement(tr, "th")
+                th.text = header
+
+            tbody = ET.SubElement(table, "tbody")
+            for idx, med in enumerate(active_meds):
+                tr = ET.SubElement(tbody, "tr")
+                tr.set("ID", f"med{idx}")
+                td = ET.SubElement(tr, "td")
+                td.text = med.display_name
+                td = ET.SubElement(tr, "td")
+                td.text = f"{med.dose_quantity} {med.dose_unit}" if med.dose_quantity else ""
+                td = ET.SubElement(tr, "td")
+                td.text = med.frequency or ""
+                td = ET.SubElement(tr, "td")
+                td.text = med.route or ""
+                td = ET.SubElement(tr, "td")
+                td.text = str(med.start_date) if med.start_date else ""
+
+            # Structured entries for each medication
+            for idx, med in enumerate(active_meds):
+                entry = ET.SubElement(section, "entry")
+                entry.set("typeCode", "DRIV")
+
+                subst_admin = ET.SubElement(entry, "substanceAdministration")
+                subst_admin.set("classCode", "SBADM")
+                subst_admin.set("moodCode", "EVN")
+
+                # Medication Activity template
+                template = ET.SubElement(subst_admin, "templateId")
+                template.set("root", "2.16.840.1.113883.10.20.22.4.16")
+                template.set("extension", "2014-06-09")
+
+                med_id = ET.SubElement(subst_admin, "id")
+                med_id.set("root", generate_uuid())
+
+                # Reference to narrative
+                med_text = ET.SubElement(subst_admin, "text")
+                ref = ET.SubElement(med_text, "reference")
+                ref.set("value", f"#med{idx}")
+
+                status = ET.SubElement(subst_admin, "statusCode")
+                status.set("code", "active" if med.status.value == "active" else "completed")
+
+                # Effective time (medication period)
+                eff_time = ET.SubElement(subst_admin, "effectiveTime")
+                eff_time.set(f"{{{self.NS_XSI}}}type", "IVL_TS")
+                if med.start_date:
+                    low = ET.SubElement(eff_time, "low")
+                    low.set("value", format_date(med.start_date))
+                if med.end_date:
+                    high = ET.SubElement(eff_time, "high")
+                    high.set("value", format_date(med.end_date))
+                else:
+                    high = ET.SubElement(eff_time, "high")
+                    high.set("nullFlavor", "UNK")
+
+                # Frequency (as second effectiveTime for periodic dose)
+                if med.frequency:
+                    freq_time = ET.SubElement(subst_admin, "effectiveTime")
+                    freq_time.set(f"{{{self.NS_XSI}}}type", "PIVL_TS")
+                    freq_time.set("operator", "A")
+                    freq_time.set("institutionSpecified", "true")
+                    period = ET.SubElement(freq_time, "period")
+                    # Map common frequencies to period
+                    freq_map = {
+                        "once daily": ("24", "h"),
+                        "daily": ("24", "h"),
+                        "twice daily": ("12", "h"),
+                        "BID": ("12", "h"),
+                        "three times daily": ("8", "h"),
+                        "TID": ("8", "h"),
+                        "four times daily": ("6", "h"),
+                        "QID": ("6", "h"),
+                        "every 4 hours": ("4", "h"),
+                        "every 6 hours": ("6", "h"),
+                        "every 8 hours": ("8", "h"),
+                        "every 12 hours": ("12", "h"),
+                        "weekly": ("1", "wk"),
+                        "monthly": ("1", "mo"),
+                    }
+                    freq_lower = med.frequency.lower()
+                    if freq_lower in freq_map:
+                        period.set("value", freq_map[freq_lower][0])
+                        period.set("unit", freq_map[freq_lower][1])
+                    else:
+                        period.set("value", "24")
+                        period.set("unit", "h")
+
+                # Route code
+                if med.route:
+                    route = ET.SubElement(subst_admin, "routeCode")
+                    route_map = {
+                        "oral": ("C38288", "ORAL"),
+                        "topical": ("C38304", "TOPICAL"),
+                        "inhalation": ("C38216", "RESPIRATORY (INHALATION)"),
+                        "injection": ("C38276", "INTRAMUSCULAR"),
+                        "subcutaneous": ("C38299", "SUBCUTANEOUS"),
+                        "intravenous": ("C38276", "INTRAVENOUS"),
+                        "rectal": ("C38295", "RECTAL"),
+                        "ophthalmic": ("C38287", "OPHTHALMIC"),
+                        "otic": ("C38192", "AURICULAR (OTIC)"),
+                        "nasal": ("C38284", "NASAL"),
+                    }
+                    route_lower = med.route.lower()
+                    if route_lower in route_map:
+                        route.set("code", route_map[route_lower][0])
+                        route.set("displayName", route_map[route_lower][1])
+                    else:
+                        route.set("displayName", med.route)
+                    route.set("codeSystem", "2.16.840.1.113883.3.26.1.1")
+                    route.set("codeSystemName", "NCI Thesaurus")
+
+                # Dose quantity
+                if med.dose_quantity:
+                    dose = ET.SubElement(subst_admin, "doseQuantity")
+                    dose.set("value", med.dose_quantity)
+                    if med.dose_unit:
+                        dose.set("unit", med.dose_unit)
+
+                # Consumable (the medication itself)
+                consumable = ET.SubElement(subst_admin, "consumable")
+                manuf_product = ET.SubElement(consumable, "manufacturedProduct")
+                manuf_product.set("classCode", "MANU")
+
+                # Medication Information template
+                prod_template = ET.SubElement(manuf_product, "templateId")
+                prod_template.set("root", "2.16.840.1.113883.10.20.22.4.23")
+                prod_template.set("extension", "2014-06-09")
+
+                manuf_material = ET.SubElement(manuf_product, "manufacturedMaterial")
+
+                # Medication code (RxNorm)
+                code = ET.SubElement(manuf_material, "code")
+                if med.code:
+                    code.set("code", med.code.code)
+                    code.set("codeSystem", "2.16.840.1.113883.6.88")  # RxNorm
+                    code.set("codeSystemName", "RxNorm")
+                code.set("displayName", med.display_name)
+
+                # Indication (reason for medication)
+                if med.indication:
+                    entry_rel = ET.SubElement(subst_admin, "entryRelationship")
+                    entry_rel.set("typeCode", "RSON")
+
+                    ind_obs = ET.SubElement(entry_rel, "observation")
+                    ind_obs.set("classCode", "OBS")
+                    ind_obs.set("moodCode", "EVN")
+
+                    ind_template = ET.SubElement(ind_obs, "templateId")
+                    ind_template.set("root", "2.16.840.1.113883.10.20.22.4.19")
+                    ind_template.set("extension", "2014-06-09")
+
+                    ind_id = ET.SubElement(ind_obs, "id")
+                    ind_id.set("root", generate_uuid())
+
+                    ind_code = ET.SubElement(ind_obs, "code")
+                    ind_code.set("code", "75321-0")
+                    ind_code.set("codeSystem", "2.16.840.1.113883.6.1")
+                    ind_code.set("displayName", "Clinical finding")
+
+                    ind_status = ET.SubElement(ind_obs, "statusCode")
+                    ind_status.set("code", "completed")
+
+                    ind_val = ET.SubElement(ind_obs, "value")
+                    ind_val.set(f"{{{self.NS_XSI}}}type", "CD")
+                    ind_val.set("displayName", med.indication)
         else:
             para = ET.SubElement(text, "paragraph")
             para.text = "No current medications"
 
     def _add_allergies_section(self, parent: ET.Element, patient: Patient) -> None:
-        """Add allergies section."""
+        """Add allergies section with structured entries."""
         section = self._add_section(
             parent,
             self.TEMPLATES["allergies"],
@@ -386,11 +602,212 @@ class CCDAExporter:
 
         text = ET.SubElement(section, "text")
         if patient.allergy_list:
-            ul = ET.SubElement(text, "list")
-            for allergy in patient.allergy_list:
-                li = ET.SubElement(ul, "item")
-                reaction = allergy.reactions[0] if allergy.reactions else "Unknown reaction"
-                li.text = f"{allergy.allergen} - {reaction}"
+            # Narrative table
+            table = ET.SubElement(text, "table")
+            thead = ET.SubElement(table, "thead")
+            tr = ET.SubElement(thead, "tr")
+            for header in ["Allergen", "Reaction", "Severity", "Status"]:
+                th = ET.SubElement(tr, "th")
+                th.text = header
+
+            tbody = ET.SubElement(table, "tbody")
+            for idx, allergy in enumerate(patient.allergy_list):
+                tr = ET.SubElement(tbody, "tr")
+                tr.set("ID", f"allergy{idx}")
+                td = ET.SubElement(tr, "td")
+                td.text = allergy.display_name
+                td = ET.SubElement(tr, "td")
+                if allergy.reactions:
+                    td.text = ", ".join([r.manifestation for r in allergy.reactions])
+                else:
+                    td.text = "Unknown"
+                td = ET.SubElement(tr, "td")
+                if allergy.reactions and allergy.reactions[0].severity:
+                    td.text = allergy.reactions[0].severity.value
+                else:
+                    td.text = ""
+                td = ET.SubElement(tr, "td")
+                td.text = allergy.clinical_status
+
+            # Structured entries for each allergy
+            for idx, allergy in enumerate(patient.allergy_list):
+                entry = ET.SubElement(section, "entry")
+                entry.set("typeCode", "DRIV")
+
+                # Allergy Concern Act
+                act = ET.SubElement(entry, "act")
+                act.set("classCode", "ACT")
+                act.set("moodCode", "EVN")
+
+                # Allergy Concern Act template
+                act_template = ET.SubElement(act, "templateId")
+                act_template.set("root", "2.16.840.1.113883.10.20.22.4.30")
+                act_template.set("extension", "2015-08-01")
+
+                act_id = ET.SubElement(act, "id")
+                act_id.set("root", generate_uuid())
+
+                act_code = ET.SubElement(act, "code")
+                act_code.set("code", "CONC")
+                act_code.set("codeSystem", "2.16.840.1.113883.5.6")
+                act_code.set("displayName", "Concern")
+
+                act_status = ET.SubElement(act, "statusCode")
+                status_code = "active" if allergy.clinical_status == "active" else "completed"
+                act_status.set("code", status_code)
+
+                # Effective time
+                act_eff = ET.SubElement(act, "effectiveTime")
+                if allergy.onset_date:
+                    low = ET.SubElement(act_eff, "low")
+                    low.set("value", format_date(allergy.onset_date))
+                else:
+                    low = ET.SubElement(act_eff, "low")
+                    low.set("nullFlavor", "UNK")
+
+                # Allergy Observation (entryRelationship)
+                entry_rel = ET.SubElement(act, "entryRelationship")
+                entry_rel.set("typeCode", "SUBJ")
+
+                obs = ET.SubElement(entry_rel, "observation")
+                obs.set("classCode", "OBS")
+                obs.set("moodCode", "EVN")
+
+                # Handle negation for "No Known Allergies" - not applicable here since we have allergies
+
+                # Allergy Observation template
+                obs_template = ET.SubElement(obs, "templateId")
+                obs_template.set("root", "2.16.840.1.113883.10.20.22.4.7")
+                obs_template.set("extension", "2014-06-09")
+
+                obs_id = ET.SubElement(obs, "id")
+                obs_id.set("root", generate_uuid())
+
+                # Allergy type code
+                obs_code = ET.SubElement(obs, "code")
+                obs_code.set("code", "ASSERTION")
+                obs_code.set("codeSystem", "2.16.840.1.113883.5.4")
+
+                # Reference to narrative
+                obs_text = ET.SubElement(obs, "text")
+                ref = ET.SubElement(obs_text, "reference")
+                ref.set("value", f"#allergy{idx}")
+
+                obs_status = ET.SubElement(obs, "statusCode")
+                obs_status.set("code", "completed")
+
+                # Effective time (onset)
+                obs_eff = ET.SubElement(obs, "effectiveTime")
+                if allergy.onset_date:
+                    onset_low = ET.SubElement(obs_eff, "low")
+                    onset_low.set("value", format_date(allergy.onset_date))
+
+                # Value - allergy or intolerance type
+                value = ET.SubElement(obs, "value")
+                value.set(f"{{{self.NS_XSI}}}type", "CD")
+                # Map category to SNOMED codes
+                category_codes = {
+                    "food": ("414285001", "Allergy to food"),
+                    "medication": ("416098002", "Drug allergy"),
+                    "environment": ("426232007", "Environmental allergy"),
+                    "biologic": ("419199007", "Allergy to substance"),
+                }
+                if allergy.category.value in category_codes:
+                    code_val, display = category_codes[allergy.category.value]
+                    value.set("code", code_val)
+                    value.set("displayName", display)
+                else:
+                    value.set("code", "419199007")
+                    value.set("displayName", "Allergy to substance")
+                value.set("codeSystem", "2.16.840.1.113883.6.96")
+                value.set("codeSystemName", "SNOMED CT")
+
+                # Participant - the allergen substance
+                participant = ET.SubElement(obs, "participant")
+                participant.set("typeCode", "CSM")
+
+                participant_role = ET.SubElement(participant, "participantRole")
+                participant_role.set("classCode", "MANU")
+
+                playing_entity = ET.SubElement(participant_role, "playingEntity")
+                playing_entity.set("classCode", "MMAT")
+
+                allergen_code = ET.SubElement(playing_entity, "code")
+                if allergy.code:
+                    allergen_code.set("code", allergy.code.code)
+                    allergen_code.set("codeSystem", allergy.code.system or "2.16.840.1.113883.6.88")
+                allergen_code.set("displayName", allergy.display_name)
+
+                # Reaction observations
+                for reaction in allergy.reactions:
+                    reaction_rel = ET.SubElement(obs, "entryRelationship")
+                    reaction_rel.set("typeCode", "MFST")
+                    reaction_rel.set("inversionInd", "true")
+
+                    reaction_obs = ET.SubElement(reaction_rel, "observation")
+                    reaction_obs.set("classCode", "OBS")
+                    reaction_obs.set("moodCode", "EVN")
+
+                    # Reaction Observation template
+                    reaction_template = ET.SubElement(reaction_obs, "templateId")
+                    reaction_template.set("root", "2.16.840.1.113883.10.20.22.4.9")
+                    reaction_template.set("extension", "2014-06-09")
+
+                    reaction_id = ET.SubElement(reaction_obs, "id")
+                    reaction_id.set("root", generate_uuid())
+
+                    reaction_code = ET.SubElement(reaction_obs, "code")
+                    reaction_code.set("code", "ASSERTION")
+                    reaction_code.set("codeSystem", "2.16.840.1.113883.5.4")
+
+                    reaction_status = ET.SubElement(reaction_obs, "statusCode")
+                    reaction_status.set("code", "completed")
+
+                    # Reaction value (manifestation)
+                    reaction_val = ET.SubElement(reaction_obs, "value")
+                    reaction_val.set(f"{{{self.NS_XSI}}}type", "CD")
+                    reaction_val.set("displayName", reaction.manifestation)
+                    reaction_val.set("codeSystem", "2.16.840.1.113883.6.96")
+                    reaction_val.set("codeSystemName", "SNOMED CT")
+
+                    # Severity observation
+                    if reaction.severity:
+                        severity_rel = ET.SubElement(reaction_obs, "entryRelationship")
+                        severity_rel.set("typeCode", "SUBJ")
+                        severity_rel.set("inversionInd", "true")
+
+                        severity_obs = ET.SubElement(severity_rel, "observation")
+                        severity_obs.set("classCode", "OBS")
+                        severity_obs.set("moodCode", "EVN")
+
+                        # Severity Observation template
+                        sev_template = ET.SubElement(severity_obs, "templateId")
+                        sev_template.set("root", "2.16.840.1.113883.10.20.22.4.8")
+                        sev_template.set("extension", "2014-06-09")
+
+                        sev_code = ET.SubElement(severity_obs, "code")
+                        sev_code.set("code", "SEV")
+                        sev_code.set("codeSystem", "2.16.840.1.113883.5.4")
+                        sev_code.set("displayName", "Severity Observation")
+
+                        sev_status = ET.SubElement(severity_obs, "statusCode")
+                        sev_status.set("code", "completed")
+
+                        # Severity value
+                        severity_map = {
+                            "mild": ("255604002", "Mild"),
+                            "moderate": ("6736007", "Moderate"),
+                            "severe": ("24484000", "Severe"),
+                            "life-threatening": ("442452003", "Life threatening severity"),
+                        }
+                        sev_val = ET.SubElement(severity_obs, "value")
+                        sev_val.set(f"{{{self.NS_XSI}}}type", "CD")
+                        if reaction.severity.value in severity_map:
+                            code_val, display = severity_map[reaction.severity.value]
+                            sev_val.set("code", code_val)
+                            sev_val.set("displayName", display)
+                        sev_val.set("codeSystem", "2.16.840.1.113883.6.96")
+                        sev_val.set("codeSystemName", "SNOMED CT")
         else:
             para = ET.SubElement(text, "paragraph")
             para.text = "No known allergies"

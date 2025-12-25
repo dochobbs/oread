@@ -1,0 +1,1282 @@
+# Oread Pediatric Conditions Database
+# Comprehensive database of 50+ common pediatric conditions
+# Sources: CDC, AAP, NIH, PMC research papers
+# Last Updated: 2025-12-25
+
+# =============================================================================
+# ACUTE RESPIRATORY CONDITIONS
+# =============================================================================
+
+upper_respiratory_infection:
+  display_name: "Upper Respiratory Infection"
+  aliases: ["URI", "Common cold", "Viral URI"]
+  icd10: ["J06.9", "J00"]
+  category: acute
+  system: respiratory
+
+  age_ranges:
+    min_months: 1
+    peak_start_months: 6
+    peak_end_months: 72  # Peak 6 months to 6 years
+    max_months: 264
+
+  prevalence:
+    annual_episodes_per_child: 6  # Children get 6-8 colds per year
+    notes: "Most common acute illness in children"
+
+  seasonality:
+    peak_months: [10, 11, 12, 1, 2, 3]  # Fall and winter
+    weight_multiplier: 2.0
+
+  presentation:
+    symptoms: ["rhinorrhea", "nasal congestion", "cough", "low-grade fever", "sore throat"]
+    duration_days: [7, 10]
+
+  treatment:
+    approach: "supportive"
+    items:
+      - category: "education"
+        description: "Supportive care with rest and increased fluids"
+      - category: "medication"
+        description: "Acetaminophen or ibuprofen PRN for fever/discomfort"
+      - category: "education"
+        description: "Return precautions: difficulty breathing, high fever >3 days"
+
+otitis_media:
+  display_name: "Acute Otitis Media"
+  aliases: ["Ear infection", "AOM", "Middle ear infection"]
+  icd10: ["H66.90", "H66.91", "H66.92"]
+  category: acute
+  system: ent
+
+  age_ranges:
+    min_months: 6   # Rare before 6 months
+    peak_start_months: 6
+    peak_end_months: 36  # Peak 6 months to 3 years
+    max_months: 144
+
+  prevalence:
+    lifetime_by_age_3: 0.83  # 5 of 6 children by age 3
+    notes: "Most common reason for pediatric antibiotic prescriptions"
+
+  seasonality:
+    peak_months: [10, 11, 12, 1, 2, 3]
+    weight_multiplier: 1.8
+
+  presentation:
+    symptoms: ["ear pain", "tugging at ear", "fever", "irritability", "decreased hearing"]
+    duration_days: [3, 7]
+
+  treatment:
+    approach: "antibiotic_or_watchful_waiting"
+    items:
+      - category: "medication"
+        description: "Amoxicillin 80-90mg/kg/day divided BID x 10 days"
+      - category: "medication"
+        description: "Ibuprofen for pain management"
+      - category: "follow-up"
+        description: "Return if no improvement in 48-72 hours"
+
+bronchiolitis:
+  display_name: "Bronchiolitis"
+  aliases: ["RSV bronchiolitis", "Viral bronchiolitis"]
+  icd10: ["J21.0", "J21.9"]
+  category: acute
+  system: respiratory
+
+  age_ranges:
+    min_months: 0
+    peak_start_months: 2
+    peak_end_months: 6   # Peak 2-6 months
+    max_months: 24       # Rare after 2 years
+
+  prevalence:
+    hospitalization_rate_under_1: 0.02
+    notes: "Leading cause of hospitalization in infants"
+
+  seasonality:
+    peak_months: [11, 12, 1, 2, 3]  # Winter months
+    weight_multiplier: 3.0
+
+  presentation:
+    symptoms: ["wheezing", "tachypnea", "nasal flaring", "retractions", "cough", "rhinorrhea"]
+    duration_days: [7, 14]
+
+  treatment:
+    approach: "supportive"
+    items:
+      - category: "other"
+        description: "Supportive care with suctioning and hydration"
+      - category: "education"
+        description: "Monitor for respiratory distress, feeding difficulties"
+      - category: "education"
+        description: "Return immediately if breathing difficulty worsens"
+
+croup:
+  display_name: "Croup"
+  aliases: ["Laryngotracheobronchitis", "Viral croup"]
+  icd10: ["J05.0"]
+  category: acute
+  system: respiratory
+
+  age_ranges:
+    min_months: 3
+    peak_start_months: 6
+    peak_end_months: 36  # Peak 6 months to 3 years
+    max_months: 72
+
+  prevalence:
+    annual_incidence_per_1000: 5.32
+    notes: "Affects 3% of children under 5"
+
+  seasonality:
+    peak_months: [9, 10, 11, 12]  # Fall and early winter
+    weight_multiplier: 2.5
+
+  presentation:
+    symptoms: ["barking cough", "stridor", "hoarseness", "low-grade fever"]
+    duration_days: [3, 7]
+    worse_at_night: true
+
+  treatment:
+    approach: "steroid_plus_supportive"
+    items:
+      - category: "medication"
+        description: "Dexamethasone 0.6mg/kg PO x 1 dose"
+      - category: "education"
+        description: "Cool mist humidifier, calm environment"
+      - category: "education"
+        description: "Return immediately for stridor at rest or respiratory distress"
+
+pharyngitis:
+  display_name: "Pharyngitis"
+  aliases: ["Sore throat", "Strep throat", "Streptococcal pharyngitis"]
+  icd10: ["J02.9", "J02.0"]
+  category: acute
+  system: ent
+
+  age_ranges:
+    min_months: 24      # Strep rare before age 2
+    peak_start_months: 60
+    peak_end_months: 180  # Peak 5-15 years
+    max_months: 264
+
+  prevalence:
+    strep_positive_rate: 0.30  # 30% of pediatric pharyngitis is strep
+    notes: "Viral causes more common than bacterial"
+
+  seasonality:
+    peak_months: [11, 12, 1, 2, 3, 4]
+    weight_multiplier: 1.5
+
+  presentation:
+    symptoms: ["sore throat", "fever", "tonsillar exudate", "cervical lymphadenopathy"]
+    duration_days: [3, 7]
+
+  treatment:
+    approach: "test_and_treat"
+    items:
+      - category: "order"
+        description: "Rapid strep test and/or throat culture"
+      - category: "medication"
+        description: "If positive: Amoxicillin or Penicillin V x 10 days"
+      - category: "medication"
+        description: "Acetaminophen or ibuprofen for pain"
+
+viral_gastroenteritis:
+  display_name: "Viral Gastroenteritis"
+  aliases: ["Stomach flu", "Gastroenteritis", "Acute diarrhea"]
+  icd10: ["A08.4", "A09"]
+  category: acute
+  system: gastrointestinal
+
+  age_ranges:
+    min_months: 2
+    peak_start_months: 6
+    peak_end_months: 60
+    max_months: 264
+
+  prevalence:
+    annual_episodes: 1.5
+    notes: "Rotavirus most common cause in young children"
+
+  seasonality:
+    peak_months: [11, 12, 1, 2, 3]  # Winter for rotavirus
+    summer_peak: [6, 7, 8]  # Summer for some viral causes
+    weight_multiplier: 1.5
+
+  presentation:
+    symptoms: ["vomiting", "diarrhea", "abdominal cramps", "low-grade fever", "decreased appetite"]
+    duration_days: [3, 7]
+
+  treatment:
+    approach: "supportive"
+    items:
+      - category: "education"
+        description: "Oral rehydration with small frequent amounts of fluids"
+      - category: "education"
+        description: "BRAT diet as tolerated, advance as symptoms improve"
+      - category: "education"
+        description: "Return if unable to keep fluids down or signs of dehydration"
+
+influenza:
+  display_name: "Influenza"
+  aliases: ["Flu", "Influenza-like illness"]
+  icd10: ["J09", "J10", "J11"]
+  category: acute
+  system: respiratory
+
+  age_ranges:
+    min_months: 6
+    peak_start_months: 24
+    peak_end_months: 180
+    max_months: 264
+
+  prevalence:
+    annual_attack_rate: 0.20  # 20% of children per year
+    notes: "Vaccine-preventable"
+
+  seasonality:
+    peak_months: [12, 1, 2, 3]
+    weight_multiplier: 4.0
+
+  presentation:
+    symptoms: ["high fever", "myalgia", "headache", "cough", "sore throat", "fatigue"]
+    duration_days: [5, 10]
+
+  treatment:
+    approach: "antiviral_if_early"
+    items:
+      - category: "medication"
+        description: "Consider oseltamivir if within 48 hours of symptom onset"
+      - category: "medication"
+        description: "Acetaminophen or ibuprofen for fever and discomfort"
+      - category: "education"
+        description: "Rest, hydration, isolation until afebrile 24 hours"
+
+conjunctivitis:
+  display_name: "Conjunctivitis"
+  aliases: ["Pink eye", "Eye infection"]
+  icd10: ["H10.9", "H10.3"]
+  category: acute
+  system: eye
+
+  age_ranges:
+    min_months: 1
+    peak_start_months: 12
+    peak_end_months: 84
+    max_months: 264
+
+  prevalence:
+    notes: "Very common, highly contagious"
+
+  seasonality:
+    peak_months: [3, 4, 5, 9, 10]  # Spring and fall
+    weight_multiplier: 1.3
+
+  presentation:
+    symptoms: ["eye redness", "discharge", "crusting", "itching", "tearing"]
+    duration_days: [5, 10]
+
+  treatment:
+    approach: "varies_by_etiology"
+    items:
+      - category: "medication"
+        description: "Antibiotic eye drops if bacterial; supportive care if viral"
+      - category: "education"
+        description: "Good hand hygiene to prevent spread"
+      - category: "education"
+        description: "May return to school 24 hours after starting treatment if bacterial"
+
+hand_foot_mouth_disease:
+  display_name: "Hand, Foot, and Mouth Disease"
+  aliases: ["HFMD", "Coxsackie virus"]
+  icd10: ["B08.4"]
+  category: acute
+  system: infectious
+
+  age_ranges:
+    min_months: 6
+    peak_start_months: 12
+    peak_end_months: 60  # Most common under 5
+    max_months: 120
+
+  prevalence:
+    notes: "Common in daycare settings"
+
+  seasonality:
+    peak_months: [5, 6, 7, 8, 9]  # Summer and early fall
+    weight_multiplier: 2.0
+
+  presentation:
+    symptoms: ["fever", "mouth sores", "rash on hands and feet", "poor appetite"]
+    duration_days: [7, 10]
+
+  treatment:
+    approach: "supportive"
+    items:
+      - category: "medication"
+        description: "Acetaminophen or ibuprofen for pain and fever"
+      - category: "education"
+        description: "Cold foods and fluids for mouth sore comfort"
+      - category: "education"
+        description: "Contagious until lesions crust over"
+
+roseola:
+  display_name: "Roseola"
+  aliases: ["Sixth disease", "Exanthem subitum", "HHV-6"]
+  icd10: ["B08.20"]
+  category: acute
+  system: infectious
+
+  age_ranges:
+    min_months: 6
+    peak_start_months: 6
+    peak_end_months: 24  # Peak 6-15 months
+    max_months: 48
+
+  prevalence:
+    by_kindergarten: 0.95  # Most children have it by kindergarten
+    notes: "Almost universal childhood infection"
+
+  seasonality:
+    weight_multiplier: 1.0  # Year-round
+
+  presentation:
+    symptoms: ["high fever 3-5 days", "rash appears as fever breaks", "irritability"]
+    duration_days: [5, 7]
+
+  treatment:
+    approach: "supportive"
+    items:
+      - category: "medication"
+        description: "Acetaminophen or ibuprofen for fever control"
+      - category: "education"
+        description: "Rash is not contagious; fever precedes rash"
+      - category: "education"
+        description: "Monitor for febrile seizures during high fever"
+
+fifth_disease:
+  display_name: "Fifth Disease"
+  aliases: ["Erythema infectiosum", "Slapped cheek disease", "Parvovirus B19"]
+  icd10: ["B08.3"]
+  category: acute
+  system: infectious
+
+  age_ranges:
+    min_months: 36
+    peak_start_months: 60
+    peak_end_months: 180  # Peak 5-15 years
+    max_months: 264
+
+  prevalence:
+    notes: "Common in school-age children"
+
+  seasonality:
+    peak_months: [1, 2, 3, 4, 5]  # Winter and spring
+    weight_multiplier: 1.5
+
+  presentation:
+    symptoms: ["slapped cheek rash", "lacy rash on body", "low-grade fever", "mild URI symptoms"]
+    duration_days: [7, 21]
+
+  treatment:
+    approach: "supportive"
+    items:
+      - category: "education"
+        description: "Self-limited; no specific treatment needed"
+      - category: "medication"
+        description: "Acetaminophen if mild fever or joint pain"
+      - category: "education"
+        description: "Not contagious once rash appears"
+
+pneumonia:
+  display_name: "Pneumonia"
+  aliases: ["Community-acquired pneumonia", "CAP", "Lung infection"]
+  icd10: ["J18.9", "J15.9", "J12.9"]
+  category: acute
+  system: respiratory
+
+  age_ranges:
+    min_months: 1
+    peak_start_months: 6
+    peak_end_months: 60
+    max_months: 264
+
+  prevalence:
+    annual_incidence_per_1000: 15
+    notes: "Significant cause of pediatric hospitalization"
+
+  seasonality:
+    peak_months: [11, 12, 1, 2, 3]
+    weight_multiplier: 2.0
+
+  presentation:
+    symptoms: ["cough", "fever", "tachypnea", "retractions", "crackles", "decreased breath sounds"]
+    duration_days: [7, 14]
+
+  treatment:
+    approach: "antibiotic"
+    items:
+      - category: "medication"
+        description: "High-dose amoxicillin for typical bacterial pneumonia"
+      - category: "order"
+        description: "Chest X-ray if diagnosis uncertain"
+      - category: "follow-up"
+        description: "Recheck in 48-72 hours if not improving"
+
+urinary_tract_infection:
+  display_name: "Urinary Tract Infection"
+  aliases: ["UTI", "Bladder infection", "Cystitis"]
+  icd10: ["N39.0"]
+  category: acute
+  system: genitourinary
+
+  age_ranges:
+    min_months: 1
+    peak_start_months: 24
+    peak_end_months: 72
+    max_months: 264
+
+  prevalence:
+    females_percent: 5
+    males_percent: 1
+    notes: "More common in females after infancy"
+
+  seasonality:
+    weight_multiplier: 1.0  # Year-round
+
+  presentation:
+    symptoms: ["dysuria", "frequency", "urgency", "fever", "abdominal pain"]
+    infant_symptoms: ["fever", "irritability", "poor feeding", "vomiting"]
+    duration_days: [3, 7]
+
+  treatment:
+    approach: "antibiotic"
+    items:
+      - category: "order"
+        description: "Urinalysis and urine culture"
+      - category: "medication"
+        description: "Age-appropriate antibiotic (cephalexin, TMP-SMX, or nitrofurantoin)"
+      - category: "follow-up"
+        description: "Consider renal ultrasound for first febrile UTI"
+
+febrile_seizure:
+  display_name: "Febrile Seizure"
+  aliases: ["Fever seizure", "Febrile convulsion"]
+  icd10: ["R56.00", "R56.01"]
+  category: acute
+  system: neurological
+
+  age_ranges:
+    min_months: 6
+    peak_start_months: 12
+    peak_end_months: 36  # Peak 12-18 months
+    max_months: 72       # Rare after 5 years
+
+  prevalence:
+    percent: 4  # 2-5% of children
+    notes: "Most common childhood seizure type"
+
+  seasonality:
+    weight_multiplier: 1.0  # Follows febrile illness patterns
+
+  presentation:
+    symptoms: ["generalized tonic-clonic seizure", "associated with fever", "postictal drowsiness"]
+    duration_minutes: [1, 5]
+
+  treatment:
+    approach: "supportive_and_education"
+    items:
+      - category: "education"
+        description: "Simple febrile seizures are benign; 2-7% risk of epilepsy"
+      - category: "medication"
+        description: "Antipyretics do not prevent recurrence"
+      - category: "education"
+        description: "Return immediately for prolonged seizure or focal features"
+
+impetigo:
+  display_name: "Impetigo"
+  aliases: ["Skin infection", "Staph/strep skin infection"]
+  icd10: ["L01.0"]
+  category: acute
+  system: dermatological
+
+  age_ranges:
+    min_months: 6
+    peak_start_months: 24
+    peak_end_months: 72
+    max_months: 144
+
+  prevalence:
+    notes: "Common in warm, humid climates"
+
+  seasonality:
+    peak_months: [6, 7, 8, 9]  # Summer
+    weight_multiplier: 1.5
+
+  presentation:
+    symptoms: ["honey-crusted lesions", "bullae", "pruritus", "surrounding erythema"]
+    duration_days: [7, 14]
+
+  treatment:
+    approach: "topical_or_systemic_antibiotic"
+    items:
+      - category: "medication"
+        description: "Mupirocin ointment TID for localized; oral antibiotics if extensive"
+      - category: "education"
+        description: "Keep lesions covered; good hand hygiene"
+      - category: "education"
+        description: "May return to school after 24 hours of treatment"
+
+ringworm:
+  display_name: "Ringworm"
+  aliases: ["Tinea corporis", "Tinea capitis", "Dermatophyte infection"]
+  icd10: ["B35.4", "B35.0"]
+  category: acute
+  system: dermatological
+
+  age_ranges:
+    min_months: 12
+    peak_start_months: 36
+    peak_end_months: 120  # Peak 3-9 years
+    max_months: 264
+
+  prevalence:
+    notes: "Very contagious, common in school-age children"
+
+  seasonality:
+    weight_multiplier: 1.0
+
+  presentation:
+    symptoms: ["ring-shaped rash", "scaling", "pruritus", "hair loss if scalp"]
+    duration_days: [14, 28]
+
+  treatment:
+    approach: "antifungal"
+    items:
+      - category: "medication"
+        description: "Topical antifungal (clotrimazole, terbinafine) for body"
+      - category: "medication"
+        description: "Oral griseofulvin or terbinafine for scalp involvement"
+      - category: "education"
+        description: "Do not share combs, hats, or towels"
+
+
+# =============================================================================
+# CHRONIC CONDITIONS - RESPIRATORY/ALLERGIC
+# =============================================================================
+
+asthma:
+  display_name: "Asthma"
+  aliases: ["Reactive airway disease", "RAD"]
+  icd10: ["J45.20", "J45.30", "J45.40", "J45.50"]
+  category: chronic
+  system: respiratory
+
+  age_ranges:
+    min_months: 12       # Usually not diagnosed before 1 year
+    typical_diagnosis_months: 48  # Often diagnosed by age 4-5
+    peak_start_months: 24
+    peak_end_months: 84
+    max_months: 264
+
+  prevalence:
+    percent: 8  # About 8% of children
+    notes: "Most common chronic disease of childhood"
+
+  comorbidities:
+    strong: ["eczema", "allergic_rhinitis", "food_allergy"]
+    moderate: ["obesity", "anxiety", "gerd"]
+
+  presentation:
+    symptoms: ["wheezing", "cough", "shortness of breath", "chest tightness"]
+    triggers: ["viral illness", "exercise", "allergens", "cold air"]
+
+  treatment:
+    approach: "stepwise_management"
+    items:
+      - category: "medication"
+        description: "Albuterol inhaler PRN for rescue"
+      - category: "medication"
+        description: "Inhaled corticosteroid for persistent asthma"
+      - category: "education"
+        description: "Asthma action plan, trigger avoidance, inhaler technique"
+      - category: "follow-up"
+        description: "Return in 1-3 months for asthma control assessment"
+
+eczema:
+  display_name: "Eczema"
+  aliases: ["Atopic dermatitis", "AD"]
+  icd10: ["L20.9", "L20.89"]
+  category: chronic
+  system: dermatological
+
+  age_ranges:
+    min_months: 1
+    typical_diagnosis_months: 6   # 45% start by 6 months
+    peak_start_months: 1
+    peak_end_months: 72           # 80% by age 6
+    max_months: 264
+
+  prevalence:
+    percent: 20  # Up to 20% of children
+    resolves_by_age_6: 0.60
+    notes: "First step in the atopic march"
+
+  comorbidities:
+    strong: ["asthma", "allergic_rhinitis", "food_allergy"]
+    moderate: ["anxiety", "sleep_disorders"]
+
+  presentation:
+    symptoms: ["pruritic rash", "dry skin", "erythema", "lichenification"]
+    location_infant: ["face", "scalp", "extensor surfaces"]
+    location_older: ["flexural areas", "hands", "feet"]
+
+  treatment:
+    approach: "emollient_plus_steroids"
+    items:
+      - category: "medication"
+        description: "Daily emollient application, fragrance-free"
+      - category: "medication"
+        description: "Topical corticosteroid for flares"
+      - category: "education"
+        description: "Bathing routine, trigger avoidance, cotton clothing"
+      - category: "follow-up"
+        description: "Return if signs of skin infection or uncontrolled"
+
+allergic_rhinitis:
+  display_name: "Allergic Rhinitis"
+  aliases: ["Hay fever", "Seasonal allergies", "Environmental allergies"]
+  icd10: ["J30.9", "J30.1", "J30.89"]
+  category: chronic
+  system: ent
+
+  age_ranges:
+    min_months: 24
+    typical_diagnosis_months: 36
+    peak_start_months: 48
+    peak_end_months: 180
+    max_months: 264
+
+  prevalence:
+    percent: 15
+    notes: "Develops after sensitization over time"
+
+  comorbidities:
+    strong: ["asthma", "eczema"]
+    moderate: ["sinusitis", "otitis_media"]
+
+  seasonality:
+    tree_pollen: [3, 4, 5]
+    grass_pollen: [5, 6, 7]
+    ragweed: [8, 9, 10]
+    perennial: true
+
+  presentation:
+    symptoms: ["sneezing", "rhinorrhea", "nasal congestion", "itchy eyes", "allergic shiners"]
+
+  treatment:
+    approach: "antihistamine_plus_nasal_steroid"
+    items:
+      - category: "medication"
+        description: "Second-generation antihistamine (cetirizine, loratadine)"
+      - category: "medication"
+        description: "Intranasal corticosteroid for persistent symptoms"
+      - category: "education"
+        description: "Allergen avoidance strategies"
+      - category: "referral"
+        description: "Consider allergy testing if poorly controlled"
+
+food_allergy:
+  display_name: "Food Allergy"
+  aliases: ["Food hypersensitivity", "IgE-mediated food allergy"]
+  icd10: ["T78.1", "Z91.010"]
+  category: chronic
+  system: immunological
+
+  age_ranges:
+    min_months: 4          # After introduction of solids
+    typical_diagnosis_months: 12
+    peak_start_months: 6
+    peak_end_months: 60
+    max_months: 264
+
+  prevalence:
+    percent: 8  # About 8% of children
+    notes: "Milk and egg allergies often outgrown; peanut/tree nut less likely"
+
+  common_allergens: ["milk", "egg", "peanut", "tree nuts", "wheat", "soy", "fish", "shellfish"]
+
+  comorbidities:
+    strong: ["eczema", "asthma"]
+    moderate: ["allergic_rhinitis"]
+
+  presentation:
+    symptoms: ["urticaria", "angioedema", "vomiting", "anaphylaxis risk"]
+
+  treatment:
+    approach: "avoidance_plus_emergency_plan"
+    items:
+      - category: "medication"
+        description: "Epinephrine auto-injector prescribed; training provided"
+      - category: "education"
+        description: "Strict allergen avoidance, label reading"
+      - category: "education"
+        description: "Anaphylaxis action plan for school"
+      - category: "referral"
+        description: "Allergist for testing and possible oral immunotherapy"
+
+
+# =============================================================================
+# CHRONIC CONDITIONS - NEURODEVELOPMENTAL/MENTAL HEALTH
+# =============================================================================
+
+adhd:
+  display_name: "ADHD"
+  aliases: ["Attention Deficit Hyperactivity Disorder", "ADD"]
+  icd10: ["F90.0", "F90.1", "F90.2", "F90.9"]
+  category: chronic
+  system: neurodevelopmental
+
+  age_ranges:
+    min_months: 48       # Not diagnosed before age 4
+    typical_diagnosis_months: 84  # Often diagnosed around 7
+    peak_start_months: 72
+    peak_end_months: 144
+    max_months: 264
+
+  prevalence:
+    percent: 10  # About 10% of children
+    male_to_female_ratio: 2.0
+    notes: "Often co-occurs with other conditions"
+
+  comorbidities:
+    strong: ["anxiety", "depression", "oppositional_defiant_disorder"]
+    moderate: ["learning_disability", "autism", "tic_disorder"]
+
+  subtypes: ["predominantly_inattentive", "predominantly_hyperactive_impulsive", "combined"]
+
+  presentation:
+    inattentive_symptoms: ["difficulty focusing", "easily distracted", "forgetful", "loses things"]
+    hyperactive_symptoms: ["fidgety", "talks excessively", "difficulty waiting turn", "impulsive"]
+
+  treatment:
+    approach: "behavioral_plus_medication"
+    items:
+      - category: "education"
+        description: "ADHD education; behavioral strategies discussed"
+      - category: "medication"
+        description: "Consider stimulant medication after age 6 (methylphenidate, amphetamines)"
+      - category: "referral"
+        description: "School evaluation for IEP/504 accommodations"
+      - category: "follow-up"
+        description: "Return in 4-6 weeks for medication titration"
+
+autism_spectrum_disorder:
+  display_name: "Autism Spectrum Disorder"
+  aliases: ["ASD", "Autism"]
+  icd10: ["F84.0"]
+  category: chronic
+  system: neurodevelopmental
+
+  age_ranges:
+    min_months: 18       # Can be identified as early as 18 months
+    typical_diagnosis_months: 48
+    peak_start_months: 24
+    peak_end_months: 60
+    max_months: 264
+
+  prevalence:
+    ratio: "1:36"  # 1 in 36 children
+    male_to_female_ratio: 4.0
+    notes: "Early intervention crucial"
+
+  comorbidities:
+    strong: ["adhd", "anxiety", "sensory_processing"]
+    moderate: ["intellectual_disability", "epilepsy", "gi_disorders"]
+
+  presentation:
+    social_symptoms: ["limited eye contact", "difficulty with reciprocal conversation", "challenges with friendships"]
+    behavioral_symptoms: ["restricted interests", "repetitive behaviors", "insistence on sameness"]
+
+  treatment:
+    approach: "early_intervention"
+    items:
+      - category: "referral"
+        description: "Developmental pediatrician or child psychiatrist for evaluation"
+      - category: "referral"
+        description: "Early intervention services (speech, OT, ABA therapy)"
+      - category: "education"
+        description: "Parent training and support resources"
+      - category: "follow-up"
+        description: "Regular developmental monitoring"
+
+anxiety_disorder:
+  display_name: "Anxiety Disorder"
+  aliases: ["Generalized anxiety", "Separation anxiety", "Social anxiety"]
+  icd10: ["F41.1", "F93.0", "F40.10"]
+  category: chronic
+  system: mental_health
+
+  age_ranges:
+    min_months: 36
+    typical_diagnosis_months: 72
+    peak_start_months: 48
+    peak_end_months: 180
+    max_months: 264
+
+  prevalence:
+    percent: 10  # 7-10% of children
+    notes: "Often undiagnosed; more common in girls"
+
+  comorbidities:
+    strong: ["depression", "adhd"]
+    moderate: ["somatic_complaints", "school_refusal"]
+
+  presentation:
+    symptoms: ["excessive worry", "physical symptoms (stomachache, headache)", "avoidance", "sleep difficulties"]
+
+  treatment:
+    approach: "cbt_plus_consideration_medication"
+    items:
+      - category: "referral"
+        description: "Counseling/therapy referral for CBT"
+      - category: "education"
+        description: "Coping strategies and relaxation techniques discussed"
+      - category: "medication"
+        description: "Consider SSRI if moderate-severe and CBT insufficient"
+      - category: "follow-up"
+        description: "Follow up in 4-6 weeks to assess progress"
+
+depression:
+  display_name: "Depression"
+  aliases: ["Major depressive disorder", "MDD", "Depressive disorder"]
+  icd10: ["F32.9", "F33.9"]
+  category: chronic
+  system: mental_health
+
+  age_ranges:
+    min_months: 72
+    typical_diagnosis_months: 156  # Often in adolescence
+    peak_start_months: 120
+    peak_end_months: 216
+    max_months: 264
+
+  prevalence:
+    adolescent_percent: 15
+    notes: "Rising prevalence in adolescents; screen all 12+"
+
+  comorbidities:
+    strong: ["anxiety", "substance_use"]
+    moderate: ["adhd", "eating_disorders"]
+
+  presentation:
+    symptoms: ["persistent sadness", "anhedonia", "sleep changes", "appetite changes", "fatigue", "worthlessness"]
+    adolescent_presentation: ["irritability", "social withdrawal", "academic decline"]
+
+  treatment:
+    approach: "therapy_plus_medication"
+    items:
+      - category: "referral"
+        description: "Mental health referral for therapy (CBT, IPT)"
+      - category: "medication"
+        description: "SSRI (fluoxetine first-line in adolescents)"
+      - category: "education"
+        description: "Safety planning; discuss warning signs"
+      - category: "follow-up"
+        description: "Close follow-up during medication initiation"
+
+
+# =============================================================================
+# CHRONIC CONDITIONS - GASTROINTESTINAL
+# =============================================================================
+
+gerd:
+  display_name: "GERD"
+  aliases: ["Gastroesophageal reflux disease", "Acid reflux"]
+  icd10: ["K21.0", "K21.9"]
+  category: chronic
+  system: gastrointestinal
+
+  age_ranges:
+    min_months: 0
+    typical_diagnosis_months: 4
+    peak_start_months: 1
+    peak_end_months: 12  # Often resolves by 12 months
+    recurrence_adolescence: true
+    max_months: 264
+
+  prevalence:
+    infant_percent: 25  # Up to 25% of infants have symptoms
+    notes: "Usually physiological in infants"
+
+  comorbidities:
+    strong: ["obesity"]
+    moderate: ["asthma", "chronic_cough"]
+
+  presentation:
+    infant_symptoms: ["regurgitation", "irritability", "feeding difficulties", "arching"]
+    older_child_symptoms: ["heartburn", "chest pain", "dysphagia"]
+
+  treatment:
+    approach: "conservative_first"
+    items:
+      - category: "education"
+        description: "Feeding modifications, upright positioning, thickened feeds"
+      - category: "medication"
+        description: "H2 blocker or PPI if persistent symptoms"
+      - category: "follow-up"
+        description: "Most infants improve by 12-18 months"
+
+functional_constipation:
+  display_name: "Functional Constipation"
+  aliases: ["Constipation", "Chronic constipation"]
+  icd10: ["K59.00", "K59.09"]
+  category: chronic
+  system: gastrointestinal
+
+  age_ranges:
+    min_months: 6
+    typical_diagnosis_months: 36
+    peak_start_months: 24
+    peak_end_months: 72  # Peak during toilet training
+    max_months: 264
+
+  prevalence:
+    percent: 10
+    notes: "Common during toilet training"
+
+  comorbidities:
+    moderate: ["encopresis", "uti", "behavioral_issues"]
+
+  presentation:
+    symptoms: ["infrequent stools", "hard stools", "painful defecation", "withholding behavior", "abdominal pain"]
+
+  treatment:
+    approach: "education_plus_osmotic_laxative"
+    items:
+      - category: "education"
+        description: "Increase fiber and fluid intake; regular toilet time"
+      - category: "medication"
+        description: "MiraLAX or similar osmotic laxative"
+      - category: "education"
+        description: "Positive reinforcement; avoid punishment for accidents"
+      - category: "follow-up"
+        description: "Return in 2-4 weeks; treatment often needed for months"
+
+
+# =============================================================================
+# CHRONIC CONDITIONS - METABOLIC/ENDOCRINE
+# =============================================================================
+
+obesity:
+  display_name: "Obesity"
+  aliases: ["Overweight", "Pediatric obesity"]
+  icd10: ["E66.9", "E66.01"]
+  category: chronic
+  system: metabolic
+
+  age_ranges:
+    min_months: 24       # BMI tracking meaningful after 2
+    typical_diagnosis_months: 72
+    peak_start_months: 48
+    peak_end_months: 180
+    max_months: 264
+
+  prevalence:
+    percent: 20  # About 20% of children
+    notes: "Rates increasing; associated with multiple comorbidities"
+
+  comorbidities:
+    strong: ["prediabetes", "type_2_diabetes", "hypertension", "dyslipidemia"]
+    moderate: ["asthma", "sleep_apnea", "gerd", "depression", "nafld"]
+
+  bmi_criteria:
+    overweight: "85th-95th percentile"
+    obese: ">95th percentile"
+    severe_obese: ">120% of 95th percentile"
+
+  treatment:
+    approach: "lifestyle_modification"
+    items:
+      - category: "education"
+        description: "Nutrition counseling; goal of modest lifestyle changes"
+      - category: "referral"
+        description: "Refer to dietitian for comprehensive nutrition plan"
+      - category: "education"
+        description: "Increase physical activity; decrease screen time"
+      - category: "order"
+        description: "Screen for comorbidities (lipids, glucose, liver enzymes)"
+      - category: "follow-up"
+        description: "Return in 3 months for weight check"
+
+prediabetes:
+  display_name: "Prediabetes"
+  aliases: ["Impaired glucose tolerance", "Impaired fasting glucose"]
+  icd10: ["R73.03", "R73.09"]
+  category: chronic
+  system: metabolic
+
+  age_ranges:
+    min_months: 120      # Screen at age 10 or puberty if risk factors
+    typical_diagnosis_months: 144
+    peak_start_months: 120
+    peak_end_months: 216
+    max_months: 264
+
+  prevalence:
+    notes: "Rising with obesity epidemic"
+
+  comorbidities:
+    strong: ["obesity", "dyslipidemia", "hypertension"]
+    moderate: ["acanthosis_nigricans", "pcos"]
+
+  risk_factors: ["BMI >85th percentile", "family history T2DM", "high-risk ethnicity", "signs of insulin resistance"]
+
+  treatment:
+    approach: "intensive_lifestyle"
+    items:
+      - category: "education"
+        description: "Lifestyle modification is primary treatment"
+      - category: "referral"
+        description: "Dietitian and possibly diabetes educator"
+      - category: "follow-up"
+        description: "Repeat screening annually if risk factors persist"
+
+type_2_diabetes:
+  display_name: "Type 2 Diabetes"
+  aliases: ["T2DM", "Type 2 diabetes mellitus"]
+  icd10: ["E11.9"]
+  category: chronic
+  system: metabolic
+
+  age_ranges:
+    min_months: 120
+    typical_diagnosis_months: 168  # Often in adolescence
+    peak_start_months: 144
+    peak_end_months: 216
+    max_months: 264
+
+  prevalence:
+    notes: "Increasing in pediatrics; parallels obesity epidemic"
+
+  comorbidities:
+    strong: ["obesity", "dyslipidemia", "hypertension", "nafld"]
+    moderate: ["pcos", "depression"]
+
+  treatment:
+    approach: "metformin_plus_lifestyle"
+    items:
+      - category: "medication"
+        description: "Metformin first-line medication"
+      - category: "education"
+        description: "Intensive lifestyle modification"
+      - category: "referral"
+        description: "Pediatric endocrinology referral"
+      - category: "order"
+        description: "HbA1c monitoring every 3 months initially"
+
+
+# =============================================================================
+# CHRONIC CONDITIONS - OTHER
+# =============================================================================
+
+recurrent_otitis_media:
+  display_name: "Recurrent Otitis Media"
+  aliases: ["Chronic ear infections", "Recurrent AOM"]
+  icd10: ["H66.90"]
+  category: chronic
+  system: ent
+
+  age_ranges:
+    min_months: 6
+    peak_start_months: 6
+    peak_end_months: 36
+    max_months: 84
+
+  prevalence:
+    notes: "Defined as 3+ episodes in 6 months or 4+ in 12 months"
+
+  comorbidities:
+    moderate: ["hearing_loss", "speech_delay"]
+
+  treatment:
+    approach: "prophylaxis_or_tubes"
+    items:
+      - category: "referral"
+        description: "ENT referral for possible tympanostomy tubes"
+      - category: "education"
+        description: "Consider risk factors: daycare, smoke exposure, pacifier use"
+      - category: "order"
+        description: "Hearing evaluation"
+
+epilepsy:
+  display_name: "Epilepsy"
+  aliases: ["Seizure disorder", "Recurrent seizures"]
+  icd10: ["G40.909"]
+  category: chronic
+  system: neurological
+
+  age_ranges:
+    min_months: 1
+    typical_diagnosis_months: 60
+    peak_start_months: 0
+    peak_end_months: 120
+    max_months: 264
+
+  prevalence:
+    percent: 1
+    notes: "Various seizure types and syndromes"
+
+  comorbidities:
+    moderate: ["adhd", "learning_disability", "depression", "anxiety"]
+
+  treatment:
+    approach: "antiepileptic_medication"
+    items:
+      - category: "referral"
+        description: "Pediatric neurology referral"
+      - category: "order"
+        description: "EEG and possibly MRI brain"
+      - category: "medication"
+        description: "Antiepileptic drug based on seizure type"
+      - category: "education"
+        description: "Seizure precautions, medication adherence"
+
+speech_language_delay:
+  display_name: "Speech/Language Delay"
+  aliases: ["Language delay", "Speech delay", "Expressive language disorder"]
+  icd10: ["F80.1", "F80.2", "F80.9"]
+  category: chronic
+  system: developmental
+
+  age_ranges:
+    min_months: 12
+    typical_diagnosis_months: 24
+    peak_start_months: 18
+    peak_end_months: 48
+    max_months: 84
+
+  prevalence:
+    percent: 5
+    notes: "More common in boys; often improves with therapy"
+
+  comorbidities:
+    moderate: ["hearing_loss", "autism", "developmental_delay"]
+
+  treatment:
+    approach: "early_intervention"
+    items:
+      - category: "order"
+        description: "Hearing evaluation to rule out hearing loss"
+      - category: "referral"
+        description: "Speech-language pathology evaluation"
+      - category: "referral"
+        description: "Early intervention services if under 3"
+      - category: "follow-up"
+        description: "Monitor developmental milestones"
+
+enuresis:
+  display_name: "Enuresis"
+  aliases: ["Bedwetting", "Nocturnal enuresis"]
+  icd10: ["F98.0", "R32"]
+  category: chronic
+  system: genitourinary
+
+  age_ranges:
+    min_months: 60       # Not diagnosed before age 5
+    typical_diagnosis_months: 72
+    peak_start_months: 60
+    peak_end_months: 120
+    max_months: 180
+
+  prevalence:
+    age_5_percent: 15
+    age_10_percent: 5
+    notes: "15% spontaneous resolution per year"
+
+  comorbidities:
+    moderate: ["constipation", "adhd", "sleep_apnea"]
+
+  treatment:
+    approach: "behavioral_plus_medication"
+    items:
+      - category: "education"
+        description: "Reassurance; limit fluids before bed; regular voiding"
+      - category: "other"
+        description: "Bedwetting alarm (most effective long-term)"
+      - category: "medication"
+        description: "Desmopressin for short-term control (sleepovers, camp)"
+      - category: "education"
+        description: "Screen for constipation; treat if present"
+
+iron_deficiency_anemia:
+  display_name: "Iron Deficiency Anemia"
+  aliases: ["IDA", "Anemia"]
+  icd10: ["D50.9"]
+  category: chronic
+  system: hematological
+
+  age_ranges:
+    min_months: 6
+    typical_diagnosis_months: 12
+    peak_start_months: 9
+    peak_end_months: 36
+    max_months: 264
+
+  prevalence:
+    toddler_percent: 7
+    notes: "Common in toddlers, adolescent females"
+
+  risk_factors: ["excessive milk intake", "diet low in iron", "premature birth", "lead exposure"]
+
+  treatment:
+    approach: "iron_supplementation"
+    items:
+      - category: "order"
+        description: "CBC, iron studies, consider lead level"
+      - category: "medication"
+        description: "Oral iron supplementation (3-6 mg/kg/day elemental iron)"
+      - category: "education"
+        description: "Dietary counseling; limit milk to 16-24 oz/day"
+      - category: "follow-up"
+        description: "Recheck hemoglobin in 4-6 weeks"
+
+migraine:
+  display_name: "Migraine"
+  aliases: ["Pediatric migraine", "Migraine headache"]
+  icd10: ["G43.909"]
+  category: chronic
+  system: neurological
+
+  age_ranges:
+    min_months: 48
+    typical_diagnosis_months: 96
+    peak_start_months: 72
+    peak_end_months: 180
+    max_months: 264
+
+  prevalence:
+    school_age_percent: 5
+    adolescent_percent: 10
+    notes: "More common in boys pre-puberty, girls post-puberty"
+
+  comorbidities:
+    moderate: ["anxiety", "depression", "motion_sickness"]
+
+  presentation:
+    symptoms: ["unilateral or bilateral headache", "nausea/vomiting", "photophobia", "phonophobia"]
+    pediatric_features: ["shorter duration", "bilateral more common", "GI symptoms prominent"]
+
+  treatment:
+    approach: "acute_plus_preventive"
+    items:
+      - category: "medication"
+        description: "Ibuprofen or acetaminophen at onset"
+      - category: "education"
+        description: "Identify triggers, maintain regular sleep and meals"
+      - category: "medication"
+        description: "Consider preventive if frequent (>4/month)"
+      - category: "referral"
+        description: "Neurology if refractory or atypical features"

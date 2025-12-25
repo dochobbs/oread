@@ -443,11 +443,47 @@ class PedsEngine(BaseEngine):
                 min_onset = min(6, max_onset)  # Don't use 6 if child is younger
                 onset_ages[cond] = random.randint(min_onset, max(min_onset, max_onset))
         elif tier != ComplexityTier.TIER_0:
-            # Select conditions based on tier
-            condition_pool = [
+            # Condition pool with minimum diagnosis ages (in months)
+            # These reflect typical ages when conditions are diagnosed in pediatrics
+            condition_min_ages = {
+                "Eczema": 2,                  # Can present early in infancy
+                "Food allergy": 4,            # Typically after introducing solids
+                "Constipation": 6,            # After dietary changes
+                "GERD": 1,                    # Can present in young infants
+                "Recurrent otitis media": 6,  # Ear infections rare before 6 months
+                "Asthma": 24,                 # Usually diagnosed after age 2
+                "Allergic rhinitis": 24,      # Allergies develop over time
+                "ADHD": 48,                   # Typically diagnosed 4+ years
+                "Anxiety": 48,                # Diagnosed school age+
+                "Obesity": 24,                # BMI tracking meaningful after 2
+            }
+
+            # Full condition pool
+            all_conditions = [
                 "Asthma", "ADHD", "Eczema", "Allergic rhinitis", "Anxiety",
                 "Food allergy", "Obesity", "Constipation", "Recurrent otitis media"
             ]
+
+            # Filter to age-appropriate conditions
+            age_months = demographics.age_months
+            condition_pool = [
+                c for c in all_conditions
+                if condition_min_ages.get(c, 0) <= age_months
+            ]
+
+            # If too young for most conditions, add infant-appropriate ones
+            if len(condition_pool) < 3:
+                infant_conditions = ["Eczema", "GERD", "Food allergy"]
+                condition_pool = [c for c in infant_conditions if condition_min_ages.get(c, 0) <= age_months]
+
+            # If still no valid conditions for this age, return healthy
+            if not condition_pool:
+                return LifeArc(
+                    health_trajectory="healthy",
+                    major_conditions=[],
+                    condition_onset_ages={},
+                    hospitalizations=[],
+                )
 
             num_conditions = {
                 ComplexityTier.TIER_1: 1,
@@ -461,8 +497,10 @@ class PedsEngine(BaseEngine):
             conditions = self._apply_comorbidity_logic(conditions)
 
             for cond in conditions:
+                # Use condition-specific minimum onset age
+                cond_min_age = condition_min_ages.get(cond, 6)
                 max_onset = min(demographics.age_months, 120)
-                min_onset = min(6, max_onset)  # Don't use 6 if child is younger
+                min_onset = min(cond_min_age, max_onset)
                 onset_ages[cond] = random.randint(min_onset, max(min_onset, max_onset))
         
         trajectory = "healthy" if not conditions else "single_chronic" if len(conditions) == 1 else "multiple_chronic"
@@ -509,32 +547,36 @@ class PedsEngine(BaseEngine):
             stubs.append(stub)
         
         # Acute illness visits
+        # Minimum age for routine acute illness visits (newborns handled differently)
+        MIN_ACUTE_ILLNESS_AGE = 2  # months
+
         for (min_age, max_age), frequency in self.ACUTE_ILLNESS_FREQUENCY.items():
             if current_age_months < min_age:
                 continue
-            
+
             # How many months of this age range has the patient lived?
-            start_month = max(0, min_age)
+            # Don't start acute illness visits before MIN_ACUTE_ILLNESS_AGE
+            start_month = max(MIN_ACUTE_ILLNESS_AGE, min_age)
             end_month = min(current_age_months, max_age)
             months_in_range = end_month - start_month
-            
+
             if months_in_range <= 0:
                 continue
-            
+
             # Expected number of acute visits in this range
             expected_visits = (months_in_range / 12) * frequency
             actual_visits = int(expected_visits + random.random())  # Randomize
-            
+
             for _ in range(actual_visits):
                 # Random date in this age range
                 visit_age_months = random.randint(start_month, end_month)
                 visit_date = dob + timedelta(days=visit_age_months * 30 + random.randint(0, 29))
-                
+
                 if visit_date > today:
                     continue
 
-                # Select illness based on season for realism
-                illness = self._get_seasonal_illness(visit_date)
+                # Select illness based on season AND age for realism
+                illness = self._get_seasonal_illness(visit_date, visit_age_months)
                 
                 stub = EncounterStub(
                     date=visit_date,
@@ -990,8 +1032,14 @@ VITAL SIGNS:
 
         return result
 
-    def _get_seasonal_illness(self, visit_date: date) -> str:
-        """Select an illness based on the season of the visit date."""
+    def _get_seasonal_illness(self, visit_date: date, age_months: int = 12) -> str:
+        """Select an illness based on the season and patient age.
+
+        Age-appropriate illness selection:
+        - 2-6 months: Mainly bronchiolitis, viral syndrome, fever (no ear infections)
+        - 6-12 months: Can add ear infections, croup
+        - 12+ months: Full range of pediatric illnesses
+        """
         month = visit_date.month
 
         # Define seasonal illness distributions
@@ -1054,8 +1102,35 @@ VITAL SIGNS:
         else:  # Fall (9, 10, 11)
             illness_pool = fall_illnesses
 
+        # Age-appropriate filtering
+        # Define minimum ages for certain conditions (in months)
+        illness_min_ages = {
+            "Otitis media": 6,           # Ear infections rare before 6 months
+            "Swimmer's ear": 12,         # Swimming lessons start around 1 year
+            "Croup": 6,                  # Peak 6 months - 3 years
+            "Allergic rhinitis flare": 24,  # Allergies typically develop after 2 years
+            "Influenza-like illness": 6,  # Flu less common in young infants
+            "Insect bite reaction": 6,   # More mobile, more outdoor exposure
+        }
+
+        # Filter out age-inappropriate illnesses
+        filtered_pool = [
+            (illness, weight) for illness, weight in illness_pool
+            if illness_min_ages.get(illness, 0) <= age_months
+        ]
+
+        # If all filtered out (very young infant), use basic young infant illnesses
+        if not filtered_pool:
+            filtered_pool = [
+                ("Viral syndrome", 30),
+                ("Upper respiratory infection", 25),
+                ("Bronchiolitis", 25),
+                ("Fever", 15),
+                ("Gastroenteritis", 5),
+            ]
+
         # Weighted random selection
-        illnesses, weights = zip(*illness_pool)
+        illnesses, weights = zip(*filtered_pool)
         return random.choices(illnesses, weights=weights, k=1)[0]
 
     def _generate_acute_illness_plan(self, reason: str) -> list[PlanItem]:

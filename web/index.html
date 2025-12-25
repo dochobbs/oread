@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oread | Synthetic Patient Generator</title>
+    
+    <!-- Fonts: Distinctive choices -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,700;1,9..144,400&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            /* Color palette - warm clinical */
+            --bg-primary: #faf9f7;
+            --bg-secondary: #f0eeeb;
+            --bg-card: #ffffff;
+            --bg-dark: #1a1a1a;
+            
+            --text-primary: #1a1a1a;
+            --text-secondary: #5c5c5c;
+            --text-tertiary: #8a8a8a;
+            --text-inverse: #faf9f7;
+            
+            --accent-primary: #2d5a4a;
+            --accent-secondary: #4a7c6a;
+            --accent-tertiary: #7aa394;
+            --accent-light: #e8f0ed;
+            
+            --warning: #c67030;
+            --success: #2d6a4f;
+            --error: #9b2c2c;
+            
+            --border: #e5e3df;
+            --border-light: #f0eeeb;
+            
+            /* Typography */
+            --font-display: 'Fraunces', Georgia, serif;
+            --font-body: 'DM Sans', -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+            
+            /* Spacing */
+            --space-xs: 0.25rem;
+            --space-sm: 0.5rem;
+            --space-md: 1rem;
+            --space-lg: 1.5rem;
+            --space-xl: 2rem;
+            --space-2xl: 3rem;
+            --space-3xl: 4rem;
+            
+            /* Borders */
+            --radius-sm: 4px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+            --radius-xl: 16px;
+            
+            /* Shadows */
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+            --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+            --shadow-xl: 0 16px 48px rgba(0,0,0,0.16);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: var(--font-body);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        
+        /* ============================================
+           HEADER
+           ============================================ */
+        header {
+            background: var(--bg-dark);
+            color: var(--text-inverse);
+            padding: var(--space-lg) var(--space-xl);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: var(--space-md);
+        }
+        
+        .logo-mark {
+            width: 40px;
+            height: 40px;
+            background: var(--accent-primary);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 1.25rem;
+            color: white;
+        }
+        
+        .logo-text {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+        }
+        
+        .logo-text span {
+            color: var(--accent-tertiary);
+        }
+        
+        nav {
+            display: flex;
+            gap: var(--space-lg);
+        }
+        
+        nav a {
+            color: var(--text-inverse);
+            text-decoration: none;
+            font-size: 0.9rem;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+        
+        nav a:hover {
+            opacity: 1;
+        }
+        
+        /* ============================================
+           HERO SECTION
+           ============================================ */
+        .hero {
+            padding: var(--space-3xl) var(--space-xl);
+            text-align: center;
+            background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .hero h1 {
+            font-family: var(--font-display);
+            font-size: clamp(2.5rem, 5vw, 4rem);
+            font-weight: 300;
+            letter-spacing: -0.03em;
+            margin-bottom: var(--space-md);
+            line-height: 1.1;
+        }
+        
+        .hero h1 em {
+            font-style: italic;
+            color: var(--accent-primary);
+        }
+        
+        .hero p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            max-width: 600px;
+            margin: 0 auto var(--space-xl);
+        }
+        
+        /* ============================================
+           MAIN LAYOUT
+           ============================================ */
+        .main-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: var(--space-xl);
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: var(--space-xl);
+        }
+        
+        @media (max-width: 1024px) {
+            .main-container {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* ============================================
+           CARDS
+           ============================================ */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
+        
+        .card-header {
+            padding: var(--space-lg);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .card-title {
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            font-weight: 500;
+        }
+        
+        .card-body {
+            padding: var(--space-lg);
+        }
+        
+        /* ============================================
+           GENERATOR PANEL
+           ============================================ */
+        .generator-panel {
+            position: sticky;
+            top: calc(72px + var(--space-xl));
+        }
+        
+        .quick-generate {
+            background: var(--accent-primary);
+            color: white;
+            border: none;
+            width: 100%;
+            padding: var(--space-lg);
+            font-size: 1.1rem;
+            font-weight: 500;
+            border-radius: var(--radius-lg);
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-sm);
+            margin-bottom: var(--space-lg);
+        }
+        
+        .quick-generate:hover {
+            background: var(--accent-secondary);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .quick-generate:active {
+            transform: translateY(0);
+        }
+        
+        .quick-generate.loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        
+        .form-group {
+            margin-bottom: var(--space-lg);
+        }
+        
+        .form-label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: var(--space-sm);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .form-input,
+        .form-select {
+            width: 100%;
+            padding: var(--space-md);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            font-size: 1rem;
+            font-family: var(--font-body);
+            background: var(--bg-primary);
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        
+        .form-input:focus,
+        .form-select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px var(--accent-light);
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-md);
+        }
+        
+        .chip-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--space-sm);
+        }
+        
+        .chip {
+            padding: var(--space-sm) var(--space-md);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .chip:hover {
+            background: var(--accent-light);
+            border-color: var(--accent-tertiary);
+        }
+        
+        .chip.active {
+            background: var(--accent-primary);
+            color: white;
+            border-color: var(--accent-primary);
+        }
+        
+        /* ============================================
+           PATIENTS LIST
+           ============================================ */
+        .patients-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-md);
+        }
+        
+        .patient-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: var(--space-lg);
+            cursor: pointer;
+            transition: all 0.2s;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: var(--space-md);
+            align-items: start;
+        }
+        
+        .patient-card:hover {
+            border-color: var(--accent-tertiary);
+            box-shadow: var(--shadow-md);
+            transform: translateY(-2px);
+        }
+        
+        .patient-card.selected {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px var(--accent-light);
+        }
+        
+        .patient-name {
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            font-weight: 500;
+            margin-bottom: var(--space-xs);
+        }
+        
+        .patient-meta {
+            display: flex;
+            gap: var(--space-md);
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        
+        .patient-conditions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--space-xs);
+            margin-top: var(--space-sm);
+        }
+        
+        .condition-tag {
+            padding: 2px 8px;
+            background: var(--accent-light);
+            color: var(--accent-primary);
+            border-radius: var(--radius-sm);
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .tier-badge {
+            padding: var(--space-xs) var(--space-sm);
+            border-radius: var(--radius-sm);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .tier-badge.tier-0 { background: #e8f5e9; color: #2e7d32; }
+        .tier-badge.tier-1 { background: #fff3e0; color: #ef6c00; }
+        .tier-badge.tier-2 { background: #fff8e1; color: #f57f17; }
+        .tier-badge.tier-3 { background: #ffebee; color: #c62828; }
+        
+        /* ============================================
+           PATIENT DETAIL VIEW
+           ============================================ */
+        .patient-detail {
+            display: none;
+        }
+        
+        .patient-detail.active {
+            display: block;
+        }
+        
+        .detail-header {
+            padding: var(--space-xl);
+            background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+            color: white;
+        }
+        
+        .detail-header h2 {
+            font-family: var(--font-display);
+            font-size: 2rem;
+            font-weight: 500;
+            margin-bottom: var(--space-sm);
+        }
+        
+        .detail-demographics {
+            display: flex;
+            gap: var(--space-xl);
+            font-size: 0.95rem;
+            opacity: 0.9;
+        }
+        
+        .detail-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-card);
+        }
+        
+        .detail-tab {
+            padding: var(--space-md) var(--space-lg);
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            border: none;
+            background: none;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        
+        .detail-tab:hover {
+            color: var(--text-primary);
+        }
+        
+        .detail-tab.active {
+            color: var(--accent-primary);
+            border-bottom-color: var(--accent-primary);
+        }
+        
+        .detail-content {
+            padding: var(--space-xl);
+        }
+        
+        .section-title {
+            font-family: var(--font-display);
+            font-size: 1.1rem;
+            font-weight: 500;
+            margin-bottom: var(--space-md);
+            padding-bottom: var(--space-sm);
+            border-bottom: 1px solid var(--border-light);
+        }
+        
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: var(--space-lg);
+            margin-bottom: var(--space-xl);
+        }
+        
+        .data-item {
+            padding: var(--space-md);
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+        }
+        
+        .data-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-tertiary);
+            margin-bottom: var(--space-xs);
+        }
+        
+        .data-value {
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+        
+        /* ============================================
+           ENCOUNTERS LIST
+           ============================================ */
+        .encounters-timeline {
+            position: relative;
+            padding-left: var(--space-xl);
+        }
+        
+        .encounters-timeline::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--border);
+        }
+        
+        .encounter-item {
+            position: relative;
+            padding: var(--space-lg);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            margin-bottom: var(--space-md);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .encounter-item::before {
+            content: '';
+            position: absolute;
+            left: calc(-1 * var(--space-xl) - 4px);
+            top: var(--space-lg);
+            width: 10px;
+            height: 10px;
+            background: var(--accent-primary);
+            border-radius: 50%;
+            border: 2px solid var(--bg-primary);
+        }
+        
+        .encounter-item:hover {
+            border-color: var(--accent-tertiary);
+            box-shadow: var(--shadow-sm);
+        }
+        
+        .encounter-date {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--text-tertiary);
+            margin-bottom: var(--space-xs);
+        }
+        
+        .encounter-type {
+            font-weight: 600;
+            color: var(--accent-primary);
+            margin-bottom: var(--space-xs);
+        }
+        
+        .encounter-complaint {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+        
+        /* ============================================
+           EXPORT BUTTONS
+           ============================================ */
+        .export-buttons {
+            display: flex;
+            gap: var(--space-sm);
+            margin-top: var(--space-lg);
+        }
+        
+        .btn {
+            padding: var(--space-sm) var(--space-md);
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-sm);
+            text-decoration: none;
+        }
+        
+        .btn-primary {
+            background: var(--accent-primary);
+            color: white;
+            border: none;
+        }
+        
+        .btn-primary:hover {
+            background: var(--accent-secondary);
+        }
+        
+        .btn-secondary {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+        
+        .btn-secondary:hover {
+            background: var(--bg-secondary);
+        }
+        
+        /* ============================================
+           MARKDOWN PREVIEW
+           ============================================ */
+        .markdown-preview {
+            font-family: var(--font-body);
+            line-height: 1.7;
+        }
+        
+        .markdown-preview h1,
+        .markdown-preview h2,
+        .markdown-preview h3 {
+            font-family: var(--font-display);
+            font-weight: 500;
+            margin-top: var(--space-xl);
+            margin-bottom: var(--space-md);
+        }
+        
+        .markdown-preview h1 { font-size: 1.75rem; }
+        .markdown-preview h2 { font-size: 1.4rem; }
+        .markdown-preview h3 { font-size: 1.15rem; }
+        
+        .markdown-preview ul {
+            padding-left: var(--space-lg);
+        }
+        
+        .markdown-preview li {
+            margin-bottom: var(--space-sm);
+        }
+        
+        .markdown-preview table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: var(--space-lg) 0;
+            font-size: 0.9rem;
+        }
+        
+        .markdown-preview th,
+        .markdown-preview td {
+            padding: var(--space-sm) var(--space-md);
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+        
+        .markdown-preview th {
+            background: var(--bg-secondary);
+            font-weight: 600;
+        }
+        
+        .markdown-preview code {
+            font-family: var(--font-mono);
+            font-size: 0.85em;
+            background: var(--bg-secondary);
+            padding: 2px 6px;
+            border-radius: var(--radius-sm);
+        }
+        
+        .markdown-preview pre {
+            background: var(--bg-dark);
+            color: var(--text-inverse);
+            padding: var(--space-lg);
+            border-radius: var(--radius-md);
+            overflow-x: auto;
+            font-size: 0.85rem;
+        }
+        
+        .markdown-preview pre code {
+            background: none;
+            padding: 0;
+        }
+        
+        /* ============================================
+           EMPTY STATE
+           ============================================ */
+        .empty-state {
+            text-align: center;
+            padding: var(--space-3xl);
+            color: var(--text-tertiary);
+        }
+        
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: var(--space-lg);
+            opacity: 0.3;
+        }
+        
+        .empty-state h3 {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            color: var(--text-secondary);
+            margin-bottom: var(--space-sm);
+        }
+        
+        /* ============================================
+           ANIMATIONS
+           ============================================ */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        .animate-pulse {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        /* ============================================
+           RESPONSIVE
+           ============================================ */
+        @media (max-width: 768px) {
+            .main-container {
+                padding: var(--space-md);
+            }
+            
+            .hero {
+                padding: var(--space-xl) var(--space-md);
+            }
+            
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .patient-card {
+                grid-template-columns: 1fr;
+            }
+            
+            .detail-demographics {
+                flex-direction: column;
+                gap: var(--space-sm);
+            }
+        }
+        
+        /* ============================================
+           SCROLLBAR
+           ============================================ */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-tertiary);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-mark">O</div>
+                <div class="logo-text">Oread</div>
+            </div>
+            <nav>
+                <a href="#" id="nav-generate">Generate</a>
+                <a href="/docs" target="_blank">API Docs</a>
+            </nav>
+        </div>
+    </header>
+    
+    <section class="hero">
+        <h1>Generate <em>clinically coherent</em><br>synthetic patients</h1>
+        <p>Create realistic, longitudinal patient records for AI evaluation, EMR demos, and medical education.</p>
+    </section>
+    
+    <div class="main-container">
+        <!-- Main content area -->
+        <main>
+            <!-- Patient list view -->
+            <div id="patients-view">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Generated Patients</h2>
+                        <span id="patient-count" style="color: var(--text-tertiary);">0 patients</span>
+                    </div>
+                    <div class="card-body">
+                        <div id="patients-list" class="patients-list">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">👤</div>
+                                <h3>No patients yet</h3>
+                                <p>Click "Quick Generate" to create your first synthetic patient.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Patient detail view -->
+            <div id="patient-detail" class="patient-detail card">
+                <div class="detail-header">
+                    <button id="back-btn" class="btn btn-secondary" style="margin-bottom: var(--space-md); background: rgba(255,255,255,0.1); border: none; color: white;">
+                        ← Back to list
+                    </button>
+                    <h2 id="detail-name">Patient Name</h2>
+                    <div class="detail-demographics">
+                        <span id="detail-age">Age</span>
+                        <span id="detail-sex">Sex</span>
+                        <span id="detail-dob">DOB</span>
+                        <span id="detail-tier" class="tier-badge tier-0">Tier</span>
+                    </div>
+                </div>
+                
+                <div class="detail-tabs">
+                    <button class="detail-tab active" data-tab="overview">Overview</button>
+                    <button class="detail-tab" data-tab="encounters">Encounters</button>
+                    <button class="detail-tab" data-tab="record">Full Record</button>
+                </div>
+                
+                <div class="detail-content">
+                    <!-- Overview tab -->
+                    <div id="tab-overview" class="tab-content">
+                        <h3 class="section-title">Summary</h3>
+                        <div class="data-grid" id="overview-grid">
+                            <!-- Populated dynamically -->
+                        </div>
+                        
+                        <h3 class="section-title">Active Conditions</h3>
+                        <div id="conditions-list" class="patient-conditions">
+                            <!-- Populated dynamically -->
+                        </div>
+                        
+                        <div class="export-buttons">
+                            <button class="btn btn-primary" id="export-json">
+                                <span>📄</span> JSON
+                            </button>
+                            <button class="btn btn-secondary" id="export-fhir">
+                                <span>🏥</span> FHIR
+                            </button>
+                            <button class="btn btn-secondary" id="export-ccda">
+                                <span>📋</span> C-CDA
+                            </button>
+                            <button class="btn btn-secondary" id="export-markdown">
+                                <span>📝</span> Markdown
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Encounters tab -->
+                    <div id="tab-encounters" class="tab-content" style="display: none;">
+                        <h3 class="section-title">Encounter Timeline</h3>
+                        <div id="encounters-timeline" class="encounters-timeline">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                    
+                    <!-- Full record tab -->
+                    <div id="tab-record" class="tab-content" style="display: none;">
+                        <h3 class="section-title">Complete Medical Record</h3>
+                        <div id="markdown-content" class="markdown-preview">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <!-- Generator sidebar -->
+        <aside class="generator-panel">
+            <button id="quick-generate" class="quick-generate">
+                <span>⚡</span> Quick Generate
+            </button>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Configure</h3>
+                </div>
+                <div class="card-body">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Age</label>
+                            <input type="number" class="form-input" id="input-age" placeholder="Random" min="0" max="21">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Sex</label>
+                            <select class="form-select" id="input-sex">
+                                <option value="">Random</option>
+                                <option value="male">Male</option>
+                                <option value="female">Female</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Complexity</label>
+                        <div class="chip-group" id="complexity-chips">
+                            <span class="chip" data-value="" title="Random complexity">Random</span>
+                            <span class="chip" data-value="tier-0" title="Well visits only, no chronic conditions">Healthy</span>
+                            <span class="chip" data-value="tier-1" title="Single chronic condition (e.g., asthma, ADHD)">1 Condition</span>
+                            <span class="chip" data-value="tier-2" title="Multiple conditions (2-3 diagnoses)">2-3 Conditions</span>
+                            <span class="chip" data-value="tier-3" title="Complex/fragile patient with 4+ conditions">Complex</span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Conditions (optional)</label>
+                        <input type="text" class="form-input" id="input-conditions" placeholder="asthma, adhd, ...">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Describe your patient (optional)</label>
+                        <textarea class="form-input" id="input-description" rows="3" placeholder="Describe in plain language, e.g.: A 5yo girl with poorly controlled asthma and eczema, frequent ER visits..."></textarea>
+                    </div>
+                    
+                    <button id="generate-btn" class="btn btn-primary" style="width: 100%; justify-content: center;">
+                        Generate Patient
+                    </button>
+                </div>
+            </div>
+        </aside>
+    </div>
+    
+    <script>
+        // State
+        let patients = [];
+        let selectedPatientId = null;
+        let selectedComplexity = '';
+        
+        // DOM elements
+        const quickGenerateBtn = document.getElementById('quick-generate');
+        const generateBtn = document.getElementById('generate-btn');
+        const patientsList = document.getElementById('patients-list');
+        const patientsView = document.getElementById('patients-view');
+        const patientDetail = document.getElementById('patient-detail');
+        const patientCount = document.getElementById('patient-count');
+        const backBtn = document.getElementById('back-btn');
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadPatients();
+            setupEventListeners();
+        });
+        
+        function setupEventListeners() {
+            // Quick generate
+            quickGenerateBtn.addEventListener('click', quickGenerate);
+            
+            // Configured generate
+            generateBtn.addEventListener('click', generateConfigured);
+            
+            // Back button
+            backBtn.addEventListener('click', () => {
+                patientDetail.classList.remove('active');
+                patientsView.style.display = 'block';
+            });
+            
+            // Complexity chips
+            document.querySelectorAll('#complexity-chips .chip').forEach(chip => {
+                chip.addEventListener('click', () => {
+                    document.querySelectorAll('#complexity-chips .chip').forEach(c => c.classList.remove('active'));
+                    chip.classList.add('active');
+                    selectedComplexity = chip.dataset.value;
+                });
+            });
+            
+            // Tabs
+            document.querySelectorAll('.detail-tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+                    tab.classList.add('active');
+                    document.getElementById(`tab-${tab.dataset.tab}`).style.display = 'block';
+                });
+            });
+            
+            // Export buttons
+            document.getElementById('export-json').addEventListener('click', () => exportPatient('json'));
+            document.getElementById('export-fhir').addEventListener('click', () => exportPatient('fhir'));
+            document.getElementById('export-ccda').addEventListener('click', () => exportPatient('ccda'));
+            document.getElementById('export-markdown').addEventListener('click', () => exportPatient('markdown'));
+        }
+        
+        async function loadPatients() {
+            try {
+                const response = await fetch('/api/patients?limit=50');
+                const data = await response.json();
+                patients = data.patients;
+                renderPatientsList();
+            } catch (error) {
+                console.error('Failed to load patients:', error);
+            }
+        }
+        
+        async function quickGenerate() {
+            quickGenerateBtn.classList.add('loading');
+            quickGenerateBtn.innerHTML = '<span class="animate-pulse">⏳</span> Generating...';
+            
+            try {
+                const response = await fetch('/api/generate/quick', { method: 'POST' });
+                const patient = await response.json();
+                patients.unshift(patient);
+                renderPatientsList();
+                showPatientDetail(patient.id);
+            } catch (error) {
+                console.error('Generation failed:', error);
+                alert('Failed to generate patient. Please try again.');
+            } finally {
+                quickGenerateBtn.classList.remove('loading');
+                quickGenerateBtn.innerHTML = '<span>⚡</span> Quick Generate';
+            }
+        }
+        
+        async function generateConfigured() {
+            const age = document.getElementById('input-age').value;
+            const sex = document.getElementById('input-sex').value;
+            const conditions = document.getElementById('input-conditions').value;
+            const description = document.getElementById('input-description').value;
+            
+            const requestBody = {};
+            if (age) requestBody.age = parseInt(age);
+            if (sex) requestBody.sex = sex;
+            if (selectedComplexity) requestBody.complexity_tier = selectedComplexity;
+            if (conditions) requestBody.conditions = conditions.split(',').map(c => c.trim());
+            if (description) requestBody.description = description;
+            
+            generateBtn.disabled = true;
+            generateBtn.innerHTML = '<span class="animate-pulse">⏳</span> Generating...';
+            
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+                const patient = await response.json();
+                patients.unshift(patient);
+                renderPatientsList();
+                showPatientDetail(patient.id);
+            } catch (error) {
+                console.error('Generation failed:', error);
+                alert('Failed to generate patient. Please try again.');
+            } finally {
+                generateBtn.disabled = false;
+                generateBtn.innerHTML = 'Generate Patient';
+            }
+        }
+        
+        function renderPatientsList() {
+            patientCount.textContent = `${patients.length} patient${patients.length !== 1 ? 's' : ''}`;
+            
+            if (patients.length === 0) {
+                patientsList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">👤</div>
+                        <h3>No patients yet</h3>
+                        <p>Click "Quick Generate" to create your first synthetic patient.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            patientsList.innerHTML = patients.map(patient => `
+                <div class="patient-card animate-fade-in" onclick="showPatientDetail('${patient.id}')">
+                    <div>
+                        <div class="patient-name">${patient.name}</div>
+                        <div class="patient-meta">
+                            <span>${patient.age_years} years old</span>
+                            <span>${capitalize(patient.sex)}</span>
+                            <span>${patient.encounter_count} encounters</span>
+                        </div>
+                        ${patient.active_conditions.length > 0 ? `
+                            <div class="patient-conditions">
+                                ${patient.active_conditions.slice(0, 3).map(c => `<span class="condition-tag">${c}</span>`).join('')}
+                                ${patient.active_conditions.length > 3 ? `<span class="condition-tag">+${patient.active_conditions.length - 3}</span>` : ''}
+                            </div>
+                        ` : ''}
+                    </div>
+                    <span class="tier-badge ${patient.complexity_tier.replace('-', '-')}">${formatTier(patient.complexity_tier)}</span>
+                </div>
+            `).join('');
+        }
+        
+        async function showPatientDetail(patientId) {
+            selectedPatientId = patientId;
+            
+            try {
+                const response = await fetch(`/api/patients/${patientId}`);
+                const patient = await response.json();
+                
+                // Update header
+                document.getElementById('detail-name').textContent = patient.demographics.full_name;
+                document.getElementById('detail-age').textContent = `${patient.demographics.age_years} years old`;
+                document.getElementById('detail-sex').textContent = capitalize(patient.demographics.sex_at_birth);
+                document.getElementById('detail-dob').textContent = `DOB: ${patient.demographics.date_of_birth}`;
+                
+                const tierBadge = document.getElementById('detail-tier');
+                tierBadge.textContent = formatTier(patient.complexity_tier);
+                tierBadge.className = `tier-badge ${patient.complexity_tier}`;
+                
+                // Update overview
+                const overviewGrid = document.getElementById('overview-grid');
+                overviewGrid.innerHTML = `
+                    <div class="data-item">
+                        <div class="data-label">Encounters</div>
+                        <div class="data-value">${patient.encounters.length}</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">Active Conditions</div>
+                        <div class="data-value">${patient.problem_list.filter(c => c.clinical_status === 'active').length}</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">Active Medications</div>
+                        <div class="data-value">${patient.medication_list.filter(m => m.status === 'active').length}</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">Immunizations</div>
+                        <div class="data-value">${patient.immunization_record.length}</div>
+                    </div>
+                `;
+                
+                // Update conditions
+                const conditionsList = document.getElementById('conditions-list');
+                const activeConditions = patient.problem_list.filter(c => c.clinical_status === 'active');
+                if (activeConditions.length > 0) {
+                    conditionsList.innerHTML = activeConditions.map(c => 
+                        `<span class="condition-tag">${c.display_name}</span>`
+                    ).join('');
+                } else {
+                    conditionsList.innerHTML = '<span style="color: var(--text-tertiary)">No active conditions</span>';
+                }
+                
+                // Update encounters
+                const encountersTimeline = document.getElementById('encounters-timeline');
+                const sortedEncounters = patient.encounters.sort((a, b) => new Date(b.date) - new Date(a.date));
+                encountersTimeline.innerHTML = sortedEncounters.map(enc => `
+                    <div class="encounter-item">
+                        <div class="encounter-date">${formatDate(enc.date)}</div>
+                        <div class="encounter-type">${formatEncounterType(enc.type)}</div>
+                        <div class="encounter-complaint">${enc.chief_complaint}</div>
+                    </div>
+                `).join('');
+                
+                // Load markdown for full record
+                const mdResponse = await fetch(`/api/patients/${patientId}?format=markdown`);
+                const mdData = await mdResponse.json();
+                document.getElementById('markdown-content').innerHTML = renderMarkdown(mdData.markdown);
+                
+                // Show detail view
+                patientsView.style.display = 'none';
+                patientDetail.classList.add('active');
+                
+                // Reset to overview tab
+                document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+                document.querySelector('.detail-tab[data-tab="overview"]').classList.add('active');
+                document.getElementById('tab-overview').style.display = 'block';
+                
+            } catch (error) {
+                console.error('Failed to load patient:', error);
+            }
+        }
+        
+        async function exportPatient(format) {
+            if (!selectedPatientId) return;
+            window.open(`/api/patients/${selectedPatientId}/export/${format}`, '_blank');
+        }
+        
+        // Utility functions
+        function capitalize(str) {
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+        
+        function formatTier(tier) {
+            const map = {
+                'tier-0': 'Healthy',
+                'tier-1': 'Tier 1',
+                'tier-2': 'Tier 2',
+                'tier-3': 'Complex'
+            };
+            return map[tier] || tier;
+        }
+        
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+            });
+        }
+        
+        function formatEncounterType(type) {
+            return type.split('-').map(capitalize).join(' ');
+        }
+        
+        function renderMarkdown(md) {
+            // Simple markdown rendering
+            return md
+                .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+                .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+                .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+                .replace(/^\*\*(.*?)\*\*/gm, '<strong>$1</strong>')
+                .replace(/^\*(.*?)\*/gm, '<em>$1</em>')
+                .replace(/^- (.*$)/gm, '<li>$1</li>')
+                .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+                .replace(/\|(.+)\|/g, (match) => {
+                    const cells = match.split('|').filter(c => c.trim());
+                    return '<tr>' + cells.map(c => `<td>${c.trim()}</td>`).join('') + '</tr>';
+                });
+        }
+    </script>
+</body>
+</html>

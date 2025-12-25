@@ -1,0 +1,113 @@
+# Condition Definition Schema
+# All condition files should follow this structure
+
+schema_version: "1.0"
+
+# Required fields
+required_fields:
+  - name               # Display name
+  - icd10_code         # Primary ICD-10 code
+  - snomed_code        # SNOMED CT code
+  - category           # Clinical category
+  - age_of_onset       # Onset age patterns
+  - prevalence         # Population prevalence
+  - presentation       # How the condition presents
+  - diagnosis          # Diagnostic criteria
+  - treatment          # Treatment approaches
+  - monitoring         # Follow-up requirements
+
+# Optional fields
+optional_fields:
+  - synonyms           # Alternative names
+  - severity_levels    # If applicable
+  - complications      # Potential complications
+  - comorbidities      # Associated conditions
+  - differential       # Differential diagnoses
+  - red_flags          # Warning signs
+  - prognosis          # Expected outcomes
+  - subspecialty       # Relevant specialists
+  - lab_findings       # Expected lab abnormalities
+  - imaging_findings   # Expected imaging findings
+  - physical_exam      # Expected exam findings
+
+# Field type definitions
+field_definitions:
+  age_of_onset:
+    type: object
+    properties:
+      typical_range:
+        description: "Typical age range (e.g., '6 months - 5 years')"
+      peak_age:
+        description: "Peak age of onset (e.g., '3 years')"
+      can_occur:
+        description: "Full range where condition can occur"
+      peds_specific:
+        description: "Is this primarily a pediatric condition?"
+      adult_specific:
+        description: "Is this primarily an adult condition?"
+        
+  prevalence:
+    type: object
+    properties:
+      general:
+        description: "General population prevalence"
+      pediatric:
+        description: "Pediatric-specific prevalence if different"
+      adult:
+        description: "Adult-specific prevalence if different"
+      trend:
+        description: "Is prevalence increasing, stable, or decreasing?"
+        
+  presentation:
+    type: object
+    properties:
+      typical_symptoms:
+        description: "List of typical presenting symptoms"
+      history_features:
+        description: "Key history elements"
+      triggers:
+        description: "Common triggers if applicable"
+      acute_vs_chronic:
+        description: "Presentation pattern"
+        
+  diagnosis:
+    type: object
+    properties:
+      criteria:
+        description: "Diagnostic criteria"
+      workup:
+        description: "Recommended diagnostic workup"
+      labs:
+        description: "Relevant laboratory tests"
+      imaging:
+        description: "Relevant imaging studies"
+      other_tests:
+        description: "Other diagnostic tests"
+        
+  treatment:
+    type: object
+    properties:
+      first_line:
+        description: "First-line treatments"
+      second_line:
+        description: "Second-line treatments"
+      adjunctive:
+        description: "Adjunctive therapies"
+      medications:
+        description: "Specific medications with dosing"
+      non_pharmacologic:
+        description: "Non-medication interventions"
+      referral_criteria:
+        description: "When to refer to specialist"
+        
+  monitoring:
+    type: object
+    properties:
+      follow_up_frequency:
+        description: "Recommended follow-up interval"
+      parameters:
+        description: "What to monitor"
+      labs:
+        description: "Monitoring labs and frequency"
+      red_flags:
+        description: "Signs requiring urgent evaluation"

@@ -1,0 +1,386 @@
+# Asthma - Pediatric
+# Comprehensive condition definition for synthetic patient generation
+
+name: "Asthma"
+synonyms: ["Reactive airway disease", "RAD", "Bronchial asthma"]
+
+icd10_code: "J45.20"  # Mild intermittent (modify based on severity)
+icd10_variants:
+  mild_intermittent: "J45.20"
+  mild_persistent: "J45.30"
+  moderate_persistent: "J45.40"
+  severe_persistent: "J45.50"
+  with_acute_exacerbation: "J45.901"
+  
+snomed_code: "195967001"  # Asthma
+
+category: "respiratory"
+subcategory: "chronic"
+
+age_of_onset:
+  typical_range: "1-5 years"
+  peak_age: "3 years"
+  can_occur: "Any age"
+  peds_specific: false
+  notes: "Many children 'outgrow' asthma; some persist into adulthood"
+  
+prevalence:
+  general: "8%"
+  pediatric: "8-10%"
+  notes: "Most common chronic disease of childhood"
+  demographics:
+    higher_risk:
+      - "Male (prepubertal)"
+      - "African American"
+      - "Urban environments"
+      - "Low socioeconomic status"
+      - "Family history of atopy"
+      
+comorbidities:
+  common:
+    - condition: "Allergic rhinitis"
+      frequency: "80%"
+    - condition: "Atopic dermatitis/Eczema"
+      frequency: "30%"
+    - condition: "Food allergies"
+      frequency: "20%"
+    - condition: "GERD"
+      frequency: "25%"
+    - condition: "Obesity"
+      frequency: "25%"
+    - condition: "Anxiety"
+      frequency: "15%"
+  atopic_triad: true
+
+family_history:
+  relevant_conditions:
+    - "Asthma"
+    - "Allergic rhinitis"
+    - "Eczema"
+    - "Food allergies"
+  inheritance_pattern: "Complex/multifactorial"
+
+presentation:
+  typical_symptoms:
+    - symptom: "Cough"
+      characteristics: ["Worse at night", "With exercise", "Dry or productive"]
+    - symptom: "Wheezing"
+      characteristics: ["Expiratory", "High-pitched"]
+    - symptom: "Shortness of breath"
+      characteristics: ["Episodic", "With triggers"]
+    - symptom: "Chest tightness"
+      characteristics: ["During episodes"]
+      
+  history_features:
+    - "Pattern: intermittent vs persistent symptoms"
+    - "Nighttime awakenings frequency"
+    - "Exercise limitation"
+    - "Rescue inhaler use frequency"
+    - "Previous ED visits or hospitalizations"
+    - "Seasonal pattern"
+    - "Trigger identification"
+    
+  triggers:
+    - "Viral upper respiratory infections"
+    - "Exercise"
+    - "Cold air"
+    - "Allergens (dust mites, pets, pollen, mold)"
+    - "Tobacco smoke exposure"
+    - "Strong odors/irritants"
+    - "Emotional stress"
+    - "Weather changes"
+    
+  acute_vs_chronic: "Chronic with acute exacerbations"
+  
+severity_levels:
+  - name: "Intermittent"
+    criteria:
+      - "Symptoms ≤2 days/week"
+      - "Nighttime awakenings ≤2x/month"
+      - "SABA use ≤2 days/week"
+      - "No interference with normal activity"
+      - "FEV1 >80% predicted, FEV1/FVC normal"
+    step: 1
+    
+  - name: "Mild Persistent"
+    criteria:
+      - "Symptoms >2 days/week but not daily"
+      - "Nighttime awakenings 3-4x/month"
+      - "SABA use >2 days/week but not daily"
+      - "Minor limitation of normal activity"
+      - "FEV1 ≥80% predicted, FEV1/FVC normal"
+    step: 2
+    
+  - name: "Moderate Persistent"
+    criteria:
+      - "Daily symptoms"
+      - "Nighttime awakenings >1x/week but not nightly"
+      - "Daily SABA use"
+      - "Some limitation of normal activity"
+      - "FEV1 60-80% predicted, FEV1/FVC reduced 5%"
+    step: 3
+    
+  - name: "Severe Persistent"
+    criteria:
+      - "Symptoms throughout the day"
+      - "Nighttime awakenings often 7x/week"
+      - "SABA use several times per day"
+      - "Extremely limited normal activity"
+      - "FEV1 <60% predicted, FEV1/FVC reduced >5%"
+    step: 4-5
+
+diagnosis:
+  criteria:
+    - "History of variable respiratory symptoms"
+    - "Evidence of variable expiratory airflow limitation"
+    - "Symptoms/signs consistent with asthma"
+    - "Exclusion of alternative diagnoses"
+    
+  workup:
+    initial:
+      - "Detailed history and physical"
+      - "Spirometry if ≥5 years"
+      - "Trial of bronchodilator"
+    consider:
+      - "Peak flow monitoring"
+      - "Allergy testing"
+      - "Chest X-ray (if atypical features)"
+      
+  labs:
+    routine: null
+    consider:
+      - name: "IgE level"
+        indication: "Allergic component evaluation"
+      - name: "CBC with differential"
+        indication: "Eosinophilia may support diagnosis"
+      - name: "Allergy skin testing or specific IgE"
+        indication: "Identify allergic triggers"
+        
+  spirometry:
+    when: "Age ≥5 years typically"
+    findings:
+      obstruction: "FEV1/FVC ratio below lower limit of normal"
+      reversibility: "FEV1 increase ≥12% post-bronchodilator"
+      
+  differential:
+    - condition: "Viral bronchiolitis"
+      distinguishing: "Age <2, acute viral illness, first episode"
+    - condition: "Foreign body aspiration"
+      distinguishing: "Sudden onset, unilateral wheezing"
+    - condition: "Vocal cord dysfunction"
+      distinguishing: "Inspiratory stridor, anxiety association"
+    - condition: "Cystic fibrosis"
+      distinguishing: "Failure to thrive, chronic infections, family history"
+    - condition: "GERD"
+      distinguishing: "May coexist, consider if refractory"
+
+treatment:
+  goals:
+    - "Control symptoms (daytime and nighttime)"
+    - "Maintain normal activity levels"
+    - "Maintain normal or near-normal lung function"
+    - "Prevent exacerbations"
+    - "Minimize medication side effects"
+    
+  non_pharmacologic:
+    - intervention: "Trigger avoidance"
+      details: "Identify and minimize exposure to triggers"
+    - intervention: "Tobacco smoke avoidance"
+      details: "No smoking in home or car"
+    - intervention: "Allergen reduction"
+      details: "Dust mite covers, remove carpets, control humidity"
+    - intervention: "Asthma action plan"
+      details: "Written plan for daily management and exacerbations"
+    - intervention: "Spacer use"
+      details: "Use with all MDIs"
+    - intervention: "Inhaler technique education"
+      details: "Demonstrate and reassess at each visit"
+      
+  medications:
+    rescue:
+      - name: "Albuterol"
+        class: "SABA"
+        dose_peds: "2 puffs q4-6h PRN"
+        formulations: ["MDI with spacer", "Nebulizer 2.5mg"]
+        notes: "First-line rescue medication"
+        
+    controllers:
+      step_2:
+        preferred:
+          - name: "Fluticasone propionate"
+            class: "ICS"
+            dose_peds_low: "88 mcg BID (44mcg/puff x 2)"
+            dose_peds_medium: "110-220 mcg BID"
+          - name: "Budesonide"
+            class: "ICS"
+            dose_peds_low: "0.25-0.5mg nebulized daily"
+        alternative:
+          - name: "Montelukast"
+            class: "LTRA"
+            dose_peds: "4mg (2-5yo), 5mg (6-14yo) daily"
+            notes: "Black box warning for neuropsychiatric events"
+            
+      step_3:
+        preferred:
+          - name: "Medium-dose ICS"
+          - name: "Low-dose ICS + LABA (≥5yo)"
+            examples: ["Fluticasone/salmeterol", "Budesonide/formoterol"]
+        alternative:
+          - name: "Low-dose ICS + LTRA"
+          
+      step_4:
+        preferred:
+          - name: "Medium-dose ICS + LABA"
+        alternative:
+          - name: "Medium-dose ICS + LTRA"
+          
+      step_5:
+        options:
+          - name: "High-dose ICS + LABA"
+          - name: "Add-on biologics"
+            examples: ["Omalizumab (≥6yo)", "Dupilumab (≥6yo)"]
+          - name: "Specialist referral required"
+            
+  acute_exacerbation:
+    mild_moderate:
+      - "Albuterol 4-8 puffs via MDI+spacer q20min x 3"
+      - "Consider oral corticosteroids early"
+    severe:
+      - "Continuous nebulized albuterol"
+      - "Ipratropium bromide"
+      - "Systemic corticosteroids"
+      - "Consider magnesium sulfate"
+      - "Tertiary care if no improvement"
+      
+    prednisone_burst:
+      dose: "1-2 mg/kg/day (max 60mg)"
+      duration: "3-5 days"
+      notes: "No taper needed for short courses"
+
+monitoring:
+  follow_up_frequency:
+    well_controlled: "Every 3-6 months"
+    not_well_controlled: "Every 2-4 weeks until improved"
+    after_exacerbation: "Within 1-4 weeks"
+    
+  parameters:
+    - "Symptom frequency (day and night)"
+    - "Rescue inhaler use"
+    - "Activity limitation"
+    - "Exacerbation frequency"
+    - "Spirometry (annually if ≥5yo)"
+    - "Inhaler technique"
+    - "Medication adherence"
+    - "Asthma action plan review"
+    
+  asthma_control_assessment:
+    tools:
+      - name: "Childhood Asthma Control Test (C-ACT)"
+        ages: "4-11 years"
+        interpretation:
+          - score: "≤19"
+            meaning: "Not well controlled"
+          - score: "20-27"
+            meaning: "Well controlled"
+      - name: "Asthma Control Test (ACT)"
+        ages: "≥12 years"
+        interpretation:
+          - score: "≤19"
+            meaning: "Not well controlled"
+          - score: "20-25"
+            meaning: "Well controlled"
+            
+  step_up_criteria:
+    - "Symptoms >2 days/week"
+    - "Nighttime awakenings >2x/month"
+    - "Rescue inhaler use >2 days/week"
+    - "Activity limitation"
+    - "Exacerbation requiring oral steroids"
+    
+  step_down_criteria:
+    - "Well controlled for ≥3 months"
+    - "Reduce by one step"
+    - "Continue to monitor"
+
+red_flags:
+  - sign: "Cyanosis"
+    action: "Emergency evaluation"
+  - sign: "Unable to speak in sentences"
+    action: "Emergency evaluation"
+  - sign: "Altered mental status"
+    action: "Emergency evaluation"
+  - sign: "Silent chest (no wheezing despite distress)"
+    action: "Emergency evaluation - impending respiratory failure"
+  - sign: "Peak flow <50% personal best"
+    action: "Emergency evaluation"
+    
+complications:
+  acute:
+    - "Respiratory failure"
+    - "Pneumothorax"
+    - "Atelectasis"
+  chronic:
+    - "Airway remodeling"
+    - "Growth suppression (high-dose ICS)"
+    - "Osteoporosis (chronic oral steroids)"
+    
+prognosis:
+  natural_history: "Variable - many children improve or resolve by adolescence"
+  persistence_factors:
+    - "Severe childhood asthma"
+    - "Allergic sensitization"
+    - "Female sex (post-puberty)"
+    - "Obesity"
+    - "Parental asthma"
+    
+subspecialty:
+  refer_to: "Pediatric Pulmonology or Allergy/Immunology"
+  criteria:
+    - "Diagnosis uncertain"
+    - "Moderate-severe persistent despite step 3 therapy"
+    - "≥2 exacerbations requiring oral steroids/year"
+    - "ICU admission for asthma"
+    - "Consideration for biologics"
+
+encounter_templates:
+  initial_diagnosis:
+    type: "chronic-followup"
+    chief_complaint: "Cough and wheeze"
+    typical_duration_minutes: 30
+    
+  routine_followup:
+    type: "chronic-followup"
+    chief_complaint: "Asthma follow-up"
+    typical_duration_minutes: 20
+    
+  exacerbation:
+    type: "acute-illness"
+    chief_complaint: "Asthma exacerbation"
+    typical_duration_minutes: 30
+    
+  urgent_care:
+    type: "urgent-care"
+    chief_complaint: "Breathing difficulty"
+    typical_duration_minutes: 45
+
+physical_exam:
+  well_controlled:
+    general: "Well-appearing, no respiratory distress"
+    respiratory: "Clear to auscultation bilaterally, no wheezes, normal respiratory effort"
+    cardiovascular: "Regular rate and rhythm, no murmur"
+    
+  mild_exacerbation:
+    general: "Alert, mild respiratory distress, able to speak in full sentences"
+    respiratory: "End-expiratory wheezes bilaterally, mild retractions, prolonged expiratory phase"
+    cardiovascular: "Tachycardia appropriate for age"
+    
+  moderate_exacerbation:
+    general: "Moderate respiratory distress, speaking in phrases"
+    respiratory: "Diffuse expiratory wheezes, moderate retractions (intercostal, subcostal), accessory muscle use"
+    cardiovascular: "Tachycardia"
+    
+  severe_exacerbation:
+    general: "Severe respiratory distress, speaking in single words, tripod positioning"
+    respiratory: "Decreased air movement, may have quiet chest, severe retractions, nasal flaring"
+    cardiovascular: "Tachycardia, may have pulsus paradoxus"
+    skin: "May have perioral cyanosis"

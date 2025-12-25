@@ -1,0 +1,464 @@
+# AAP/CDC Recommended Immunization Schedule (2024)
+# Reference: https://www.cdc.gov/vaccines/schedules/
+
+# Vaccine definitions with CVX codes
+vaccines:
+  HepB:
+    name: Hepatitis B
+    cvx_code: "08"
+    series_doses: 3
+    brand_examples: ["Engerix-B", "Recombivax HB"]
+    
+  RV:
+    name: Rotavirus
+    cvx_code: "122"  # RV5 (Rotateq)
+    series_doses: 3  # or 2 for RV1
+    brand_examples: ["RotaTeq", "Rotarix"]
+    notes: "RotaTeq (RV5) is 3 doses; Rotarix (RV1) is 2 doses"
+    
+  DTaP:
+    name: Diphtheria, Tetanus, Pertussis
+    cvx_code: "20"
+    series_doses: 5
+    brand_examples: ["Daptacel", "Infanrix"]
+    
+  Hib:
+    name: Haemophilus influenzae type b
+    cvx_code: "17"
+    series_doses: 4  # or 3 depending on brand
+    brand_examples: ["ActHIB", "PedvaxHIB"]
+    
+  PCV:
+    name: Pneumococcal conjugate
+    cvx_code: "152"  # PCV15
+    series_doses: 4
+    brand_examples: ["Vaxneuvance", "Prevnar 20"]
+    
+  IPV:
+    name: Inactivated Poliovirus
+    cvx_code: "10"
+    series_doses: 4
+    brand_examples: ["IPOL"]
+    
+  Influenza:
+    name: Influenza (Flu)
+    cvx_code: "158"  # IIV4
+    series_doses: yearly
+    brand_examples: ["Fluzone", "FluLaval", "Fluarix"]
+    notes: "Annual vaccination; 2 doses first year for children 6mo-8yr"
+    
+  MMR:
+    name: Measles, Mumps, Rubella
+    cvx_code: "03"
+    series_doses: 2
+    brand_examples: ["M-M-R II", "Priorix"]
+    
+  VAR:
+    name: Varicella
+    cvx_code: "21"
+    series_doses: 2
+    brand_examples: ["Varivax"]
+    
+  HepA:
+    name: Hepatitis A
+    cvx_code: "83"
+    series_doses: 2
+    brand_examples: ["Havrix", "Vaqta"]
+    
+  HPV:
+    name: Human Papillomavirus
+    cvx_code: "165"  # HPV9
+    series_doses: 2  # or 3 if started ≥15yo
+    brand_examples: ["Gardasil 9"]
+    notes: "2 doses if started before 15yo; 3 doses if 15yo or older"
+    
+  MenACWY:
+    name: Meningococcal ACWY
+    cvx_code: "147"
+    series_doses: 2
+    brand_examples: ["Menactra", "Menveo"]
+    
+  MenB:
+    name: Meningococcal B
+    cvx_code: "164"
+    series_doses: 2
+    brand_examples: ["Bexsero", "Trumenba"]
+    notes: "Shared clinical decision-making for ages 16-23"
+    
+  Tdap:
+    name: Tetanus, Diphtheria, Pertussis (adolescent/adult)
+    cvx_code: "115"
+    series_doses: 1  # then Td boosters
+    brand_examples: ["Boostrix", "Adacel"]
+    
+  COVID19:
+    name: COVID-19
+    cvx_code: "300"
+    series_doses: varies
+    brand_examples: ["Pfizer-BioNTech", "Moderna"]
+    notes: "Schedule varies by age and prior vaccination"
+
+# Schedule by age
+# Format: list of vaccines due at each time point
+schedule:
+  birth:
+    - vaccine: HepB
+      dose_number: 1
+      notes: "Within 24 hours of birth"
+      
+  1_month:
+    - vaccine: HepB
+      dose_number: 2
+      window_start_months: 1
+      window_end_months: 2
+      
+  2_months:
+    - vaccine: DTaP
+      dose_number: 1
+    - vaccine: Hib
+      dose_number: 1
+    - vaccine: PCV
+      dose_number: 1
+    - vaccine: IPV
+      dose_number: 1
+    - vaccine: RV
+      dose_number: 1
+      
+  4_months:
+    - vaccine: DTaP
+      dose_number: 2
+    - vaccine: Hib
+      dose_number: 2
+    - vaccine: PCV
+      dose_number: 2
+    - vaccine: IPV
+      dose_number: 2
+    - vaccine: RV
+      dose_number: 2
+      
+  6_months:
+    - vaccine: DTaP
+      dose_number: 3
+    - vaccine: Hib
+      dose_number: 3
+      notes: "Dose 3 depends on brand; may be at 12-15 months"
+    - vaccine: PCV
+      dose_number: 3
+    - vaccine: IPV
+      dose_number: 3
+      notes: "May be given 6-18 months"
+    - vaccine: RV
+      dose_number: 3
+      notes: "If RotaTeq; Rotarix series complete at 4mo"
+    - vaccine: HepB
+      dose_number: 3
+      window_start_months: 6
+      window_end_months: 18
+    - vaccine: Influenza
+      dose_number: 1
+      notes: "Annual flu shot starts at 6 months; 2 doses first season"
+      
+  12_months:
+    - vaccine: MMR
+      dose_number: 1
+      window_start_months: 12
+      window_end_months: 15
+    - vaccine: VAR
+      dose_number: 1
+      window_start_months: 12
+      window_end_months: 15
+    - vaccine: HepA
+      dose_number: 1
+      window_start_months: 12
+      window_end_months: 23
+    - vaccine: PCV
+      dose_number: 4
+      window_start_months: 12
+      window_end_months: 15
+    - vaccine: Hib
+      dose_number: 4
+      window_start_months: 12
+      window_end_months: 15
+      notes: "Booster dose"
+      
+  15_months:
+    - vaccine: DTaP
+      dose_number: 4
+      window_start_months: 15
+      window_end_months: 18
+      
+  18_months:
+    - vaccine: HepA
+      dose_number: 2
+      notes: "6 months after dose 1"
+      
+  4_years:
+    - vaccine: DTaP
+      dose_number: 5
+      window_start_months: 48
+      window_end_months: 72
+    - vaccine: IPV
+      dose_number: 4
+      window_start_months: 48
+      window_end_months: 72
+    - vaccine: MMR
+      dose_number: 2
+      window_start_months: 48
+      window_end_months: 72
+    - vaccine: VAR
+      dose_number: 2
+      window_start_months: 48
+      window_end_months: 72
+      
+  11_years:
+    - vaccine: Tdap
+      dose_number: 1
+      window_start_months: 132
+      window_end_months: 144
+    - vaccine: HPV
+      dose_number: 1
+      window_start_months: 132
+      window_end_months: 144
+      notes: "2-dose series if started before 15yo"
+    - vaccine: MenACWY
+      dose_number: 1
+      window_start_months: 132
+      window_end_months: 144
+      
+  12_years:
+    - vaccine: HPV
+      dose_number: 2
+      notes: "6-12 months after dose 1"
+      
+  16_years:
+    - vaccine: MenACWY
+      dose_number: 2
+      window_start_months: 192
+      window_end_months: 216
+    - vaccine: MenB
+      dose_number: 1
+      notes: "Shared clinical decision-making; may give 16-23yo"
+
+# Well-child visit schedule (AAP Bright Futures)
+well_child_schedule:
+  - age_description: "Newborn"
+    age_days: 3
+    age_range_days: [2, 5]
+    
+  - age_description: "1 week"
+    age_days: 7
+    age_range_days: [5, 10]
+    notes: "May be combined with 2-week visit"
+    
+  - age_description: "2 weeks"
+    age_days: 14
+    age_range_days: [10, 21]
+    
+  - age_description: "1 month"
+    age_months: 1
+    age_range_months: [0.75, 1.5]
+    
+  - age_description: "2 months"
+    age_months: 2
+    age_range_months: [1.5, 2.5]
+    immunizations: [DTaP, Hib, PCV, IPV, RV]
+    
+  - age_description: "4 months"
+    age_months: 4
+    age_range_months: [3.5, 4.5]
+    immunizations: [DTaP, Hib, PCV, IPV, RV]
+    
+  - age_description: "6 months"
+    age_months: 6
+    age_range_months: [5.5, 6.5]
+    immunizations: [DTaP, Hib, PCV, IPV, RV, Influenza]
+    
+  - age_description: "9 months"
+    age_months: 9
+    age_range_months: [8.5, 9.5]
+    
+  - age_description: "12 months"
+    age_months: 12
+    age_range_months: [11.5, 12.5]
+    immunizations: [MMR, VAR, HepA, PCV, Hib]
+    
+  - age_description: "15 months"
+    age_months: 15
+    age_range_months: [14.5, 15.5]
+    immunizations: [DTaP]
+    
+  - age_description: "18 months"
+    age_months: 18
+    age_range_months: [17.5, 18.5]
+    immunizations: [HepA]
+    
+  - age_description: "24 months"
+    age_months: 24
+    age_range_months: [23, 25]
+    
+  - age_description: "30 months"
+    age_months: 30
+    age_range_months: [29, 31]
+    
+  - age_description: "3 years"
+    age_months: 36
+    age_range_months: [33, 39]
+    
+  - age_description: "4 years"
+    age_months: 48
+    age_range_months: [45, 51]
+    immunizations: [DTaP, IPV, MMR, VAR]
+    
+  - age_description: "5 years"
+    age_months: 60
+    age_range_months: [57, 63]
+    
+  - age_description: "6 years"
+    age_months: 72
+    age_range_months: [69, 75]
+    
+  - age_description: "7 years"
+    age_months: 84
+    age_range_months: [81, 87]
+    
+  - age_description: "8 years"
+    age_months: 96
+    age_range_months: [93, 99]
+    
+  - age_description: "9 years"
+    age_months: 108
+    age_range_months: [105, 111]
+    
+  - age_description: "10 years"
+    age_months: 120
+    age_range_months: [117, 123]
+    
+  - age_description: "11 years"
+    age_months: 132
+    age_range_months: [129, 135]
+    immunizations: [Tdap, HPV, MenACWY]
+    
+  - age_description: "12 years"
+    age_months: 144
+    age_range_months: [141, 147]
+    immunizations: [HPV]
+    
+  - age_description: "13 years"
+    age_months: 156
+    age_range_months: [153, 159]
+    
+  - age_description: "14 years"
+    age_months: 168
+    age_range_months: [165, 171]
+    
+  - age_description: "15 years"
+    age_months: 180
+    age_range_months: [177, 183]
+    
+  - age_description: "16 years"
+    age_months: 192
+    age_range_months: [189, 195]
+    immunizations: [MenACWY, MenB]
+    
+  - age_description: "17 years"
+    age_months: 204
+    age_range_months: [201, 207]
+    
+  - age_description: "18 years"
+    age_months: 216
+    age_range_months: [213, 219]
+    
+  - age_description: "19 years"
+    age_months: 228
+    age_range_months: [225, 231]
+    
+  - age_description: "20 years"
+    age_months: 240
+    age_range_months: [237, 243]
+    
+  - age_description: "21 years"
+    age_months: 252
+    age_range_months: [249, 255]
+
+# Screening schedule (for well visits)
+screening_schedule:
+  newborn:
+    - name: "Newborn metabolic screen"
+      required: true
+    - name: "Critical congenital heart disease screen"
+      required: true
+    - name: "Hearing screen"
+      required: true
+    - name: "Bilirubin"
+      required: true
+      
+  1_month:
+    - name: "Maternal depression screen"
+      tool: "Edinburgh Postnatal Depression Scale"
+      
+  2_months:
+    - name: "Developmental surveillance"
+      
+  4_months:
+    - name: "Developmental surveillance"
+      
+  6_months:
+    - name: "Developmental surveillance"
+      
+  9_months:
+    - name: "Developmental screen"
+      tool: "ASQ-3"
+    - name: "Maternal depression screen"
+      
+  12_months:
+    - name: "Lead screen"
+      notes: "If risk factors present"
+    - name: "Hemoglobin/Hematocrit"
+    - name: "Developmental surveillance"
+    - name: "Autism screen"
+      tool: "M-CHAT-R/F"
+      start_age_months: 16
+      end_age_months: 30
+      
+  18_months:
+    - name: "Developmental screen"
+      tool: "ASQ-3"
+    - name: "Autism screen"
+      tool: "M-CHAT-R/F"
+      required: true
+      
+  24_months:
+    - name: "Developmental surveillance"
+    - name: "Autism screen"
+      tool: "M-CHAT-R/F"
+      required: true
+    - name: "Lead screen"
+      notes: "If risk factors present"
+      
+  30_months:
+    - name: "Developmental screen"
+      tool: "ASQ-3"
+      
+  3_years:
+    - name: "Vision screen"
+    - name: "Blood pressure"
+      notes: "Annual starting at 3 years"
+      
+  4_years:
+    - name: "Vision screen"
+    - name: "Blood pressure"
+    - name: "Dyslipidemia screen"
+      notes: "Once between 9-11 years"
+      
+  adolescent:
+    - name: "Depression screen"
+      tool: "PHQ-A"
+      start_age_years: 12
+      frequency: "annual"
+    - name: "Substance use screen"
+      start_age_years: 11
+      frequency: "annual"
+    - name: "STI screening"
+      notes: "If sexually active"
+    - name: "Dyslipidemia screen"
+      notes: "Once between 17-21 years"

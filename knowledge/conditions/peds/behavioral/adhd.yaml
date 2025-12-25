@@ -1,0 +1,392 @@
+# ADHD - Attention-Deficit/Hyperactivity Disorder
+# Comprehensive condition definition for synthetic patient generation
+
+name: "Attention-Deficit/Hyperactivity Disorder"
+abbreviation: "ADHD"
+synonyms: ["ADD", "Hyperkinetic disorder"]
+
+icd10_code: "F90.9"  # ADHD, unspecified type
+icd10_variants:
+  combined: "F90.2"
+  predominantly_inattentive: "F90.0"
+  predominantly_hyperactive: "F90.1"
+  
+snomed_code: "406506008"
+
+category: "behavioral"
+subcategory: "neurodevelopmental"
+
+age_of_onset:
+  typical_range: "3-12 years"
+  peak_age: "6-8 years (diagnosis)"
+  symptoms_present_before: "12 years"
+  can_occur: "Symptoms often present by age 3-4, diagnosis typically school-age"
+  peds_specific: false
+  notes: "Persists into adulthood in 60% of cases"
+  
+prevalence:
+  general: "5-7%"
+  pediatric: "9.4%"
+  sex_ratio: "Males 2-3x more likely diagnosed (gap narrowing)"
+  notes: "One of most common neurodevelopmental disorders"
+  
+subtypes:
+  - name: "Combined presentation"
+    code: "F90.2"
+    frequency: "50-75%"
+    criteria: "≥6 inattentive AND ≥6 hyperactive/impulsive symptoms"
+    
+  - name: "Predominantly inattentive presentation"
+    code: "F90.0"
+    frequency: "20-30%"
+    criteria: "≥6 inattentive, <6 hyperactive/impulsive symptoms"
+    notes: "More common in females, often missed"
+    
+  - name: "Predominantly hyperactive/impulsive presentation"
+    code: "F90.1"
+    frequency: "5-10%"
+    criteria: "<6 inattentive, ≥6 hyperactive/impulsive symptoms"
+    notes: "More common in young children"
+
+comorbidities:
+  common:
+    - condition: "Oppositional defiant disorder"
+      frequency: "40-60%"
+    - condition: "Anxiety disorders"
+      frequency: "25-35%"
+    - condition: "Learning disabilities"
+      frequency: "25-40%"
+    - condition: "Depression"
+      frequency: "10-30%"
+    - condition: "Conduct disorder"
+      frequency: "15-25%"
+    - condition: "Tic disorders"
+      frequency: "10-20%"
+    - condition: "Autism spectrum disorder"
+      frequency: "5-15%"
+    - condition: "Sleep disorders"
+      frequency: "25-50%"
+    
+family_history:
+  relevant_conditions:
+    - "ADHD"
+    - "Learning disabilities"
+    - "Mood disorders"
+    - "Anxiety disorders"
+    - "Substance use disorders"
+  heritability: "70-80%"
+  
+presentation:
+  inattention_symptoms:
+    - "Fails to give close attention to details, careless mistakes"
+    - "Difficulty sustaining attention in tasks or play"
+    - "Does not seem to listen when spoken to directly"
+    - "Fails to follow through on instructions, finish tasks"
+    - "Difficulty organizing tasks and activities"
+    - "Avoids tasks requiring sustained mental effort"
+    - "Loses things necessary for tasks"
+    - "Easily distracted by extraneous stimuli"
+    - "Forgetful in daily activities"
+    
+  hyperactivity_symptoms:
+    - "Fidgets or squirms in seat"
+    - "Leaves seat when remaining seated expected"
+    - "Runs about or climbs inappropriately"
+    - "Unable to play or engage in leisure quietly"
+    - "Often 'on the go' or 'driven by a motor'"
+    - "Talks excessively"
+    
+  impulsivity_symptoms:
+    - "Blurts out answers before question completed"
+    - "Difficulty waiting turn"
+    - "Interrupts or intrudes on others"
+    
+  history_features:
+    - "Symptom onset before age 12"
+    - "Present in 2+ settings (home, school)"
+    - "Clear evidence of functional impairment"
+    - "Symptoms not better explained by another condition"
+    - "Academic performance (grades, retention)"
+    - "Social relationships"
+    - "Home/family functioning"
+    - "Self-esteem"
+    
+  presentation_by_age:
+    preschool:
+      - "Hyperactivity most prominent"
+      - "Difficulty following directions"
+      - "Aggression common"
+    school_age:
+      - "Academic difficulties emerge"
+      - "Inattention becomes more apparent"
+      - "Social difficulties"
+    adolescent:
+      - "Hyperactivity often decreases"
+      - "Inattention persists"
+      - "Executive function deficits"
+      - "Risk-taking behavior"
+
+diagnosis:
+  dsm5_criteria:
+    - "≥6 symptoms of inattention and/or ≥6 symptoms of hyperactivity/impulsivity"
+    - "Symptoms for ≥6 months"
+    - "Several symptoms present before age 12"
+    - "Symptoms present in ≥2 settings"
+    - "Clear evidence of interference with functioning"
+    - "Symptoms not better explained by another disorder"
+    - "For ages 17+: ≥5 symptoms required"
+    
+  workup:
+    essential:
+      - "Comprehensive clinical interview (parent + child)"
+      - "Behavior rating scales (parent + teacher)"
+      - "Review of school records"
+      - "Developmental and medical history"
+      - "Assessment for comorbidities"
+    rating_scales:
+      - name: "Vanderbilt Assessment Scales"
+        notes: "Parent and teacher versions, includes comorbidity screens"
+      - name: "Conners Rating Scales"
+        notes: "Comprehensive, widely used"
+      - name: "SNAP-IV"
+        notes: "Brief, free, based on DSM criteria"
+    consider:
+      - "Psychoeducational testing (if learning disability suspected)"
+      - "Vision and hearing screening"
+      - "Sleep evaluation"
+      
+  labs:
+    routine: "None required for diagnosis"
+    pre_treatment:
+      - name: "Height and weight"
+        indication: "Baseline before stimulant"
+      - name: "Blood pressure and heart rate"
+        indication: "Baseline before stimulant"
+      - name: "Consider ECG"
+        indication: "If cardiac history/symptoms or family history of sudden death"
+        
+  differential:
+    - condition: "Anxiety disorder"
+      distinguishing: "Worry prominent, physical symptoms, avoidance"
+    - condition: "Depression"
+      distinguishing: "Mood symptoms, sleep/appetite changes, onset pattern"
+    - condition: "Learning disability"
+      distinguishing: "Specific academic deficit, attention OK in non-academic settings"
+    - condition: "Sleep disorder"
+      distinguishing: "Snoring, daytime sleepiness, sleep study abnormal"
+    - condition: "Hearing or vision impairment"
+      distinguishing: "Screening abnormal"
+    - condition: "Medication side effects"
+      distinguishing: "Temporal relationship to medication"
+    - condition: "Thyroid disorder"
+      distinguishing: "TSH abnormal, other thyroid symptoms"
+    - condition: "Autism spectrum disorder"
+      distinguishing: "Social communication deficits, restricted interests"
+
+treatment:
+  goals:
+    - "Reduce core symptoms"
+    - "Improve academic performance"
+    - "Improve social relationships"
+    - "Improve self-esteem"
+    - "Reduce secondary problems (anxiety, oppositional behavior)"
+    
+  approach_by_age:
+    preschool_4_5:
+      first_line: "Behavior therapy (parent training)"
+      second_line: "Methylphenidate if behavior therapy insufficient"
+    school_age_6_11:
+      first_line: "Medication + behavior therapy"
+      alternative: "Either alone if both not accessible"
+    adolescent_12_17:
+      first_line: "Medication + behavior therapy"
+      notes: "Include teen in treatment decisions"
+      
+  non_pharmacologic:
+    - intervention: "Parent training in behavior management"
+      details: "Structured, evidence-based programs"
+    - intervention: "School accommodations"
+      details: "504 plan or IEP as appropriate"
+    - intervention: "Social skills training"
+      details: "If social impairment present"
+    - intervention: "Organizational skills training"
+      details: "For older children/adolescents"
+    - intervention: "Exercise"
+      details: "Regular physical activity"
+    - intervention: "Sleep hygiene"
+      details: "Consistent bedtime routine"
+      
+  medications:
+    stimulants:
+      first_line: true
+      efficacy: "70-80% response rate"
+      
+      methylphenidate_products:
+        - name: "Methylphenidate IR"
+          brand: "Ritalin"
+          duration: "3-4 hours"
+          starting_dose: "5mg BID-TID"
+          max_dose: "60mg/day"
+        - name: "Methylphenidate ER"
+          brand: "Concerta"
+          duration: "10-12 hours"
+          starting_dose: "18mg daily"
+          max_dose: "72mg/day"
+        - name: "Methylphenidate ER"
+          brand: "Ritalin LA"
+          duration: "8-10 hours"
+          starting_dose: "20mg daily"
+        - name: "Methylphenidate patch"
+          brand: "Daytrana"
+          duration: "Wear time dependent"
+          starting_dose: "10mg patch"
+          
+      amphetamine_products:
+        - name: "Mixed amphetamine salts"
+          brand: "Adderall"
+          duration: "4-6 hours"
+          starting_dose: "5mg daily or BID"
+          max_dose: "40mg/day"
+        - name: "Mixed amphetamine salts XR"
+          brand: "Adderall XR"
+          duration: "10-12 hours"
+          starting_dose: "5-10mg daily"
+          max_dose: "30mg/day"
+        - name: "Lisdexamfetamine"
+          brand: "Vyvanse"
+          duration: "10-14 hours"
+          starting_dose: "20-30mg daily"
+          max_dose: "70mg/day"
+          notes: "Prodrug, lower abuse potential"
+          
+    non_stimulants:
+      - name: "Atomoxetine"
+        brand: "Strattera"
+        class: "SNRI"
+        starting_dose: "0.5mg/kg/day"
+        target_dose: "1.2mg/kg/day"
+        max_dose: "1.4mg/kg/day or 100mg"
+        onset: "4-6 weeks for full effect"
+        notes: "Good for comorbid anxiety, no abuse potential"
+        black_box: "Suicidal ideation monitoring"
+        
+      - name: "Guanfacine ER"
+        brand: "Intuniv"
+        class: "Alpha-2 agonist"
+        starting_dose: "1mg daily"
+        target_dose: "0.05-0.12mg/kg/day"
+        max_dose: "4mg/day"
+        notes: "Can be adjunct to stimulant, helps hyperactivity/impulsivity"
+        
+      - name: "Clonidine ER"
+        brand: "Kapvay"
+        class: "Alpha-2 agonist"
+        starting_dose: "0.1mg at bedtime"
+        max_dose: "0.4mg/day"
+        notes: "Often used for sleep, aggression"
+        
+      - name: "Viloxazine"
+        brand: "Qelbree"
+        class: "SNRI"
+        starting_dose: "100mg daily (6-11yo), 200mg daily (12+)"
+        max_dose: "400mg daily (6-11yo), 400mg daily (12+)"
+        notes: "Newer option, no controlled substance"
+        
+  side_effects:
+    stimulants:
+      common:
+        - effect: "Decreased appetite"
+          management: "Give with/after meals, calorie-dense snacks"
+        - effect: "Insomnia"
+          management: "Give earlier, avoid late doses, melatonin"
+        - effect: "Headache"
+          management: "Usually transient"
+        - effect: "Stomachache"
+          management: "Give with food"
+      monitor:
+        - effect: "Growth suppression"
+          management: "Plot height/weight, consider drug holidays"
+        - effect: "Cardiovascular effects"
+          management: "Check BP/HR at each visit"
+        - effect: "Tics"
+          management: "May not worsen; if new, consider alternative"
+        - effect: "Mood changes"
+          management: "Adjust dose or timing"
+
+monitoring:
+  follow_up_frequency:
+    initial_titration: "Every 1-4 weeks"
+    stable_dose: "Every 3-6 months"
+    
+  parameters:
+    - "Symptom response (rating scales)"
+    - "Side effects"
+    - "Height and weight (plot on growth chart)"
+    - "Blood pressure and heart rate"
+    - "Sleep quality"
+    - "Appetite"
+    - "Academic performance"
+    - "Social functioning"
+    - "Mood"
+    
+  school_communication:
+    - "Teacher rating scales"
+    - "Academic progress"
+    - "Behavioral observations"
+    - "Need for 504/IEP"
+
+prognosis:
+  natural_history: "Chronic condition in majority"
+  persistence_into_adulthood: "50-70%"
+  positive_prognostic_factors:
+    - "Early diagnosis and treatment"
+    - "Higher IQ"
+    - "Lower symptom severity"
+    - "Absence of comorbidities"
+    - "Supportive family environment"
+  negative_prognostic_factors:
+    - "Comorbid conduct disorder"
+    - "Comorbid learning disabilities"
+    - "Family dysfunction"
+    - "Late or no treatment"
+
+subspecialty:
+  refer_to: "Developmental-Behavioral Pediatrics, Child Psychiatry, Child Psychology"
+  criteria:
+    - "Diagnostic uncertainty"
+    - "Complex comorbidities"
+    - "Poor response to initial treatment"
+    - "Severe functional impairment"
+    - "Need for psychological testing"
+
+encounter_templates:
+  initial_evaluation:
+    type: "mental-health"
+    chief_complaint: "Attention and behavior concerns"
+    typical_duration_minutes: 45
+    
+  medication_start:
+    type: "medication-check"
+    chief_complaint: "ADHD medication initiation"
+    typical_duration_minutes: 30
+    
+  routine_followup:
+    type: "chronic-followup"
+    chief_complaint: "ADHD follow-up"
+    typical_duration_minutes: 20
+    
+  medication_adjustment:
+    type: "medication-check"
+    chief_complaint: "ADHD medication adjustment"
+    typical_duration_minutes: 20
+
+physical_exam:
+  findings: "Often unremarkable"
+  observations:
+    - "May demonstrate hyperactivity during visit"
+    - "May have difficulty sitting still for exam"
+    - "May interrupt or talk excessively"
+  rule_out:
+    - "Signs of thyroid disorder"
+    - "Dysmorphic features (genetic syndromes)"
+    - "Neurological abnormalities"

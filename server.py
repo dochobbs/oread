@@ -6,6 +6,8 @@ FastAPI-based web server for the Oread synthetic patient generator.
 
 import json
 import sys
+import threading
+import random
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -85,7 +87,36 @@ class GenerationStatus(BaseModel):
     job_id: str
     status: str  # pending, running, completed, failed
     patient_id: Optional[str] = None
+    patient_name: Optional[str] = None
     error: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+def _run_generation_job(job_id: str, age: int, use_llm: bool):
+    """Background task to generate a patient."""
+    try:
+        generation_jobs[job_id]["status"] = "running"
+        generation_jobs[job_id]["started_at"] = datetime.now().isoformat()
+
+        seed = GenerationSeed(
+            age=age,
+            random_seed=random.randint(1, 1000000),
+        )
+
+        engine = PedsEngine(use_llm=use_llm)
+        patient = engine.generate(seed)
+        patients_store[patient.id] = patient
+
+        generation_jobs[job_id]["status"] = "completed"
+        generation_jobs[job_id]["patient_id"] = patient.id
+        generation_jobs[job_id]["patient_name"] = patient.demographics.full_name
+        generation_jobs[job_id]["completed_at"] = datetime.now().isoformat()
+
+    except Exception as e:
+        generation_jobs[job_id]["status"] = "failed"
+        generation_jobs[job_id]["error"] = str(e)
+        generation_jobs[job_id]["completed_at"] = datetime.now().isoformat()
 
 
 # Routes
@@ -163,35 +194,53 @@ async def generate_patient(request: GenerateRequest):
 
 
 @app.post("/api/generate/quick")
-async def quick_generate():
+async def quick_generate(use_llm: bool = Query(True, description="Use LLM for narratives")):
     """
-    Generate a random patient with default settings.
+    Start async patient generation. Returns job_id immediately.
 
-    Quick endpoint for one-click generation. Uses LLM for natural narratives.
+    Poll /api/jobs/{job_id} to check status. LLM generation takes ~2 minutes.
     """
-    import random
+    job_id = str(uuid4())[:8]
+    age = random.randint(0, 18)
 
-    seed = GenerationSeed(
-        age=random.randint(0, 18),
-        random_seed=random.randint(1, 1000000),
+    # Initialize job status
+    generation_jobs[job_id] = {
+        "status": "pending",
+        "patient_id": None,
+        "patient_name": None,
+        "error": None,
+        "started_at": None,
+        "completed_at": None,
+        "use_llm": use_llm,
+        "age": age,
+    }
+
+    # Start background thread
+    thread = threading.Thread(
+        target=_run_generation_job,
+        args=(job_id, age, use_llm),
+        daemon=True
     )
+    thread.start()
 
-    # Use LLM-enabled engine for natural narratives
-    engine = PedsEngine(use_llm=True)
-    patient = engine.generate(seed)
-    patients_store[patient.id] = patient
-    
-    return PatientSummary(
-        id=patient.id,
-        name=patient.demographics.full_name,
-        date_of_birth=patient.demographics.date_of_birth.isoformat(),
-        age_years=patient.demographics.age_years,
-        sex=patient.demographics.sex_at_birth.value,
-        complexity_tier=patient.complexity_tier.value,
-        active_conditions=[c.display_name for c in patient.active_conditions],
-        encounter_count=len(patient.encounters),
-        generated_at=patient.generated_at.isoformat(),
-        messiness_level=0,
+    return {"job_id": job_id, "status": "pending", "message": "Generation started. Poll /api/jobs/{job_id} for status."}
+
+
+@app.get("/api/jobs/{job_id}")
+async def get_job_status(job_id: str):
+    """Check the status of a generation job."""
+    if job_id not in generation_jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = generation_jobs[job_id]
+    return GenerationStatus(
+        job_id=job_id,
+        status=job["status"],
+        patient_id=job.get("patient_id"),
+        patient_name=job.get("patient_name"),
+        error=job.get("error"),
+        started_at=job.get("started_at"),
+        completed_at=job.get("completed_at"),
     )
 
 

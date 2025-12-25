@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import random
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -657,7 +658,11 @@ class PedsEngine(BaseEngine):
             
             # Collect immunizations
             immunizations.extend(encounter.immunizations_given)
-        
+
+        # Generate narrative notes in parallel if LLM is enabled
+        if self.use_llm and seed.include_narrative_notes:
+            self._generate_narratives_parallel(encounters, demographics)
+
         # Determine complexity tier
         if len(life_arc.major_conditions) == 0:
             tier = ComplexityTier.TIER_0
@@ -1383,10 +1388,9 @@ class PedsEngine(BaseEngine):
             anticipatory_guidance=self._generate_anticipatory_guidance_list(age_months) if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN) else [],
         )
         
-        # Generate narrative note if requested
-        if seed.include_narrative_notes:
-            encounter.narrative_note = self._generate_narrative_note(encounter, demographics, age_months)
-        
+        # Note: Narrative generation is now done in parallel after all encounters are created
+        # See _generate_narratives_parallel() called from generate()
+
         return encounter
     
     def _generate_immunizations(self, age_months: int, visit_date: date) -> list[Immunization]:
@@ -1426,7 +1430,44 @@ class PedsEngine(BaseEngine):
                 ))
         
         return immunizations
-    
+
+    def _generate_narratives_parallel(
+        self,
+        encounters: list[Encounter],
+        demographics: Demographics,
+        max_workers: int = 8
+    ) -> None:
+        """
+        Generate narrative notes for all encounters in parallel.
+
+        Uses ThreadPoolExecutor to make concurrent LLM calls, dramatically
+        reducing generation time from O(n * latency) to O(n/workers * latency).
+        """
+        if not self.use_llm or not encounters:
+            return
+
+        def generate_one(enc: Encounter) -> tuple[str, str]:
+            """Generate narrative for a single encounter, returns (encounter_id, note)."""
+            days_old = (enc.date.date() - demographics.date_of_birth).days
+            age_months = days_old // 30
+            try:
+                note = self._generate_llm_narrative(enc, demographics, age_months)
+            except Exception:
+                note = self._generate_templated_note(enc, demographics, age_months)
+            return (enc.id, note)
+
+        # Run LLM calls in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(generate_one, enc): enc for enc in encounters}
+
+            for future in as_completed(futures):
+                enc_id, note = future.result()
+                # Find encounter and set narrative
+                for enc in encounters:
+                    if enc.id == enc_id:
+                        enc.narrative_note = note
+                        break
+
     def _generate_narrative_note(self, encounter: Encounter, demographics: Demographics, age_months: int) -> str:
         """Generate a narrative clinical note, using LLM if available."""
         if not self.use_llm:

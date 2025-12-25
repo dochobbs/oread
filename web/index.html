@@ -1325,19 +1325,71 @@
         
         async function quickGenerate() {
             quickGenerateBtn.classList.add('loading');
-            quickGenerateBtn.innerHTML = '<span class="animate-pulse">⏳</span> Generating...';
-            
+            quickGenerateBtn.disabled = true;
+            quickGenerateBtn.innerHTML = '<span class="animate-pulse">⏳</span> Starting...';
+
             try {
+                // Start the async generation job
                 const response = await fetch('/api/generate/quick', { method: 'POST' });
-                const patient = await response.json();
-                patients.unshift(patient);
-                renderPatientsList();
-                showPatientDetail(patient.id);
+                const job = await response.json();
+                const jobId = job.job_id;
+
+                // Poll for completion
+                let elapsed = 0;
+                const pollInterval = 2000; // 2 seconds
+                const maxWait = 300000; // 5 minutes max
+
+                const poll = async () => {
+                    try {
+                        const statusResp = await fetch(`/api/jobs/${jobId}`);
+                        const status = await statusResp.json();
+
+                        if (status.status === 'completed') {
+                            // Success! Load the patient
+                            quickGenerateBtn.innerHTML = '<span>✓</span> Done!';
+                            const patientResp = await fetch(`/api/patients/${status.patient_id}`);
+                            const patientSummary = {
+                                id: status.patient_id,
+                                name: status.patient_name,
+                            };
+                            patients.unshift(patientSummary);
+                            await loadPatients(); // Refresh full list
+                            showPatientDetail(status.patient_id);
+
+                            setTimeout(() => {
+                                quickGenerateBtn.classList.remove('loading');
+                                quickGenerateBtn.disabled = false;
+                                quickGenerateBtn.innerHTML = '<span>⚡</span> Quick Generate';
+                            }, 1000);
+                        } else if (status.status === 'failed') {
+                            throw new Error(status.error || 'Generation failed');
+                        } else {
+                            // Still running - update UI and poll again
+                            elapsed += pollInterval;
+                            const mins = Math.floor(elapsed / 60000);
+                            const secs = Math.floor((elapsed % 60000) / 1000);
+                            const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+                            quickGenerateBtn.innerHTML = `<span class="animate-pulse">⏳</span> Generating... ${timeStr}`;
+
+                            if (elapsed < maxWait) {
+                                setTimeout(poll, pollInterval);
+                            } else {
+                                throw new Error('Generation timed out after 5 minutes');
+                            }
+                        }
+                    } catch (error) {
+                        throw error;
+                    }
+                };
+
+                // Start polling after a short delay
+                setTimeout(poll, pollInterval);
+
             } catch (error) {
                 console.error('Generation failed:', error);
-                alert('Failed to generate patient. Please try again.');
-            } finally {
+                alert('Failed to generate patient: ' + error.message);
                 quickGenerateBtn.classList.remove('loading');
+                quickGenerateBtn.disabled = false;
                 quickGenerateBtn.innerHTML = '<span>⚡</span> Quick Generate';
             }
         }

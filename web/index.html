@@ -299,6 +299,58 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: var(--space-md);
+            align-items: start;
+        }
+
+        .form-row .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group {
+            margin-bottom: var(--space-md);
+        }
+
+        .form-label {
+            margin-bottom: var(--space-sm);
+        }
+
+        input.form-input,
+        .form-select {
+            height: 48px;
+            box-sizing: border-box;
+        }
+
+        textarea.form-input {
+            height: auto;
+            min-height: 120px;
+            max-width: 100%;
+        }
+
+        .form-select {
+            color: var(--text-tertiary);
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
+            padding-top: 0;
+            padding-bottom: 0;
+            line-height: 46px;
+        }
+
+        .form-select.has-value {
+            color: var(--text-primary);
+        }
+
+        .form-select option {
+            color: var(--text-primary);
+        }
+
+        .form-input::placeholder {
+            color: var(--text-tertiary);
         }
         
         .chip-group {
@@ -391,19 +443,54 @@
             font-weight: 500;
         }
         
-        .tier-badge {
+        .indicator-badge {
             padding: var(--space-xs) var(--space-sm);
             border-radius: var(--radius-sm);
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
+            font-size: 0.7rem;
+            font-weight: 500;
+            letter-spacing: 0.03em;
         }
-        
-        .tier-badge.tier-0 { background: #e8f5e9; color: #2e7d32; }
-        .tier-badge.tier-1 { background: #fff3e0; color: #ef6c00; }
-        .tier-badge.tier-2 { background: #fff8e1; color: #f57f17; }
-        .tier-badge.tier-3 { background: #ffebee; color: #c62828; }
+
+        /* Complexity badges */
+        .complexity-0 { background: rgba(46,125,50,0.2); color: #a5d6a7; }
+        .complexity-1 { background: rgba(100,181,246,0.2); color: #90caf9; }
+        .complexity-2 { background: rgba(255,193,7,0.2); color: #ffe082; }
+        .complexity-3 { background: rgba(255,152,0,0.2); color: #ffcc80; }
+        .complexity-4 { background: rgba(244,67,54,0.2); color: #ef9a9a; }
+        .complexity-5 { background: rgba(183,28,28,0.2); color: #ef9a9a; }
+
+        /* Messiness badges */
+        .messiness-0 { background: rgba(100,100,100,0.2); color: #bdbdbd; }
+        .messiness-1 { background: rgba(76,175,80,0.2); color: #a5d6a7; }
+        .messiness-2 { background: rgba(255,193,7,0.2); color: #ffe082; }
+        .messiness-3 { background: rgba(255,152,0,0.2); color: #ffcc80; }
+        .messiness-4 { background: rgba(244,67,54,0.2); color: #ef9a9a; }
+        .messiness-5 { background: rgba(183,28,28,0.2); color: #ef9a9a; }
+
+        /* For patient list cards */
+        .patient-badges {
+            display: flex;
+            gap: 4px;
+            margin-top: 4px;
+        }
+
+        .patient-badges .indicator-badge {
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            font-size: 0.65rem;
+        }
+
+        .patient-badges .complexity-0 { color: #2e7d32; }
+        .patient-badges .complexity-1 { color: #1976d2; }
+        .patient-badges .complexity-2 { color: #f9a825; }
+        .patient-badges .complexity-3 { color: #ef6c00; }
+        .patient-badges .complexity-4 { color: #d32f2f; }
+        .patient-badges .complexity-5 { color: #b71c1c; }
+        .patient-badges .messiness-1 { color: #4caf50; }
+        .patient-badges .messiness-2 { color: #ffc107; }
+        .patient-badges .messiness-3 { color: #ff9800; }
+        .patient-badges .messiness-4 { color: #f44336; }
+        .patient-badges .messiness-5 { color: #b71c1c; }
         
         /* ============================================
            PATIENT DETAIL VIEW
@@ -566,6 +653,104 @@
             font-size: 0.95rem;
         }
         
+        /* ============================================
+           MESSAGES LIST
+           ============================================ */
+        .messages-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-lg);
+        }
+
+        .message-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
+
+        .message-header {
+            padding: var(--space-md) var(--space-lg);
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: var(--space-sm);
+        }
+
+        .message-subject {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .message-meta {
+            display: flex;
+            gap: var(--space-md);
+            font-size: 0.8rem;
+            color: var(--text-tertiary);
+        }
+
+        .message-category {
+            padding: 2px 8px;
+            background: var(--accent-light);
+            color: var(--accent-primary);
+            border-radius: var(--radius-sm);
+            font-size: 0.7rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .message-medium {
+            padding: 2px 8px;
+            background: rgba(100,100,100,0.1);
+            color: var(--text-secondary);
+            border-radius: var(--radius-sm);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+        }
+
+        .message-body {
+            padding: var(--space-lg);
+        }
+
+        .message-from {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: var(--space-sm);
+        }
+
+        .message-content {
+            background: var(--bg-primary);
+            padding: var(--space-md);
+            border-radius: var(--radius-md);
+            border-left: 3px solid var(--accent-tertiary);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .message-reply {
+            margin-top: var(--space-lg);
+            padding-top: var(--space-lg);
+            border-top: 1px dashed var(--border);
+        }
+
+        .message-reply .message-from {
+            color: var(--accent-primary);
+        }
+
+        .message-reply .message-content {
+            border-left-color: var(--accent-primary);
+            background: var(--accent-light);
+        }
+
+        .message-empty {
+            text-align: center;
+            padding: var(--space-xl);
+            color: var(--text-tertiary);
+        }
+
         /* ============================================
            EXPORT BUTTONS
            ============================================ */
@@ -778,7 +963,6 @@
             </div>
             <nav>
                 <a href="#" id="nav-generate">Generate</a>
-                <a href="/docs" target="_blank">API Docs</a>
             </nav>
         </div>
     </header>
@@ -813,21 +997,30 @@
             <!-- Patient detail view -->
             <div id="patient-detail" class="patient-detail card">
                 <div class="detail-header">
-                    <button id="back-btn" class="btn btn-secondary" style="margin-bottom: var(--space-md); background: rgba(255,255,255,0.1); border: none; color: white;">
-                        ← Back to list
-                    </button>
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-md);">
+                        <button id="back-btn" class="btn btn-secondary" style="background: rgba(255,255,255,0.1); border: none; color: white;">
+                            ← Back to list
+                        </button>
+                        <button id="delete-patient-btn" class="btn" style="background: rgba(220,53,69,0.2); border: none; color: #ffcdd2; font-size: 0.8rem; padding: 6px 12px;">
+                            Delete
+                        </button>
+                    </div>
                     <h2 id="detail-name">Patient Name</h2>
                     <div class="detail-demographics">
                         <span id="detail-age">Age</span>
                         <span id="detail-sex">Sex</span>
                         <span id="detail-dob">DOB</span>
-                        <span id="detail-tier" class="tier-badge tier-0">Tier</span>
+                    </div>
+                    <div id="detail-badges" style="display: flex; gap: var(--space-sm); margin-top: var(--space-sm);">
+                        <span id="detail-complexity" class="indicator-badge complexity-0">Healthy</span>
+                        <span id="detail-messiness" class="indicator-badge messiness-0" style="display: none;">Pristine</span>
                     </div>
                 </div>
                 
                 <div class="detail-tabs">
                     <button class="detail-tab active" data-tab="overview">Overview</button>
                     <button class="detail-tab" data-tab="encounters">Encounters</button>
+                    <button class="detail-tab" data-tab="messages">Messages</button>
                     <button class="detail-tab" data-tab="record">Full Record</button>
                 </div>
                 
@@ -867,7 +1060,15 @@
                             <!-- Populated dynamically -->
                         </div>
                     </div>
-                    
+
+                    <!-- Messages tab -->
+                    <div id="tab-messages" class="tab-content" style="display: none;">
+                        <h3 class="section-title">Patient Messages</h3>
+                        <div id="messages-list" class="messages-list">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
                     <!-- Full record tab -->
                     <div id="tab-record" class="tab-content" style="display: none;">
                         <h3 class="section-title">Complete Medical Record</h3>
@@ -890,6 +1091,21 @@
                     <h3 class="card-title">Configure</h3>
                 </div>
                 <div class="card-body">
+                    <!-- Describe patient first - encourages natural language -->
+                    <div class="form-group">
+                        <label class="form-label">Describe your patient</label>
+                        <textarea class="form-input" id="input-description" rows="5" placeholder="e.g., A 5yo girl with poorly controlled asthma and eczema who presents with increased coughing and wheezing over the past week..." style="font-size: 1rem; resize: vertical;"></textarea>
+                        <div style="font-size: 0.75rem; color: var(--text-tertiary); margin-top: var(--space-xs);">
+                            Natural language works best. Or use the fields below.
+                        </div>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: var(--space-md); margin: var(--space-xl) 0;">
+                        <div style="flex: 1; height: 1px; background: var(--border);"></div>
+                        <span style="color: var(--text-tertiary); font-size: 0.7rem; white-space: nowrap;">OR CONFIGURE</span>
+                        <div style="flex: 1; height: 1px; background: var(--border);"></div>
+                    </div>
+
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label">Age</label>
@@ -897,35 +1113,64 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label">Sex</label>
-                            <select class="form-select" id="input-sex">
-                                <option value="">Random</option>
+                            <select class="form-select" id="input-sex" onchange="this.classList.toggle('has-value', this.value !== '')">
+                                <option value="" disabled selected>Random</option>
                                 <option value="male">Male</option>
                                 <option value="female">Female</option>
                             </select>
                         </div>
                     </div>
-                    
+
                     <div class="form-group">
                         <label class="form-label">Complexity</label>
-                        <div class="chip-group" id="complexity-chips">
-                            <span class="chip" data-value="" title="Random complexity">Random</span>
-                            <span class="chip" data-value="tier-0" title="Well visits only, no chronic conditions">Healthy</span>
-                            <span class="chip" data-value="tier-1" title="Single chronic condition (e.g., asthma, ADHD)">1 Condition</span>
-                            <span class="chip" data-value="tier-2" title="Multiple conditions (2-3 diagnoses)">2-3 Conditions</span>
-                            <span class="chip" data-value="tier-3" title="Complex/fragile patient with 4+ conditions">Complex</span>
+                        <div style="display: flex; align-items: center; gap: var(--space-md);">
+                            <span style="font-size: 0.8rem; color: var(--text-tertiary);">Healthy</span>
+                            <input type="range" id="input-complexity" min="0" max="5" value="0"
+                                   style="flex: 1; accent-color: var(--accent-primary);">
+                            <span style="font-size: 0.8rem; color: var(--text-tertiary);">Complex</span>
+                        </div>
+                        <div id="complexity-label" style="text-align: center; font-size: 0.85rem; margin-top: var(--space-xs); color: var(--accent-primary); font-weight: 500;">
+                            Healthy (no conditions)
                         </div>
                     </div>
-                    
+
+                    <div class="form-group">
+                        <label class="form-label">Chart Messiness</label>
+                        <div style="display: flex; align-items: center; gap: var(--space-md);">
+                            <span style="font-size: 0.8rem; color: var(--text-tertiary);">Pristine</span>
+                            <input type="range" id="input-messiness" min="0" max="5" value="0"
+                                   style="flex: 1; accent-color: var(--accent-primary);">
+                            <span style="font-size: 0.8rem; color: var(--text-tertiary);">Hostile</span>
+                        </div>
+                        <div id="messiness-label" style="text-align: center; font-size: 0.85rem; margin-top: var(--space-xs); color: var(--text-secondary); font-weight: 500;">
+                            Pristine (clean data)
+                        </div>
+                        <div id="messiness-details" style="font-size: 0.7rem; color: var(--text-tertiary); margin-top: var(--space-xs); text-align: center;">
+                        </div>
+                    </div>
+
                     <div class="form-group">
                         <label class="form-label">Conditions (optional)</label>
                         <input type="text" class="form-input" id="input-conditions" placeholder="asthma, adhd, ...">
                     </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Describe your patient (optional)</label>
-                        <textarea class="form-input" id="input-description" rows="3" placeholder="Describe in plain language, e.g.: A 5yo girl with poorly controlled asthma and eczema, frequent ER visits..."></textarea>
+
+                    <div class="form-group" style="padding: var(--space-md); background: var(--bg-secondary); border-radius: var(--radius-md);">
+                        <label class="form-label" style="margin-bottom: var(--space-sm);">Generation Mode</label>
+                        <div style="display: flex; gap: var(--space-lg);">
+                            <label style="display: flex; align-items: center; gap: var(--space-sm); cursor: pointer; font-size: 0.9rem;">
+                                <input type="radio" name="llm-mode" value="llm" checked style="accent-color: var(--accent-primary);">
+                                <span>AI-Enhanced</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: var(--space-sm); cursor: pointer; font-size: 0.9rem;">
+                                <input type="radio" name="llm-mode" value="no-llm" style="accent-color: var(--accent-primary);">
+                                <span>Fast (templates)</span>
+                            </label>
+                        </div>
+                        <div style="font-size: 0.7rem; color: var(--text-tertiary); margin-top: var(--space-xs);">
+                            AI-Enhanced creates natural clinical notes. Fast mode uses templates.
+                        </div>
                     </div>
-                    
+
                     <button id="generate-btn" class="btn btn-primary" style="width: 100%; justify-content: center;">
                         Generate Patient
                     </button>
@@ -938,8 +1183,36 @@
         // State
         let patients = [];
         let selectedPatientId = null;
-        let selectedComplexity = '';
-        
+
+        // Complexity tier labels
+        const complexityLabels = {
+            0: 'Healthy (no conditions)',
+            1: '1 Condition',
+            2: '2 Conditions',
+            3: '3 Conditions',
+            4: '4+ Conditions',
+            5: 'Complex (multi-system)'
+        };
+        const complexityTiers = ['tier-0', 'tier-1', 'tier-2', 'tier-3', 'tier-4', 'tier-5'];
+
+        // Messiness level labels
+        const messinessLabels = {
+            0: 'Pristine (clean data)',
+            1: 'Light (abbreviations)',
+            2: 'Moderate (copy-forward artifacts)',
+            3: 'Heavy (missing codes, contradictions)',
+            4: 'Severe (dictation errors, wrong pronouns)',
+            5: 'Hostile (ISMP violations, dangerous errors)'
+        };
+        const messinessDetails = {
+            0: '',
+            1: 'Abbreviations, medical jargon, shorthand',
+            2: '+ Zombie notes, outdated info, copy-paste decay',
+            3: '+ Implicit diagnoses, orphan codes, treating without coding',
+            4: '+ Voice-to-text errors, homophones, pronoun mismatches',
+            5: '+ Trailing zeros, U for units, QD/QID confusion, allergy conflicts'
+        };
+
         // DOM elements
         const quickGenerateBtn = document.getElementById('quick-generate');
         const generateBtn = document.getElementById('generate-btn');
@@ -948,35 +1221,46 @@
         const patientDetail = document.getElementById('patient-detail');
         const patientCount = document.getElementById('patient-count');
         const backBtn = document.getElementById('back-btn');
-        
+        const complexitySlider = document.getElementById('input-complexity');
+        const complexityLabel = document.getElementById('complexity-label');
+        const messinessSlider = document.getElementById('input-messiness');
+        const messinessLabel = document.getElementById('messiness-label');
+        const messinessDetailsEl = document.getElementById('messiness-details');
+
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             loadPatients();
             setupEventListeners();
         });
-        
+
         function setupEventListeners() {
             // Quick generate
             quickGenerateBtn.addEventListener('click', quickGenerate);
-            
+
             // Configured generate
             generateBtn.addEventListener('click', generateConfigured);
-            
+
             // Back button
             backBtn.addEventListener('click', () => {
                 patientDetail.classList.remove('active');
                 patientsView.style.display = 'block';
             });
-            
-            // Complexity chips
-            document.querySelectorAll('#complexity-chips .chip').forEach(chip => {
-                chip.addEventListener('click', () => {
-                    document.querySelectorAll('#complexity-chips .chip').forEach(c => c.classList.remove('active'));
-                    chip.classList.add('active');
-                    selectedComplexity = chip.dataset.value;
-                });
+
+            // Complexity slider
+            complexitySlider.addEventListener('input', () => {
+                complexityLabel.textContent = complexityLabels[complexitySlider.value];
             });
-            
+
+            // Messiness slider
+            messinessSlider.addEventListener('input', () => {
+                const level = messinessSlider.value;
+                messinessLabel.textContent = messinessLabels[level];
+                messinessDetailsEl.textContent = messinessDetails[level];
+                // Color coding for severity
+                const colors = ['var(--text-secondary)', 'var(--accent-primary)', '#d97706', '#ea580c', '#dc2626', '#7c2d12'];
+                messinessLabel.style.color = colors[level];
+            });
+
             // Tabs
             document.querySelectorAll('.detail-tab').forEach(tab => {
                 tab.addEventListener('click', () => {
@@ -986,12 +1270,46 @@
                     document.getElementById(`tab-${tab.dataset.tab}`).style.display = 'block';
                 });
             });
-            
+
             // Export buttons
             document.getElementById('export-json').addEventListener('click', () => exportPatient('json'));
             document.getElementById('export-fhir').addEventListener('click', () => exportPatient('fhir'));
             document.getElementById('export-ccda').addEventListener('click', () => exportPatient('ccda'));
             document.getElementById('export-markdown').addEventListener('click', () => exportPatient('markdown'));
+
+            // Delete button
+            document.getElementById('delete-patient-btn').addEventListener('click', deleteCurrentPatient);
+        }
+
+        async function deleteCurrentPatient() {
+            if (!selectedPatientId) return;
+
+            const patientName = document.getElementById('detail-name').textContent;
+            const confirmed = confirm(`Are you sure you want to delete "${patientName}"?\n\nThis action cannot be undone.`);
+
+            if (!confirmed) return;
+
+            try {
+                const response = await fetch(`/api/patients/${selectedPatientId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    // Remove from local array
+                    patients = patients.filter(p => p.id !== selectedPatientId);
+                    selectedPatientId = null;
+
+                    // Go back to list
+                    patientDetail.classList.remove('active');
+                    patientsView.style.display = 'block';
+                    renderPatientsList();
+                } else {
+                    alert('Failed to delete patient. Please try again.');
+                }
+            } catch (error) {
+                console.error('Delete failed:', error);
+                alert('Failed to delete patient. Please try again.');
+            }
         }
         
         async function loadPatients() {
@@ -1029,17 +1347,23 @@
             const sex = document.getElementById('input-sex').value;
             const conditions = document.getElementById('input-conditions').value;
             const description = document.getElementById('input-description').value;
-            
+            const complexity = complexitySlider.value;
+            const messiness = messinessSlider.value;
+            const useLlm = document.querySelector('input[name="llm-mode"]:checked').value === 'llm';
+
             const requestBody = {};
             if (age) requestBody.age = parseInt(age);
             if (sex) requestBody.sex = sex;
-            if (selectedComplexity) requestBody.complexity_tier = selectedComplexity;
-            if (conditions) requestBody.conditions = conditions.split(',').map(c => c.trim());
+            if (complexity) requestBody.complexity_tier = complexityTiers[complexity];
+            if (messiness > 0) requestBody.messiness_level = parseInt(messiness);
+            if (conditions) requestBody.conditions = conditions.split(',').map(c => c.trim()).filter(c => c);
             if (description) requestBody.description = description;
-            
+            requestBody.use_llm = useLlm;
+
             generateBtn.disabled = true;
-            generateBtn.innerHTML = '<span class="animate-pulse">⏳</span> Generating...';
-            
+            const modeLabel = useLlm ? 'Generating with AI...' : 'Generating...';
+            generateBtn.innerHTML = `<span class="animate-pulse">⏳</span> ${modeLabel}`;
+
             try {
                 const response = await fetch('/api/generate', {
                     method: 'POST',
@@ -1089,7 +1413,10 @@
                             </div>
                         ` : ''}
                     </div>
-                    <span class="tier-badge ${patient.complexity_tier.replace('-', '-')}">${formatTier(patient.complexity_tier)}</span>
+                    <div class="patient-badges">
+                        <span class="indicator-badge ${getComplexityClass(patient.complexity_tier)}">${formatComplexity(patient.complexity_tier)}</span>
+                        ${patient.messiness_level > 0 ? `<span class="indicator-badge ${getMessinessClass(patient.messiness_level)}">${formatMessiness(patient.messiness_level)}</span>` : ''}
+                    </div>
                 </div>
             `).join('');
         }
@@ -1106,13 +1433,31 @@
                 document.getElementById('detail-age').textContent = `${patient.demographics.age_years} years old`;
                 document.getElementById('detail-sex').textContent = capitalize(patient.demographics.sex_at_birth);
                 document.getElementById('detail-dob').textContent = `DOB: ${patient.demographics.date_of_birth}`;
-                
-                const tierBadge = document.getElementById('detail-tier');
-                tierBadge.textContent = formatTier(patient.complexity_tier);
-                tierBadge.className = `tier-badge ${patient.complexity_tier}`;
+
+                // Update complexity badge
+                const complexityBadge = document.getElementById('detail-complexity');
+                complexityBadge.textContent = formatComplexity(patient.complexity_tier);
+                complexityBadge.className = `indicator-badge ${getComplexityClass(patient.complexity_tier)}`;
+
+                // Update messiness badge (if present)
+                const messinessBadge = document.getElementById('detail-messiness');
+                const messinessLevel = patient.messiness_level || 0;
+                if (messinessLevel > 0) {
+                    messinessBadge.textContent = formatMessiness(messinessLevel);
+                    messinessBadge.className = `indicator-badge ${getMessinessClass(messinessLevel)}`;
+                    messinessBadge.style.display = 'inline-block';
+                } else {
+                    messinessBadge.style.display = 'none';
+                }
                 
                 // Update overview
                 const overviewGrid = document.getElementById('overview-grid');
+                const messageCount = patient.patient_messages ? patient.patient_messages.length : 0;
+                const activeConditions = patient.problem_list.filter(c => c.clinical_status === 'active').length;
+                const pastConditions = patient.problem_list.filter(c => ['resolved', 'inactive', 'remission'].includes(c.clinical_status)).length;
+                const activeMeds = patient.medication_list.filter(m => m.status === 'active').length;
+                const pastMeds = patient.medication_list.filter(m => ['completed', 'stopped'].includes(m.status)).length;
+
                 overviewGrid.innerHTML = `
                     <div class="data-item">
                         <div class="data-label">Encounters</div>
@@ -1120,23 +1465,35 @@
                     </div>
                     <div class="data-item">
                         <div class="data-label">Active Conditions</div>
-                        <div class="data-value">${patient.problem_list.filter(c => c.clinical_status === 'active').length}</div>
+                        <div class="data-value">${activeConditions}</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">Past Conditions</div>
+                        <div class="data-value">${pastConditions}</div>
                     </div>
                     <div class="data-item">
                         <div class="data-label">Active Medications</div>
-                        <div class="data-value">${patient.medication_list.filter(m => m.status === 'active').length}</div>
+                        <div class="data-value">${activeMeds}</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">Past Medications</div>
+                        <div class="data-value">${pastMeds}</div>
                     </div>
                     <div class="data-item">
                         <div class="data-label">Immunizations</div>
                         <div class="data-value">${patient.immunization_record.length}</div>
                     </div>
+                    <div class="data-item">
+                        <div class="data-label">Messages</div>
+                        <div class="data-value">${messageCount}</div>
+                    </div>
                 `;
                 
                 // Update conditions
                 const conditionsList = document.getElementById('conditions-list');
-                const activeConditions = patient.problem_list.filter(c => c.clinical_status === 'active');
-                if (activeConditions.length > 0) {
-                    conditionsList.innerHTML = activeConditions.map(c => 
+                const activeConditionsList = patient.problem_list.filter(c => c.clinical_status === 'active');
+                if (activeConditionsList.length > 0) {
+                    conditionsList.innerHTML = activeConditionsList.map(c =>
                         `<span class="condition-tag">${c.display_name}</span>`
                     ).join('');
                 } else {
@@ -1154,11 +1511,49 @@
                     </div>
                 `).join('');
                 
+                // Update messages
+                const messagesList = document.getElementById('messages-list');
+                const messages = patient.patient_messages || [];
+                if (messages.length > 0) {
+                    const sortedMessages = messages.sort((a, b) => new Date(b.sent_datetime) - new Date(a.sent_datetime));
+                    messagesList.innerHTML = sortedMessages.map(msg => `
+                        <div class="message-item animate-fade-in">
+                            <div class="message-header">
+                                <div>
+                                    <span class="message-subject">${msg.subject}</span>
+                                </div>
+                                <div class="message-meta">
+                                    <span class="message-category">${formatMessageCategory(msg.category)}</span>
+                                    <span class="message-medium">${msg.medium}</span>
+                                    <span>${formatDate(msg.sent_datetime)}</span>
+                                </div>
+                            </div>
+                            <div class="message-body">
+                                <div class="message-from">From: ${msg.sender_name}</div>
+                                <div class="message-content">${msg.message_body}</div>
+                                ${msg.reply_body ? `
+                                    <div class="message-reply">
+                                        <div class="message-from">Reply from: ${msg.replier_name || 'Office Staff'} (${msg.replier_role || 'Staff'}) - ${formatDate(msg.reply_datetime)}</div>
+                                        <div class="message-content">${msg.reply_body}</div>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    messagesList.innerHTML = `
+                        <div class="message-empty">
+                            <p>No patient messages in this chart.</p>
+                            <p style="font-size: 0.85rem; margin-top: var(--space-sm);">Messages frequency: ${(patient.message_frequency * 100).toFixed(0)}%</p>
+                        </div>
+                    `;
+                }
+
                 // Load markdown for full record
                 const mdResponse = await fetch(`/api/patients/${patientId}?format=markdown`);
                 const mdData = await mdResponse.json();
                 document.getElementById('markdown-content').innerHTML = renderMarkdown(mdData.markdown);
-                
+
                 // Show detail view
                 patientsView.style.display = 'none';
                 patientDetail.classList.add('active');
@@ -1184,14 +1579,44 @@
             return str.charAt(0).toUpperCase() + str.slice(1);
         }
         
-        function formatTier(tier) {
+        function formatComplexity(tier) {
             const map = {
                 'tier-0': 'Healthy',
-                'tier-1': 'Tier 1',
-                'tier-2': 'Tier 2',
-                'tier-3': 'Complex'
+                'tier-1': '1 Condition',
+                'tier-2': '2 Conditions',
+                'tier-3': '3 Conditions',
+                'tier-4': '4+ Conditions',
+                'tier-5': 'Complex'
             };
             return map[tier] || tier;
+        }
+
+        function getComplexityClass(tier) {
+            const map = {
+                'tier-0': 'complexity-0',
+                'tier-1': 'complexity-1',
+                'tier-2': 'complexity-2',
+                'tier-3': 'complexity-3',
+                'tier-4': 'complexity-4',
+                'tier-5': 'complexity-5'
+            };
+            return map[tier] || 'complexity-0';
+        }
+
+        function formatMessiness(level) {
+            const map = {
+                0: 'Pristine',
+                1: 'Light',
+                2: 'Moderate',
+                3: 'Heavy',
+                4: 'Severe',
+                5: 'Hostile'
+            };
+            return map[level] || 'Pristine';
+        }
+
+        function getMessinessClass(level) {
+            return `messiness-${level || 0}`;
         }
         
         function formatDate(dateStr) {
@@ -1205,6 +1630,21 @@
         
         function formatEncounterType(type) {
             return type.split('-').map(capitalize).join(' ');
+        }
+
+        function formatMessageCategory(category) {
+            const map = {
+                'refill-request': 'Refill',
+                'clinical-question': 'Question',
+                'appointment-request': 'Appointment',
+                'lab-result-question': 'Lab Results',
+                'follow-up': 'Follow-up',
+                'avoid-visit': 'Triage',
+                'school-form': 'Forms',
+                'referral-status': 'Referral',
+                'other': 'Other'
+            };
+            return map[category] || category.split('-').map(capitalize).join(' ');
         }
         
         function renderMarkdown(md) {

@@ -2,6 +2,7 @@
 # Comprehensive database of 50+ common pediatric conditions
 # Sources: CDC, AAP, NIH, PMC research papers
 # Last Updated: 2025-12-25
+# Schema Version: 2.0 - Enhanced with SNOMED, RxNorm, LOINC codes
 
 # =============================================================================
 # ACUTE RESPIRATORY CONDITIONS
@@ -10,214 +11,420 @@
 upper_respiratory_infection:
   display_name: "Upper Respiratory Infection"
   aliases: ["URI", "Common cold", "Viral URI"]
-  icd10: ["J06.9", "J00"]
+
+  billing_codes:
+    icd10: ["J06.9", "J00"]
+    snomed: "82272006"  # Common cold
+
   category: acute
   system: respiratory
 
-  age_ranges:
-    min_months: 1
-    peak_start_months: 6
-    peak_end_months: 72  # Peak 6 months to 6 years
-    max_months: 264
+  demographics:
+    age_months: { min: 1, peak: [6, 72], max: 264 }
+    gender_bias: { male: 0.5, female: 0.5 }
+    risk_factors: ["daycare", "school_age_siblings", "smoke_exposure"]
 
   prevalence:
-    annual_episodes_per_child: 6  # Children get 6-8 colds per year
+    annual_episodes_per_child: 6
     notes: "Most common acute illness in children"
 
   seasonality:
-    peak_months: [10, 11, 12, 1, 2, 3]  # Fall and winter
+    peak_months: [10, 11, 12, 1, 2, 3]
     weight_multiplier: 2.0
 
+  vitals_impact:
+    temp_f: [99.0, 101.5]
+    hr_multiplier: 1.05
+    rr_multiplier: 1.0
+    spo2_min: 97
+
   presentation:
-    symptoms: ["rhinorrhea", "nasal congestion", "cough", "low-grade fever", "sore throat"]
+    symptoms:
+      - { name: "rhinorrhea", probability: 0.95, description: "clear nasal discharge" }
+      - { name: "nasal congestion", probability: 0.90, description: "stuffy nose, mouth breathing" }
+      - { name: "cough", probability: 0.70, description: "mild cough, worse at night" }
+      - { name: "low-grade fever", probability: 0.50, description: "temperature 99-101F" }
+      - { name: "sore throat", probability: 0.40, description: "mild pharyngeal discomfort" }
     duration_days: [7, 10]
+    physical_exam:
+      - { system: "heent", finding: "Clear rhinorrhea, mildly erythematous nasal mucosa", probability: 0.90 }
+      - { system: "heent", finding: "Oropharynx mildly erythematous without exudate", probability: 0.70 }
+      - { system: "respiratory", finding: "Clear to auscultation bilaterally", probability: 0.95 }
+
+  diagnostics:
+    labs: []  # None indicated for uncomplicated URI
 
   treatment:
     approach: "supportive"
-    items:
-      - category: "education"
-        description: "Supportive care with rest and increased fluids"
-      - category: "medication"
-        description: "Acetaminophen or ibuprofen PRN for fever/discomfort"
-      - category: "education"
-        description: "Return precautions: difficulty breathing, high fever >3 days"
+    medications:
+      - agent: "Acetaminophen"
+        rxnorm: "161"
+        dose_mg_kg: 15
+        max_dose_mg: 1000
+        frequency: "Q4-6H PRN"
+        indication: "fever or discomfort"
+        prn: true
+      - agent: "Ibuprofen"
+        rxnorm: "5640"
+        dose_mg_kg: 10
+        max_dose_mg: 400
+        frequency: "Q6-8H PRN"
+        indication: "fever or discomfort"
+        prn: true
+        age_min_months: 6
+    patient_instructions:
+      - "Supportive care with rest and increased fluids"
+      - "Saline nasal drops and bulb suction for congestion"
+      - "Honey (if >1 year) for cough relief"
+      - "Return if: difficulty breathing, fever >3 days, ear pain, or worsening symptoms"
 
 otitis_media:
   display_name: "Acute Otitis Media"
   aliases: ["Ear infection", "AOM", "Middle ear infection"]
-  icd10: ["H66.90", "H66.91", "H66.92"]
+
+  billing_codes:
+    icd10: ["H66.90", "H66.91", "H66.92"]
+    snomed: "65363002"  # Acute otitis media
+
   category: acute
   system: ent
 
-  age_ranges:
-    min_months: 6   # Rare before 6 months
-    peak_start_months: 6
-    peak_end_months: 36  # Peak 6 months to 3 years
-    max_months: 144
+  demographics:
+    age_months: { min: 6, peak: [6, 36], max: 144 }
+    gender_bias: { male: 0.52, female: 0.48 }
+    risk_factors: ["daycare", "bottle_propping", "smoke_exposure", "pacifier_use", "no_breastfeeding"]
 
   prevalence:
-    lifetime_by_age_3: 0.83  # 5 of 6 children by age 3
+    lifetime_by_age_3: 0.83
     notes: "Most common reason for pediatric antibiotic prescriptions"
 
   seasonality:
     peak_months: [10, 11, 12, 1, 2, 3]
     weight_multiplier: 1.8
 
+  vitals_impact:
+    temp_f: [100.4, 102.5]
+    hr_multiplier: 1.10
+    rr_multiplier: 1.0
+    spo2_min: 97
+
   presentation:
-    symptoms: ["ear pain", "tugging at ear", "fever", "irritability", "decreased hearing"]
+    symptoms:
+      - { name: "ear pain", probability: 0.90, description: "otalgia, pulling/tugging at ear", age_min: 6 }
+      - { name: "fever", probability: 0.70, description: "temperature 100-102F" }
+      - { name: "irritability", probability: 0.85, description: "fussiness, poor sleep, crying" }
+      - { name: "decreased hearing", probability: 0.50, description: "not responding to sounds" }
+      - { name: "preceding URI", probability: 0.60, description: "rhinorrhea, congestion before onset" }
     duration_days: [3, 7]
+    physical_exam:
+      - { system: "heent", finding: "TM erythematous and bulging with loss of light reflex", probability: 0.85 }
+      - { system: "heent", finding: "Decreased TM mobility on pneumatic otoscopy", probability: 0.90 }
+      - { system: "heent", finding: "Middle ear effusion visible", probability: 0.75 }
+      - { system: "neck", finding: "Cervical lymphadenopathy", probability: 0.30 }
+
+  diagnostics:
+    labs: []  # Clinical diagnosis
 
   treatment:
     approach: "antibiotic_or_watchful_waiting"
-    items:
-      - category: "medication"
-        description: "Amoxicillin 80-90mg/kg/day divided BID x 10 days"
-      - category: "medication"
-        description: "Ibuprofen for pain management"
-      - category: "follow-up"
-        description: "Return if no improvement in 48-72 hours"
+    medications:
+      - agent: "Amoxicillin"
+        rxnorm: "723"
+        dose_mg_kg: 90
+        max_dose_mg: 3000
+        frequency: "divided BID"
+        duration_days: 10
+        route: "oral"
+        indication: "first-line for AOM"
+      - agent: "Amoxicillin-Clavulanate"
+        rxnorm: "1043"
+        dose_mg_kg: 90
+        max_dose_mg: 3000
+        frequency: "divided BID"
+        duration_days: 10
+        route: "oral"
+        indication: "if amoxicillin failure or recent antibiotic use"
+      - agent: "Ibuprofen"
+        rxnorm: "5640"
+        dose_mg_kg: 10
+        max_dose_mg: 400
+        frequency: "Q6H PRN"
+        indication: "pain management"
+        prn: true
+    patient_instructions:
+      - "Complete full course of antibiotics"
+      - "Ibuprofen or acetaminophen for pain control"
+      - "Return if no improvement in 48-72 hours"
+      - "Return immediately for high fever, facial swelling, or severe pain"
 
 bronchiolitis:
   display_name: "Bronchiolitis"
   aliases: ["RSV bronchiolitis", "Viral bronchiolitis"]
-  icd10: ["J21.0", "J21.9"]
+
+  billing_codes:
+    icd10: ["J21.0", "J21.9"]
+    snomed: "4120002"  # Bronchiolitis
+
   category: acute
   system: respiratory
 
-  age_ranges:
-    min_months: 0
-    peak_start_months: 2
-    peak_end_months: 6   # Peak 2-6 months
-    max_months: 24       # Rare after 2 years
+  demographics:
+    age_months: { min: 0, peak: [2, 6], max: 24 }
+    gender_bias: { male: 0.55, female: 0.45 }
+    risk_factors: ["premature_birth", "daycare", "smoke_exposure", "no_breastfeeding", "older_siblings"]
 
   prevalence:
     hospitalization_rate_under_1: 0.02
     notes: "Leading cause of hospitalization in infants"
 
   seasonality:
-    peak_months: [11, 12, 1, 2, 3]  # Winter months
+    peak_months: [11, 12, 1, 2, 3]
     weight_multiplier: 3.0
 
+  vitals_impact:
+    temp_f: [99.5, 101.5]
+    hr_multiplier: 1.20
+    rr_multiplier: 1.40
+    spo2_min: 90
+
   presentation:
-    symptoms: ["wheezing", "tachypnea", "nasal flaring", "retractions", "cough", "rhinorrhea"]
+    symptoms:
+      - { name: "wheezing", probability: 0.85, description: "expiratory wheeze on auscultation" }
+      - { name: "tachypnea", probability: 0.90, description: "respiratory rate elevated for age" }
+      - { name: "nasal flaring", probability: 0.60, description: "visible nasal flaring with breathing" }
+      - { name: "retractions", probability: 0.70, description: "subcostal and intercostal retractions" }
+      - { name: "cough", probability: 0.80, description: "harsh, dry cough" }
+      - { name: "rhinorrhea", probability: 0.85, description: "copious nasal secretions" }
+      - { name: "poor feeding", probability: 0.65, description: "decreased oral intake" }
     duration_days: [7, 14]
+    physical_exam:
+      - { system: "general", finding: "Infant with increased work of breathing", probability: 0.80 }
+      - { system: "respiratory", finding: "Diffuse wheezes and crackles bilaterally", probability: 0.85 }
+      - { system: "respiratory", finding: "Subcostal and intercostal retractions", probability: 0.70 }
+      - { system: "respiratory", finding: "Nasal flaring present", probability: 0.60 }
+      - { system: "heent", finding: "Copious clear rhinorrhea", probability: 0.85 }
+
+  diagnostics:
+    labs:
+      - { name: "RSV Rapid Antigen", loinc: "40987-4", result_positive: "Positive", result_negative: "Negative", probability_positive: 0.60 }
 
   treatment:
     approach: "supportive"
-    items:
-      - category: "other"
-        description: "Supportive care with suctioning and hydration"
-      - category: "education"
-        description: "Monitor for respiratory distress, feeding difficulties"
-      - category: "education"
-        description: "Return immediately if breathing difficulty worsens"
+    medications: []  # Primarily supportive care, no routine medications
+    patient_instructions:
+      - "Supportive care with nasal suctioning before feeds"
+      - "Maintain hydration with frequent small feeds"
+      - "Monitor for respiratory distress and feeding difficulties"
+      - "Return IMMEDIATELY if: breathing worsens, color change, stops eating, or appears very ill"
+      - "Consider hospitalization if SpO2 <90%, severe distress, or poor feeding"
 
 croup:
   display_name: "Croup"
   aliases: ["Laryngotracheobronchitis", "Viral croup"]
-  icd10: ["J05.0"]
+
+  billing_codes:
+    icd10: ["J05.0"]
+    snomed: "71186008"  # Laryngotracheobronchitis
+
   category: acute
   system: respiratory
 
-  age_ranges:
-    min_months: 3
-    peak_start_months: 6
-    peak_end_months: 36  # Peak 6 months to 3 years
-    max_months: 72
+  demographics:
+    age_months: { min: 3, peak: [6, 36], max: 72 }
+    gender_bias: { male: 0.60, female: 0.40 }
+    risk_factors: ["fall_season", "viral_exposure"]
 
   prevalence:
     annual_incidence_per_1000: 5.32
     notes: "Affects 3% of children under 5"
 
   seasonality:
-    peak_months: [9, 10, 11, 12]  # Fall and early winter
+    peak_months: [9, 10, 11, 12]
     weight_multiplier: 2.5
 
+  vitals_impact:
+    temp_f: [99.0, 101.5]
+    hr_multiplier: 1.15
+    rr_multiplier: 1.10
+    spo2_min: 94
+
   presentation:
-    symptoms: ["barking cough", "stridor", "hoarseness", "low-grade fever"]
+    symptoms:
+      - { name: "barking cough", probability: 0.95, description: "seal-like barking cough" }
+      - { name: "stridor", probability: 0.80, description: "inspiratory stridor, worse when agitated" }
+      - { name: "hoarseness", probability: 0.85, description: "hoarse voice or cry" }
+      - { name: "low-grade fever", probability: 0.60, description: "temperature 99-101F" }
     duration_days: [3, 7]
     worse_at_night: true
+    physical_exam:
+      - { system: "general", finding: "Child with characteristic barking cough", probability: 0.95 }
+      - { system: "respiratory", finding: "Inspiratory stridor, may worsen with agitation", probability: 0.80 }
+      - { system: "respiratory", finding: "Clear to auscultation, no wheezes", probability: 0.85 }
+      - { system: "heent", finding: "Hoarse voice or cry", probability: 0.85 }
+
+  diagnostics:
+    labs: []  # Clinical diagnosis
 
   treatment:
     approach: "steroid_plus_supportive"
-    items:
-      - category: "medication"
-        description: "Dexamethasone 0.6mg/kg PO x 1 dose"
-      - category: "education"
-        description: "Cool mist humidifier, calm environment"
-      - category: "education"
-        description: "Return immediately for stridor at rest or respiratory distress"
+    medications:
+      - agent: "Dexamethasone"
+        rxnorm: "3264"
+        dose_mg_kg: 0.6
+        max_dose_mg: 10
+        frequency: "x1 dose"
+        duration_days: 1
+        route: "oral"
+        indication: "reduce airway inflammation"
+    patient_instructions:
+      - "Single dose of dexamethasone is typically curative"
+      - "Cool mist or night air may provide temporary relief"
+      - "Keep child calm - crying worsens stridor"
+      - "Return IMMEDIATELY for stridor at rest, drooling, or respiratory distress"
 
 pharyngitis:
   display_name: "Pharyngitis"
   aliases: ["Sore throat", "Strep throat", "Streptococcal pharyngitis"]
-  icd10: ["J02.9", "J02.0"]
+
+  billing_codes:
+    icd10: ["J02.9", "J02.0"]
+    snomed: "405737000"  # Pharyngitis
+
   category: acute
   system: ent
 
-  age_ranges:
-    min_months: 24      # Strep rare before age 2
-    peak_start_months: 60
-    peak_end_months: 180  # Peak 5-15 years
-    max_months: 264
+  demographics:
+    age_months: { min: 24, peak: [60, 180], max: 264 }
+    gender_bias: { male: 0.5, female: 0.5 }
+    risk_factors: ["school_exposure", "household_contact", "winter_season"]
 
   prevalence:
-    strep_positive_rate: 0.30  # 30% of pediatric pharyngitis is strep
+    strep_positive_rate: 0.30
     notes: "Viral causes more common than bacterial"
 
   seasonality:
     peak_months: [11, 12, 1, 2, 3, 4]
     weight_multiplier: 1.5
 
+  vitals_impact:
+    temp_f: [100.5, 103.0]
+    hr_multiplier: 1.10
+    rr_multiplier: 1.0
+    spo2_min: 98
+
   presentation:
-    symptoms: ["sore throat", "fever", "tonsillar exudate", "cervical lymphadenopathy"]
+    symptoms:
+      - { name: "sore throat", probability: 0.95, description: "odynophagia, difficulty swallowing" }
+      - { name: "fever", probability: 0.80, description: "temperature 101-103F" }
+      - { name: "tonsillar exudate", probability: 0.60, description: "white patches on tonsils" }
+      - { name: "cervical lymphadenopathy", probability: 0.70, description: "tender anterior cervical nodes" }
+      - { name: "headache", probability: 0.50, description: "associated headache" }
+      - { name: "abdominal pain", probability: 0.30, description: "may have nausea or vomiting" }
     duration_days: [3, 7]
+    physical_exam:
+      - { system: "heent", finding: "Pharynx erythematous with tonsillar hypertrophy", probability: 0.90 }
+      - { system: "heent", finding: "Tonsillar exudate present", probability: 0.60 }
+      - { system: "heent", finding: "Palatal petechiae", probability: 0.30 }
+      - { system: "neck", finding: "Tender anterior cervical lymphadenopathy", probability: 0.70 }
+
+  diagnostics:
+    labs:
+      - { name: "Rapid Strep Test", loinc: "78012-2", result_positive: "Positive for Group A Strep", result_negative: "Negative", probability_positive: 0.30 }
 
   treatment:
     approach: "test_and_treat"
-    items:
-      - category: "order"
-        description: "Rapid strep test and/or throat culture"
-      - category: "medication"
-        description: "If positive: Amoxicillin or Penicillin V x 10 days"
-      - category: "medication"
-        description: "Acetaminophen or ibuprofen for pain"
+    medications:
+      - agent: "Amoxicillin"
+        rxnorm: "723"
+        dose_mg_kg: 50
+        max_dose_mg: 1000
+        frequency: "once daily"
+        duration_days: 10
+        route: "oral"
+        indication: "Group A strep pharyngitis"
+      - agent: "Penicillin V"
+        rxnorm: "7984"
+        fixed_dose_mg: 250
+        frequency: "BID-TID"
+        duration_days: 10
+        route: "oral"
+        indication: "alternative for Group A strep"
+      - agent: "Ibuprofen"
+        rxnorm: "5640"
+        dose_mg_kg: 10
+        max_dose_mg: 400
+        frequency: "Q6H PRN"
+        indication: "pain and fever"
+        prn: true
+    patient_instructions:
+      - "Rapid strep test performed; antibiotics if positive"
+      - "Complete full 10-day course of antibiotics if prescribed"
+      - "May return to school 24 hours after starting antibiotics"
+      - "Return if: difficulty breathing/swallowing, drooling, or neck stiffness"
 
 viral_gastroenteritis:
   display_name: "Viral Gastroenteritis"
   aliases: ["Stomach flu", "Gastroenteritis", "Acute diarrhea"]
-  icd10: ["A08.4", "A09"]
+
+  billing_codes:
+    icd10: ["A08.4", "A09"]
+    snomed: "25374005"  # Viral gastroenteritis
+
   category: acute
   system: gastrointestinal
 
-  age_ranges:
-    min_months: 2
-    peak_start_months: 6
-    peak_end_months: 60
-    max_months: 264
+  demographics:
+    age_months: { min: 2, peak: [6, 60], max: 264 }
+    gender_bias: { male: 0.5, female: 0.5 }
+    risk_factors: ["daycare", "household_contact", "contaminated_food_water"]
 
   prevalence:
     annual_episodes: 1.5
     notes: "Rotavirus most common cause in young children"
 
   seasonality:
-    peak_months: [11, 12, 1, 2, 3]  # Winter for rotavirus
-    summer_peak: [6, 7, 8]  # Summer for some viral causes
+    peak_months: [11, 12, 1, 2, 3]
+    summer_peak: [6, 7, 8]
     weight_multiplier: 1.5
 
+  vitals_impact:
+    temp_f: [99.0, 101.5]
+    hr_multiplier: 1.15
+    rr_multiplier: 1.0
+    spo2_min: 98
+
   presentation:
-    symptoms: ["vomiting", "diarrhea", "abdominal cramps", "low-grade fever", "decreased appetite"]
+    symptoms:
+      - { name: "vomiting", probability: 0.85, description: "non-bilious vomiting" }
+      - { name: "diarrhea", probability: 0.90, description: "watery, non-bloody stools" }
+      - { name: "abdominal cramps", probability: 0.70, description: "periumbilical cramping" }
+      - { name: "low-grade fever", probability: 0.50, description: "temperature 99-101F" }
+      - { name: "decreased appetite", probability: 0.80, description: "refusing feeds" }
     duration_days: [3, 7]
+    physical_exam:
+      - { system: "general", finding: "Child appears mildly dehydrated", probability: 0.40 }
+      - { system: "abdomen", finding: "Soft, diffusely tender, hyperactive bowel sounds", probability: 0.80 }
+      - { system: "skin", finding: "Mucous membranes slightly dry", probability: 0.40 }
+
+  diagnostics:
+    labs: []  # Clinical diagnosis, labs only if dehydration concern
 
   treatment:
     approach: "supportive"
-    items:
-      - category: "education"
-        description: "Oral rehydration with small frequent amounts of fluids"
-      - category: "education"
-        description: "BRAT diet as tolerated, advance as symptoms improve"
-      - category: "education"
-        description: "Return if unable to keep fluids down or signs of dehydration"
+    medications:
+      - agent: "Ondansetron"
+        rxnorm: "26225"
+        dose_mg_kg: 0.15
+        max_dose_mg: 8
+        frequency: "x1 dose PRN"
+        route: "oral"
+        indication: "for persistent vomiting to enable oral rehydration"
+        prn: true
+    patient_instructions:
+      - "Oral rehydration with small frequent amounts (1-2 tsp every 5 minutes)"
+      - "Use Pedialyte or similar oral rehydration solution"
+      - "Advance diet as tolerated - no need for BRAT restriction"
+      - "Return if: unable to keep fluids down, no urine in 8 hours, blood in stool, or appears very ill"
 
 influenza:
   display_name: "Influenza"
@@ -257,36 +464,77 @@ influenza:
 conjunctivitis:
   display_name: "Conjunctivitis"
   aliases: ["Pink eye", "Eye infection"]
-  icd10: ["H10.9", "H10.3"]
+
+  billing_codes:
+    icd10: ["H10.9", "H10.30", "H10.10"]
+    snomed: "9826008"  # Conjunctivitis
+
   category: acute
   system: eye
 
-  age_ranges:
-    min_months: 1
-    peak_start_months: 12
-    peak_end_months: 84
-    max_months: 264
+  demographics:
+    age_months: { min: 1, peak: [12, 84], max: 264 }
+    gender_bias: { male: 0.5, female: 0.5 }
+    risk_factors: ["daycare", "school_exposure", "recent_URI", "contact_lens_use"]
 
   prevalence:
-    notes: "Very common, highly contagious"
+    notes: "Very common, highly contagious; viral most common cause"
 
   seasonality:
     peak_months: [3, 4, 5, 9, 10]  # Spring and fall
     weight_multiplier: 1.3
 
+  vitals_impact:
+    temp_f: [98.6, 99.5]
+    hr_multiplier: 1.0
+    rr_multiplier: 1.0
+    spo2_min: 99
+
   presentation:
-    symptoms: ["eye redness", "discharge", "crusting", "itching", "tearing"]
+    symptoms:
+      - { name: "eye redness", probability: 0.95, description: "conjunctival injection" }
+      - { name: "discharge", probability: 0.85, description: "purulent (bacterial) or watery (viral)" }
+      - { name: "crusting", probability: 0.75, description: "eyelids stuck together in morning" }
+      - { name: "itching", probability: 0.60, description: "more prominent with allergic etiology" }
+      - { name: "tearing", probability: 0.70, description: "excessive lacrimation" }
+      - { name: "foreign body sensation", probability: 0.45, description: "gritty feeling in eye" }
     duration_days: [5, 10]
+    physical_exam:
+      - { system: "heent", finding: "Conjunctival injection with discharge", probability: 0.95 }
+      - { system: "heent", finding: "Eyelid edema", probability: 0.50 }
+      - { system: "heent", finding: "Preauricular lymphadenopathy (viral)", probability: 0.40 }
+      - { system: "heent", finding: "Normal cornea and visual acuity", probability: 0.98 }
+
+  diagnostics:
+    labs: []  # Clinical diagnosis
 
   treatment:
     approach: "varies_by_etiology"
-    items:
-      - category: "medication"
-        description: "Antibiotic eye drops if bacterial; supportive care if viral"
-      - category: "education"
-        description: "Good hand hygiene to prevent spread"
-      - category: "education"
-        description: "May return to school 24 hours after starting treatment if bacterial"
+    medications:
+      - agent: "Erythromycin Ophthalmic Ointment"
+        rxnorm: "310134"
+        frequency: "Apply 0.5 inch ribbon QID"
+        duration_days: 7
+        route: "ophthalmic"
+        indication: "bacterial conjunctivitis"
+      - agent: "Polymyxin B-Trimethoprim Ophthalmic"
+        rxnorm: "197879"
+        frequency: "1-2 drops Q3H for 7-10 days"
+        duration_days: 7
+        route: "ophthalmic"
+        indication: "bacterial conjunctivitis, alternative"
+      - agent: "Ofloxacin Ophthalmic"
+        rxnorm: "198214"
+        frequency: "1-2 drops Q2-4H"
+        duration_days: 7
+        route: "ophthalmic"
+        indication: "bacterial conjunctivitis, contact lens wearers"
+    patient_instructions:
+      - "Antibiotic drops for bacterial; supportive care for viral"
+      - "Good hand hygiene to prevent spread"
+      - "Do not share towels, pillowcases, or eye makeup"
+      - "May return to school 24 hours after starting treatment if bacterial"
+      - "Return if: vision changes, severe pain, or photophobia"
 
 hand_foot_mouth_disease:
   display_name: "Hand, Foot, and Mouth Disease"
@@ -393,15 +641,18 @@ fifth_disease:
 pneumonia:
   display_name: "Pneumonia"
   aliases: ["Community-acquired pneumonia", "CAP", "Lung infection"]
-  icd10: ["J18.9", "J15.9", "J12.9"]
+
+  billing_codes:
+    icd10: ["J18.9", "J15.9", "J12.9"]
+    snomed: "233604007"  # Community-acquired pneumonia
+
   category: acute
   system: respiratory
 
-  age_ranges:
-    min_months: 1
-    peak_start_months: 6
-    peak_end_months: 60
-    max_months: 264
+  demographics:
+    age_months: { min: 1, peak: [6, 60], max: 264 }
+    gender_bias: { male: 0.52, female: 0.48 }
+    risk_factors: ["daycare", "smoke_exposure", "immunodeficiency", "asthma", "prematurity"]
 
   prevalence:
     annual_incidence_per_1000: 15
@@ -411,55 +662,155 @@ pneumonia:
     peak_months: [11, 12, 1, 2, 3]
     weight_multiplier: 2.0
 
+  vitals_impact:
+    temp_f: [101.0, 104.0]
+    hr_multiplier: 1.25
+    rr_multiplier: 1.40
+    spo2_min: 88
+
   presentation:
-    symptoms: ["cough", "fever", "tachypnea", "retractions", "crackles", "decreased breath sounds"]
+    symptoms:
+      - { name: "cough", probability: 0.95, description: "productive or dry cough" }
+      - { name: "fever", probability: 0.90, description: "temperature 101-104F" }
+      - { name: "tachypnea", probability: 0.85, description: "respiratory rate elevated for age" }
+      - { name: "retractions", probability: 0.65, description: "subcostal and intercostal retractions" }
+      - { name: "decreased appetite", probability: 0.70, description: "poor oral intake" }
+      - { name: "lethargy", probability: 0.50, description: "decreased activity level" }
+      - { name: "chest pain", probability: 0.30, description: "pleuritic chest pain", age_min: 48 }
     duration_days: [7, 14]
+    physical_exam:
+      - { system: "general", finding: "Child appears ill, increased work of breathing", probability: 0.80 }
+      - { system: "respiratory", finding: "Crackles/rales on auscultation", probability: 0.85 }
+      - { system: "respiratory", finding: "Decreased breath sounds over affected area", probability: 0.70 }
+      - { system: "respiratory", finding: "Dullness to percussion", probability: 0.50 }
+      - { system: "respiratory", finding: "Tachypnea with subcostal retractions", probability: 0.75 }
+      - { system: "respiratory", finding: "Nasal flaring", probability: 0.45 }
+
+  diagnostics:
+    labs:
+      - { name: "Chest X-ray", loinc: "36643-5", result_positive: "Lobar consolidation or infiltrate", result_negative: "Clear lung fields", probability_positive: 0.85 }
+    notes: "CXR not required for uncomplicated outpatient management"
 
   treatment:
     approach: "antibiotic"
-    items:
-      - category: "medication"
-        description: "High-dose amoxicillin for typical bacterial pneumonia"
-      - category: "order"
-        description: "Chest X-ray if diagnosis uncertain"
-      - category: "follow-up"
-        description: "Recheck in 48-72 hours if not improving"
+    medications:
+      - agent: "Amoxicillin"
+        rxnorm: "723"
+        dose_mg_kg: 90
+        max_dose_mg: 4000
+        frequency: "divided TID"
+        duration_days: 7
+        route: "oral"
+        indication: "first-line for typical bacterial CAP"
+      - agent: "Azithromycin"
+        rxnorm: "18631"
+        dose_mg_kg: 10
+        max_dose_mg: 500
+        frequency: "once daily day 1, then 5mg/kg days 2-5"
+        duration_days: 5
+        route: "oral"
+        indication: "for atypical pathogens or penicillin allergy"
+      - agent: "Ibuprofen"
+        rxnorm: "5640"
+        dose_mg_kg: 10
+        max_dose_mg: 400
+        frequency: "Q6H PRN"
+        indication: "fever and discomfort"
+        prn: true
+    patient_instructions:
+      - "Complete full course of antibiotics"
+      - "Rest and maintain hydration"
+      - "Monitor for worsening respiratory distress"
+      - "Return IMMEDIATELY if: severe difficulty breathing, color change, unable to drink, or appears very ill"
+      - "Follow up in 48-72 hours if not improving"
 
 urinary_tract_infection:
   display_name: "Urinary Tract Infection"
   aliases: ["UTI", "Bladder infection", "Cystitis"]
-  icd10: ["N39.0"]
+
+  billing_codes:
+    icd10: ["N39.0", "N30.90"]
+    snomed: "68566005"  # Urinary tract infection
+
   category: acute
   system: genitourinary
 
-  age_ranges:
-    min_months: 1
-    peak_start_months: 24
-    peak_end_months: 72
-    max_months: 264
+  demographics:
+    age_months: { min: 1, peak: [24, 72], max: 264 }
+    gender_bias: { male: 0.20, female: 0.80 }  # 5:1 female predominance after infancy
+    risk_factors: ["female_sex", "uncircumcised_male", "constipation", "voiding_dysfunction", "vesicoureteral_reflux"]
 
   prevalence:
     females_percent: 5
     males_percent: 1
-    notes: "More common in females after infancy"
+    notes: "More common in females after infancy; in infants, uncircumcised males higher risk"
 
   seasonality:
     weight_multiplier: 1.0  # Year-round
 
+  vitals_impact:
+    temp_f: [100.4, 103.0]
+    hr_multiplier: 1.10
+    rr_multiplier: 1.0
+    spo2_min: 98
+
   presentation:
-    symptoms: ["dysuria", "frequency", "urgency", "fever", "abdominal pain"]
-    infant_symptoms: ["fever", "irritability", "poor feeding", "vomiting"]
+    symptoms:
+      - { name: "dysuria", probability: 0.85, description: "burning with urination", age_min: 24 }
+      - { name: "frequency", probability: 0.75, description: "frequent urination", age_min: 24 }
+      - { name: "urgency", probability: 0.70, description: "urinary urgency", age_min: 24 }
+      - { name: "fever", probability: 0.65, description: "temperature 100-103F" }
+      - { name: "abdominal pain", probability: 0.50, description: "suprapubic or lower abdominal discomfort" }
+      - { name: "irritability", probability: 0.80, description: "fussiness (infants)", age_max: 24 }
+      - { name: "poor feeding", probability: 0.70, description: "decreased oral intake (infants)", age_max: 24 }
+      - { name: "vomiting", probability: 0.40, description: "may have vomiting (infants)", age_max: 24 }
+      - { name: "foul-smelling urine", probability: 0.55, description: "malodorous urine" }
     duration_days: [3, 7]
+    physical_exam:
+      - { system: "abdomen", finding: "Suprapubic tenderness", probability: 0.50 }
+      - { system: "abdomen", finding: "No costovertebral angle tenderness (cystitis)", probability: 0.85 }
+      - { system: "genitourinary", finding: "No labial adhesions or phimosis", probability: 0.90 }
+
+  diagnostics:
+    labs:
+      - { name: "Urinalysis", loinc: "5767-9", result_positive: "Positive leukocyte esterase, positive nitrites, WBC >5/HPF", result_negative: "Negative", probability_positive: 0.90 }
+      - { name: "Urine Culture", loinc: "630-4", result_positive: ">50,000 CFU/mL single pathogen", result_negative: "No growth", probability_positive: 0.85 }
 
   treatment:
     approach: "antibiotic"
-    items:
-      - category: "order"
-        description: "Urinalysis and urine culture"
-      - category: "medication"
-        description: "Age-appropriate antibiotic (cephalexin, TMP-SMX, or nitrofurantoin)"
-      - category: "follow-up"
-        description: "Consider renal ultrasound for first febrile UTI"
+    medications:
+      - agent: "Cephalexin"
+        rxnorm: "2393"
+        dose_mg_kg: 50
+        max_dose_mg: 2000
+        frequency: "divided BID-QID"
+        duration_days: 7
+        route: "oral"
+        indication: "first-line empiric therapy"
+      - agent: "Trimethoprim-Sulfamethoxazole"
+        rxnorm: "10829"
+        dose_mg_kg: 8
+        max_dose_mg: 320
+        frequency: "divided BID"
+        duration_days: 7
+        route: "oral"
+        indication: "alternative if susceptible"
+        age_min_months: 2
+      - agent: "Nitrofurantoin"
+        rxnorm: "7454"
+        dose_mg_kg: 5
+        max_dose_mg: 400
+        frequency: "divided QID"
+        duration_days: 7
+        route: "oral"
+        indication: "for lower tract infection only"
+        age_min_months: 1
+    patient_instructions:
+      - "Complete full course of antibiotics"
+      - "Encourage adequate fluid intake"
+      - "Recheck urine if symptoms persist after 48-72 hours"
+      - "Consider renal ultrasound for first febrile UTI"
+      - "Return if: high fever, back pain, vomiting, or unable to keep down medications"
 
 febrile_seizure:
   display_name: "Febrile Seizure"
@@ -570,57 +921,101 @@ ringworm:
 asthma:
   display_name: "Asthma"
   aliases: ["Reactive airway disease", "RAD"]
-  icd10: ["J45.20", "J45.30", "J45.40", "J45.50"]
+
+  billing_codes:
+    icd10: ["J45.20", "J45.30", "J45.40", "J45.50"]
+    snomed: "195967001"  # Asthma
+
   category: chronic
   system: respiratory
 
-  age_ranges:
-    min_months: 12       # Usually not diagnosed before 1 year
-    typical_diagnosis_months: 48  # Often diagnosed by age 4-5
-    peak_start_months: 24
-    peak_end_months: 84
-    max_months: 264
+  demographics:
+    age_months: { min: 12, peak: [24, 84], max: 264 }
+    gender_bias: { male: 0.55, female: 0.45 }  # Males more common in childhood
+    risk_factors: ["family_history", "eczema", "allergic_rhinitis", "smoke_exposure", "prematurity"]
 
   prevalence:
-    percent: 8  # About 8% of children
+    percent: 8
     notes: "Most common chronic disease of childhood"
 
   comorbidities:
     strong: ["eczema", "allergic_rhinitis", "food_allergy"]
     moderate: ["obesity", "anxiety", "gerd"]
 
+  vitals_impact:  # During exacerbation
+    temp_f: [98.6, 99.5]
+    hr_multiplier: 1.20
+    rr_multiplier: 1.30
+    spo2_min: 90
+
   presentation:
-    symptoms: ["wheezing", "cough", "shortness of breath", "chest tightness"]
-    triggers: ["viral illness", "exercise", "allergens", "cold air"]
+    symptoms:
+      - { name: "wheezing", probability: 0.90, description: "expiratory wheeze on auscultation" }
+      - { name: "cough", probability: 0.85, description: "dry cough, worse at night or with exercise" }
+      - { name: "shortness of breath", probability: 0.75, description: "dyspnea with activity or at rest (severe)" }
+      - { name: "chest tightness", probability: 0.60, description: "sensation of chest constriction" }
+      - { name: "exercise intolerance", probability: 0.55, description: "symptoms with physical activity" }
+    triggers: ["viral illness", "exercise", "allergens", "cold air", "smoke", "strong odors"]
+    physical_exam:
+      - { system: "respiratory", finding: "Expiratory wheezes bilaterally", probability: 0.85 }
+      - { system: "respiratory", finding: "Prolonged expiratory phase", probability: 0.70 }
+      - { system: "respiratory", finding: "Use of accessory muscles", probability: 0.50 }
+      - { system: "general", finding: "No acute distress when well-controlled", probability: 0.80 }
+
+  diagnostics:
+    labs:
+      - { name: "Spirometry", loinc: "19926-5", result_positive: "FEV1/FVC ratio <80% predicted", result_negative: "Normal", probability_positive: 0.75 }
+    notes: "Spirometry reliable in children age 5+; diagnosis often clinical in younger children"
 
   treatment:
     approach: "stepwise_management"
-    items:
-      - category: "medication"
-        description: "Albuterol inhaler PRN for rescue"
-      - category: "medication"
-        description: "Inhaled corticosteroid for persistent asthma"
-      - category: "education"
-        description: "Asthma action plan, trigger avoidance, inhaler technique"
-      - category: "follow-up"
-        description: "Return in 1-3 months for asthma control assessment"
+    medications:
+      - agent: "Albuterol HFA Inhaler"
+        rxnorm: "351137"
+        frequency: "1-2 puffs Q4-6H PRN"
+        route: "inhaled"
+        indication: "rescue medication for acute symptoms"
+        prn: true
+      - agent: "Fluticasone Propionate HFA"
+        rxnorm: "966524"
+        frequency: "1-2 puffs BID"
+        route: "inhaled"
+        indication: "controller medication for persistent asthma"
+      - agent: "Montelukast"
+        rxnorm: "88249"
+        frequency: "once daily at bedtime"
+        route: "oral"
+        indication: "add-on controller, exercise-induced asthma"
+        dose_by_age:
+          - { age_range: "12-23 months", dose: "4mg granules" }
+          - { age_range: "2-5 years", dose: "4mg chewable" }
+          - { age_range: "6-14 years", dose: "5mg chewable" }
+          - { age_range: "15+ years", dose: "10mg tablet" }
+    patient_instructions:
+      - "Use spacer with MDI for better medication delivery"
+      - "Rinse mouth after using inhaled corticosteroid"
+      - "Follow asthma action plan: green-yellow-red zones"
+      - "Identify and avoid known triggers"
+      - "Return if: increased rescue inhaler use, nighttime symptoms, or poor control"
 
 eczema:
   display_name: "Eczema"
   aliases: ["Atopic dermatitis", "AD"]
-  icd10: ["L20.9", "L20.89"]
+
+  billing_codes:
+    icd10: ["L20.9", "L20.89", "L20.81"]
+    snomed: "43116000"  # Atopic dermatitis
+
   category: chronic
   system: dermatological
 
-  age_ranges:
-    min_months: 1
-    typical_diagnosis_months: 6   # 45% start by 6 months
-    peak_start_months: 1
-    peak_end_months: 72           # 80% by age 6
-    max_months: 264
+  demographics:
+    age_months: { min: 1, peak: [1, 72], max: 264 }
+    gender_bias: { male: 0.5, female: 0.5 }
+    risk_factors: ["family_history_atopy", "filaggrin_mutation", "urban_environment", "hard_water"]
 
   prevalence:
-    percent: 20  # Up to 20% of children
+    percent: 20
     resolves_by_age_6: 0.60
     notes: "First step in the atopic march"
 
@@ -628,22 +1023,66 @@ eczema:
     strong: ["asthma", "allergic_rhinitis", "food_allergy"]
     moderate: ["anxiety", "sleep_disorders"]
 
+  vitals_impact:
+    temp_f: [98.6, 98.6]  # Normal unless superinfected
+    hr_multiplier: 1.0
+    rr_multiplier: 1.0
+    spo2_min: 99
+
   presentation:
-    symptoms: ["pruritic rash", "dry skin", "erythema", "lichenification"]
+    symptoms:
+      - { name: "pruritus", probability: 0.95, description: "intense itching, often worse at night" }
+      - { name: "dry skin", probability: 0.90, description: "xerosis with fine scaling" }
+      - { name: "erythematous rash", probability: 0.85, description: "red, inflamed patches" }
+      - { name: "excoriation", probability: 0.60, description: "scratch marks from pruritus" }
+      - { name: "sleep disturbance", probability: 0.55, description: "difficulty sleeping due to itch" }
+      - { name: "lichenification", probability: 0.40, description: "thickened skin from chronic scratching", age_min: 24 }
     location_infant: ["face", "scalp", "extensor surfaces"]
-    location_older: ["flexural areas", "hands", "feet"]
+    location_older: ["flexural areas", "hands", "feet", "neck"]
+    physical_exam:
+      - { system: "skin", finding: "Erythematous, scaly patches with xerosis", probability: 0.90 }
+      - { system: "skin", finding: "Flexural distribution (antecubital, popliteal fossae)", probability: 0.75 }
+      - { system: "skin", finding: "Excoriations from scratching", probability: 0.65 }
+      - { system: "skin", finding: "No honey crusting (no superinfection)", probability: 0.85 }
+      - { system: "heent", finding: "Dennie-Morgan lines (infraorbital folds)", probability: 0.40 }
+
+  diagnostics:
+    labs: []  # Clinical diagnosis
 
   treatment:
     approach: "emollient_plus_steroids"
-    items:
-      - category: "medication"
-        description: "Daily emollient application, fragrance-free"
-      - category: "medication"
-        description: "Topical corticosteroid for flares"
-      - category: "education"
-        description: "Bathing routine, trigger avoidance, cotton clothing"
-      - category: "follow-up"
-        description: "Return if signs of skin infection or uncontrolled"
+    medications:
+      - agent: "Hydrocortisone 1% Cream"
+        rxnorm: "310323"
+        frequency: "Apply BID to affected areas"
+        route: "topical"
+        indication: "mild eczema, face/intertriginous areas"
+      - agent: "Triamcinolone 0.1% Cream"
+        rxnorm: "310316"
+        frequency: "Apply BID to affected areas"
+        route: "topical"
+        indication: "moderate eczema, body"
+      - agent: "Tacrolimus 0.03% Ointment"
+        rxnorm: "835901"
+        frequency: "Apply BID to affected areas"
+        route: "topical"
+        indication: "steroid-sparing for face/sensitive areas"
+        age_min_months: 24
+      - agent: "Diphenhydramine"
+        rxnorm: "3498"
+        dose_mg_kg: 1.25
+        max_dose_mg: 50
+        frequency: "Q6H PRN"
+        route: "oral"
+        indication: "for nighttime pruritus"
+        prn: true
+    patient_instructions:
+      - "Apply thick emollient (Aquaphor, CeraVe, Vanicream) daily, especially after bathing"
+      - "Short lukewarm baths, pat dry, apply emollient within 3 minutes"
+      - "Use fragrance-free products; wash new clothes before wearing"
+      - "Cotton clothing; avoid wool and synthetic fabrics"
+      - "Keep fingernails short to minimize excoriation"
+      - "Return if: signs of infection (honey crusting, increasing redness, fever)"
 
 allergic_rhinitis:
   display_name: "Allergic Rhinitis"

@@ -10,6 +10,7 @@ from .engine import (
     LifeArc,
     EncounterStub,
 )
+from .messiness import MessinessInjector
 
 __all__ = [
     "BaseEngine",
@@ -18,4 +19,5 @@ __all__ = [
     "EngineOrchestrator",
     "LifeArc",
     "EncounterStub",
+    "MessinessInjector",
 ]

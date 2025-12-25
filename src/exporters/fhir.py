@@ -23,6 +23,10 @@ from src.models import (
     LabResult,
     LabPanel,
     Procedure,
+    PatientMessage,
+    MessageCategory,
+    MessageMedium,
+    MessageStatus,
     Sex,
     ConditionStatus,
     MedicationStatus,
@@ -110,7 +114,15 @@ class FHIRExporter:
             for obs in self._create_growth_observations(growth, patient_id, encounter_id_map.get(growth.encounter_id)):
                 obs_id = generate_uuid()
                 entries.append(self._bundle_entry(obs, obs_id))
-        
+
+        # Patient messages (Communications)
+        for message in patient.patient_messages:
+            comm_id = generate_uuid()
+            comm_resource = self._create_communication_resource(
+                message, patient_id, encounter_id_map.get(message.related_encounter_id), comm_id
+            )
+            entries.append(self._bundle_entry(comm_resource, comm_id))
+
         # Build the bundle
         bundle = {
             "resourceType": "Bundle",
@@ -585,8 +597,118 @@ class FHIRExporter:
             if enc_id:
                 obs["encounter"] = {"reference": f"urn:uuid:{enc_id}"}
             observations.append(obs)
-        
+
         return observations
+
+    def _create_communication_resource(
+        self,
+        message: PatientMessage,
+        patient_id: str,
+        encounter_id: str | None,
+        comm_id: str
+    ) -> dict:
+        """Create FHIR Communication resource for patient messages."""
+        # Map internal category to FHIR Communication category codes
+        # Using http://terminology.hl7.org/CodeSystem/communication-category
+        category_map = {
+            MessageCategory.REFILL_REQUEST: {"code": "prescription", "display": "Prescription"},
+            MessageCategory.CLINICAL_QUESTION: {"code": "notification", "display": "Notification"},
+            MessageCategory.APPOINTMENT_REQUEST: {"code": "reminder", "display": "Reminder"},
+            MessageCategory.LAB_RESULT_QUESTION: {"code": "notification", "display": "Notification"},
+            MessageCategory.FOLLOW_UP: {"code": "notification", "display": "Notification"},
+            MessageCategory.AVOID_VISIT: {"code": "notification", "display": "Notification"},
+            MessageCategory.SCHOOL_FORM: {"code": "instruction", "display": "Instruction"},
+            MessageCategory.REFERRAL_STATUS: {"code": "notification", "display": "Notification"},
+            MessageCategory.OTHER: {"code": "notification", "display": "Notification"},
+        }
+
+        # Map medium to FHIR ContactPoint system
+        medium_map = {
+            MessageMedium.PORTAL: {"code": "WRITTEN", "display": "Written"},
+            MessageMedium.PHONE: {"code": "PHONE", "display": "Telephone"},
+            MessageMedium.EMAIL: {"code": "EMAILWRIT", "display": "Email"},
+            MessageMedium.FAX: {"code": "FAX", "display": "Fax"},
+            MessageMedium.SMS: {"code": "SMS", "display": "SMS"},
+        }
+
+        # Map status
+        status_map = {
+            MessageStatus.COMPLETED: "completed",
+            MessageStatus.IN_PROGRESS: "in-progress",
+            MessageStatus.NOT_DONE: "not-done",
+        }
+
+        cat_info = category_map.get(message.category, {"code": "notification", "display": "Notification"})
+        med_info = medium_map.get(message.medium, {"code": "WRITTEN", "display": "Written"})
+
+        # Build the resource
+        resource = {
+            "resourceType": "Communication",
+            "id": comm_id,
+            "status": status_map.get(message.status, "completed"),
+            "category": [{
+                "coding": [{
+                    "system": "http://terminology.hl7.org/CodeSystem/communication-category",
+                    "code": cat_info["code"],
+                    "display": cat_info["display"],
+                }],
+                "text": message.category.value.replace("-", " ").title(),
+            }],
+            "medium": [{
+                "coding": [{
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationMode",
+                    "code": med_info["code"],
+                    "display": med_info["display"],
+                }],
+                "text": message.medium.value.title(),
+            }],
+            "subject": {
+                "reference": f"urn:uuid:{patient_id}",
+            },
+            "sent": format_date(message.sent_datetime),
+            "payload": [{
+                "contentString": message.message_body,
+            }],
+        }
+
+        # Add sender info
+        resource["sender"] = {
+            "display": message.sender_name,
+        }
+
+        # Add recipient info
+        resource["recipient"] = [{
+            "display": message.recipient_name,
+        }]
+
+        # Add encounter reference if available
+        if encounter_id:
+            resource["encounter"] = {
+                "reference": f"urn:uuid:{encounter_id}",
+            }
+
+        # Add topic/subject
+        if message.subject:
+            resource["topic"] = {
+                "text": message.subject,
+            }
+
+        # Add reply as a note if present
+        if message.reply_body and message.reply_datetime:
+            resource["note"] = [{
+                "authorString": message.replier_name or "Office Staff",
+                "time": format_date(message.reply_datetime),
+                "text": message.reply_body,
+            }]
+            resource["received"] = format_date(message.reply_datetime)
+
+        # Add related condition as reasonCode if present
+        if message.related_condition:
+            resource["reasonCode"] = [{
+                "text": message.related_condition,
+            }]
+
+        return resource
 
 
 def export_to_fhir(patient: Patient, output_path=None) -> dict[str, Any]:

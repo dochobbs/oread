@@ -20,6 +20,9 @@ from .patient import (
     Interpretation,
     ImmunizationStatus,
     ComplexityTier,
+    MessageCategory,
+    MessageMedium,
+    MessageStatus,
     # Core types
     CodeableConcept,
     ReferenceRange,
@@ -65,6 +68,8 @@ from .patient import (
     Coverage,
     CareTeamMember,
     CareGap,
+    # Communications
+    PatientMessage,
     # Root
     Patient,
     GenerationSeed,
@@ -90,6 +95,9 @@ __all__ = [
     "Interpretation",
     "ImmunizationStatus",
     "ComplexityTier",
+    "MessageCategory",
+    "MessageMedium",
+    "MessageStatus",
     # Core types
     "CodeableConcept",
     "ReferenceRange",
@@ -135,6 +143,8 @@ __all__ = [
     "Coverage",
     "CareTeamMember",
     "CareGap",
+    # Communications
+    "PatientMessage",
     # Root
     "Patient",
     "GenerationSeed",

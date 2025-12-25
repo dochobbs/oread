@@ -62,6 +62,8 @@ class GenerateRequest(BaseModel):
     encounter_count: Optional[int] = Field(None, ge=1, description="Number of encounters")
     random_seed: Optional[int] = Field(None, description="Random seed for reproducibility")
     description: Optional[str] = Field(None, description="Natural language description")
+    use_llm: bool = Field(True, description="Use LLM for natural narratives (default: True)")
+    messiness_level: int = Field(0, ge=0, le=5, description="Chart messiness level (0=pristine to 5=hostile)")
 
 
 class PatientSummary(BaseModel):
@@ -75,6 +77,7 @@ class PatientSummary(BaseModel):
     active_conditions: list[str]
     encounter_count: int
     generated_at: str
+    messiness_level: int = 0
 
 
 class GenerationStatus(BaseModel):
@@ -105,12 +108,12 @@ async def health_check():
 async def generate_patient(request: GenerateRequest):
     """
     Generate a synthetic patient.
-    
+
     Returns the patient summary immediately. Use /api/patients/{id} to get full data.
     """
     # Build generation seed
     seed_params = {}
-    
+
     if request.age is not None:
         seed_params["age"] = request.age
     if request.age_months is not None:
@@ -127,18 +130,23 @@ async def generate_patient(request: GenerateRequest):
         seed_params["random_seed"] = request.random_seed
     if request.description:
         seed_params["description"] = request.description
-    
+    if request.messiness_level > 0:
+        seed_params["messiness_level"] = request.messiness_level
+
     gen_seed = GenerationSeed(**seed_params)
-    
+
+    # Use engine with appropriate LLM and messiness settings
+    engine = PedsEngine(use_llm=request.use_llm, messiness_level=request.messiness_level)
+
     # Generate patient
     try:
-        patient = peds_engine.generate(gen_seed)
+        patient = engine.generate(gen_seed)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
     # Store patient
     patients_store[patient.id] = patient
-    
+
     # Return summary
     return PatientSummary(
         id=patient.id,
@@ -150,6 +158,7 @@ async def generate_patient(request: GenerateRequest):
         active_conditions=[c.display_name for c in patient.active_conditions],
         encounter_count=len(patient.encounters),
         generated_at=patient.generated_at.isoformat(),
+        messiness_level=request.messiness_level,
     )
 
 
@@ -157,17 +166,19 @@ async def generate_patient(request: GenerateRequest):
 async def quick_generate():
     """
     Generate a random patient with default settings.
-    
-    Quick endpoint for one-click generation.
+
+    Quick endpoint for one-click generation. Uses LLM for natural narratives.
     """
     import random
-    
+
     seed = GenerationSeed(
         age=random.randint(0, 18),
         random_seed=random.randint(1, 1000000),
     )
-    
-    patient = peds_engine.generate(seed)
+
+    # Use LLM-enabled engine for natural narratives
+    engine = PedsEngine(use_llm=True)
+    patient = engine.generate(seed)
     patients_store[patient.id] = patient
     
     return PatientSummary(
@@ -180,6 +191,7 @@ async def quick_generate():
         active_conditions=[c.display_name for c in patient.active_conditions],
         encounter_count=len(patient.encounters),
         generated_at=patient.generated_at.isoformat(),
+        messiness_level=0,
     )
 
 

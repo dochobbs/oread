@@ -1,10 +1,10 @@
-# SynthPatient
+# Oread
 
 **Generate realistic, clinically coherent synthetic patient records**
 
-SynthPatient creates longitudinal medical records for AI evaluation, EMR demos, and medical education. It produces FHIR R4 bundles, structured JSON, and human-readable Markdown documentation.
+Oread creates longitudinal pediatric medical records for AI evaluation, EMR demos, and medical education. It produces FHIR R4 bundles, C-CDA 2.1 documents, structured JSON, and human-readable Markdown.
 
-![SynthPatient](https://img.shields.io/badge/version-0.1.0-blue)
+![Oread](https://img.shields.io/badge/version-0.2.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11+-green)
 ![License](https://img.shields.io/badge/license-MIT-gray)
 
@@ -12,12 +12,18 @@ SynthPatient creates longitudinal medical records for AI evaluation, EMR demos, 
 
 ## Features
 
-- **Clinically coherent** — Growth curves, immunizations, and conditions follow realistic patterns
-- **Longitudinal records** — Full visit history from birth through adulthood
-- **Multiple outputs** — FHIR R4, JSON, and Markdown export
-- **Flexible generation** — From healthy patients to complex multi-system disease
-- **Web interface** — Beautiful UI for interactive generation
-- **CLI tool** — Scriptable batch generation
+- **Clinically coherent** - Growth curves, immunizations, and conditions follow realistic patterns
+- **Illness-aware vitals** - Fever, tachycardia, low SpO2 based on condition
+- **Condition-specific findings** - Physical exam findings match the diagnosis
+- **Medical coding standards** - SNOMED CT, RxNorm, LOINC, ICD-10, CVX codes
+- **Weight-based dosing** - Pediatric medication doses calculated correctly
+- **Multiple exports** - FHIR R4, C-CDA 2.1, JSON, Markdown
+- **Web interface** - Interactive generation and export
+- **CLI tool** - Scriptable batch generation
+- **LLM-enhanced narratives** - Natural clinical notes powered by Claude API
+- **Patient messages** - Portal and phone messages with office replies (FHIR Communication)
+- **Medical history** - Resolved conditions and past medications from acute visits
+- **Chart messiness** - Realistic artifacts like abbreviations, copy-forward errors, and dictation mistakes
 
 ## Quick Start
 
@@ -25,14 +31,15 @@ SynthPatient creates longitudinal medical records for AI evaluation, EMR demos, 
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/synthpatient.git
-cd synthpatient
+git clone https://github.com/yourusername/oread.git
+cd oread
+
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate
 
 # Install dependencies
 pip install -e .
-
-# Set your Anthropic API key (optional, for LLM-enhanced generation)
-export ANTHROPIC_API_KEY=your-key-here
 ```
 
 ### Generate a Patient
@@ -42,16 +49,13 @@ export ANTHROPIC_API_KEY=your-key-here
 python cli.py generate
 
 # Specific age and sex
-python cli.py generate --age 5 --sex female
+python cli.py generate --age 2 --sex female
 
 # With conditions
 python cli.py generate --age 10 --conditions "asthma,adhd"
 
 # Complex patient
 python cli.py generate --complexity tier-3
-
-# Natural language description
-python cli.py generate --describe "A 14yo boy with poorly controlled type 1 diabetes"
 ```
 
 ### Web Interface
@@ -63,63 +67,64 @@ python server.py
 # Open http://localhost:8000
 ```
 
-### Batch Generation
-
-```bash
-# Generate 50 patients with a distribution
-python cli.py batch --count 50 \
-  --distribution "healthy:60,tier1:25,tier2:12,tier3:3" \
-  --age-range 0-18 \
-  --output ./patients/
-```
-
 ## Output Formats
 
 ### JSON
-
-Clean, structured patient data:
-
-```json
-{
-  "id": "abc123",
-  "demographics": {
-    "full_name": "Emma Johnson",
-    "date_of_birth": "2019-06-15",
-    "sex_at_birth": "female"
-  },
-  "problem_list": [...],
-  "encounters": [...]
-}
-```
+Clean, structured patient data with full clinical detail.
 
 ### FHIR R4
+Standards-compliant Bundle with Patient, Condition, MedicationStatement, Immunization, Encounter, Observation, and Communication resources.
 
-Standards-compliant FHIR Bundle with:
-- Patient resource (US Core profile)
-- Condition resources
-- MedicationStatement resources
-- Immunization resources
-- Encounter resources
-- Observation resources (vitals, growth)
+### C-CDA 2.1
+HL7 Consolidated CDA document with proper OIDs for SNOMED, RxNorm, LOINC, and ICD-10.
 
 ### Markdown
+Human-readable documentation with full encounter history.
 
-Human-readable documentation perfect for review:
+## Medical Coding
 
-```markdown
-# Patient Record: Emma Johnson
+Oread uses industry-standard medical terminologies:
 
-**Age:** 5 years
-**Sex:** Female
+| System | Use | Example |
+|--------|-----|---------|
+| **SNOMED CT** | Diagnoses | Acute Otitis Media: 65363002 |
+| **ICD-10-CM** | Billing codes | Otitis Media: H66.90 |
+| **RxNorm** | Medications | Amoxicillin: 723 |
+| **LOINC** | Lab tests | Rapid Strep: 78012-2 |
+| **CVX** | Vaccines | DTaP: 20 |
 
-## Problem List
-- Asthma, mild persistent (J45.30) - Active
+## Condition-Aware Generation
 
-## Encounter History
-### 2024-06-15 - Well-Child Visit
-**Chief Complaint:** 5 year well child check
-...
+Each condition in Oread includes:
+
+```yaml
+otitis_media:
+  display_name: "Acute Otitis Media"
+  billing_codes:
+    snomed: "65363002"
+    icd10: ["H66.90"]
+
+  vitals_impact:
+    temp_f: [100.4, 102.5]      # Fever range
+    hr_multiplier: 1.1           # Mild tachycardia
+
+  presentation:
+    symptoms:
+      - { name: "ear pain", probability: 0.9 }
+      - { name: "fever", probability: 0.7 }
+    physical_exam:
+      - { system: "heent", finding: "TM erythematous and bulging", probability: 0.85 }
+
+  treatment:
+    medications:
+      - agent: "Amoxicillin"
+        rxnorm: "723"
+        dose_mg_kg: 90
+        frequency: "BID"
+        duration_days: 10
 ```
+
+See [docs/CONDITION_SCHEMA.md](docs/CONDITION_SCHEMA.md) for the complete schema.
 
 ## Complexity Tiers
 
@@ -127,151 +132,100 @@ Human-readable documentation perfect for review:
 |------|-------------|---------|
 | **Tier 0** | Healthy | Well visits only, no chronic conditions |
 | **Tier 1** | Single chronic | Asthma, ADHD, or eczema |
-| **Tier 2** | Multiple conditions | Asthma + allergies + anxiety |
-| **Tier 3** | Complex/fragile | Multiple specialists, technology-dependent |
+| **Tier 2** | Two conditions | Asthma + allergies |
+| **Tier 3** | Three conditions | Asthma + allergies + anxiety |
+| **Tier 4** | Four+ conditions | Multiple organ systems involved |
+| **Tier 5** | Complex/fragile | Multiple specialists, technology-dependent |
 
-## API Reference
+## Chart Messiness
 
-### Generate Patient
+Simulate realistic EHR data quality issues for AI robustness testing:
 
-```http
-POST /api/generate
-Content-Type: application/json
-
-{
-  "age": 5,
-  "sex": "female",
-  "conditions": ["asthma"],
-  "complexity_tier": "tier-1"
-}
-```
-
-### Get Patient
-
-```http
-GET /api/patients/{id}?format=json
-```
-
-### Export Patient
-
-```http
-GET /api/patients/{id}/export/fhir
-```
-
-See `/docs` for full API documentation.
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ANTHROPIC_API_KEY` | Claude API key for LLM features | None |
-| `SYNTHPATIENT_CACHE_DIR` | Cache directory | `~/.synthpatient/cache` |
-
-### Generation Options
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `--age` | int | Patient age in years |
-| `--age-months` | int | Patient age in months (infants) |
-| `--sex` | str | "male" or "female" |
-| `--conditions` | str | Comma-separated condition list |
-| `--complexity` | str | "tier-0", "tier-1", "tier-2", "tier-3" |
-| `--encounters` | int | Approximate encounter count |
-| `--seed` | int | Random seed for reproducibility |
-| `--format` | str | "json", "fhir", "markdown", or "all" |
-
-## Clinical Accuracy
-
-SynthPatient generates medically accurate content including:
-
-- **Growth tracking** — CDC 2000 growth charts with LMS method
-- **Immunizations** — Current AAP/CDC schedule with proper timing
-- **Vital signs** — Age-appropriate normal ranges
-- **Medications** — Weight-based pediatric dosing
-- **Conditions** — Realistic presentation, workup, and treatment
-
-## Use Cases
-
-### AI Evaluation
-
-Generate diverse patient cohorts to benchmark AI systems:
+| Level | Name | Artifacts |
+|-------|------|-----------|
+| **0** | Pristine | Clean, well-structured data |
+| **1** | Light | Medical abbreviations, shorthand |
+| **2** | Moderate | Copy-forward artifacts, zombie notes |
+| **3** | Heavy | Missing codes, implicit diagnoses |
+| **4** | Severe | Dictation errors, pronoun mismatches |
+| **5** | Hostile | ISMP violations, trailing zeros, allergy conflicts |
 
 ```bash
-python cli.py batch --count 1000 \
-  --distribution "tier0:40,tier1:30,tier2:20,tier3:10" \
-  --output ./evaluation_cohort/
+# Generate with messiness
+python cli.py generate --age 5 --messiness 3
 ```
 
-### EMR Demos
+## Patient Messages
 
-Create realistic demo data for EMR presentations:
+Oread generates realistic patient-provider communications:
 
-```bash
-python cli.py generate --describe "A technology-dependent former 24-week preemie, now 2 years old"
-```
+- **Message types** - Refill requests, clinical questions, appointment requests, follow-ups
+- **Communication channels** - Portal messages, phone calls
+- **Office replies** - Contextual responses from nurses and providers
+- **FHIR export** - Messages export as FHIR Communication resources
 
-### Medical Education
+Messages are generated based on patient complexity and a random "messaging frequency" factor.
 
-Generate teaching cases:
-
-```bash
-python cli.py generate --conditions "new-onset type 1 diabetes" --age 8
-```
-
-## Development
-
-### Project Structure
+## Project Structure
 
 ```
-synthpatient/
+oread/
 ├── cli.py              # Command-line interface
 ├── server.py           # FastAPI web server
 ├── web/                # Web UI
 ├── src/
 │   ├── models/         # Pydantic data models
-│   ├── engines/        # Generation engines
-│   ├── exporters/      # Output formatters
+│   ├── engines/        # Generation engines (PedsEngine)
+│   ├── exporters/      # FHIR, C-CDA, JSON, Markdown
 │   └── llm/            # Claude API client
 ├── knowledge/
-│   ├── conditions/     # Condition definitions
-│   ├── growth/         # Growth charts
-│   └── immunizations/  # Vaccine schedules
-└── tests/
+│   ├── conditions/     # Condition definitions (YAML)
+│   ├── growth/         # CDC 2000 growth charts
+│   └── immunizations/  # AAP vaccine schedule
+├── docs/               # Documentation
+└── tests/              # Test suite
 ```
 
-### Running Tests
+## Documentation
+
+- [QUICKSTART.md](docs/QUICKSTART.md) - Get up and running in 5 minutes
+- [CONDITION_SCHEMA.md](docs/CONDITION_SCHEMA.md) - Adding and editing conditions
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System design and data flow
+- [CLAUDE.md](CLAUDE.md) - Development context for AI assistants
+
+## Development
 
 ```bash
+# Activate virtual environment
+source .venv/bin/activate
+
+# Run the server with reload
+uvicorn server:app --reload
+
+# Run tests
 pytest tests/
+
+# Generate test patient
+python cli.py generate --age 5 --conditions asthma
 ```
 
-### Adding Conditions
+## Clinical Accuracy
 
-Create a YAML file in `knowledge/conditions/`:
+Oread generates medically accurate content:
 
-```yaml
-name: "My Condition"
-icd10_code: "X00.0"
-age_of_onset:
-  typical_range: "5-15 years"
-treatment:
-  first_line:
-    - name: "Medication"
-      dose: "..."
-```
+- **Growth tracking** - CDC 2000 growth charts with LMS method
+- **Immunizations** - Current AAP/CDC schedule with proper timing
+- **Vital signs** - Age-appropriate ranges, illness-aware modifications
+- **Medications** - Weight-based pediatric dosing with max doses
+- **Physical exams** - Condition-specific findings with probabilities
+- **Lab results** - LOINC-coded with realistic values
+- **Medical history** - Resolved conditions from past acute visits with abatement dates
+- **Past medications** - Completed antibiotic courses and discontinued PRN medications
 
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-## Acknowledgments
-
-- CDC for growth chart data
-- AAP for immunization schedules
-- Anthropic for Claude API
-
 ---
 
-**Built for advancing healthcare AI** 🏥
+**Built for advancing healthcare AI**

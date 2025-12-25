@@ -27,13 +27,20 @@ from src.models import (
     GenerationSeed,
     GrowthMeasurement,
     Immunization,
+    Medication,
+    MedicationStatus,
+    MessageCategory,
+    MessageMedium,
+    MessageStatus,
     Patient,
+    PatientMessage,
     Provider,
     Location,
     Sex,
     SocialHistory,
 )
 from src.llm import get_client, LLMClient
+from src.engines.messiness import MessinessInjector
 
 
 class LifeArc(BaseModel):
@@ -118,13 +125,20 @@ class PedsEngine(BaseEngine):
 
         return cls._conditions_cache
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, use_llm: bool = True, messiness_level: int = 0, **kwargs):
         super().__init__(*args, **kwargs)
         # Load conditions database
         self._conditions = self._load_conditions(self.knowledge_dir)
 
         # Build derived data structures for efficient lookups
         self._build_condition_lookups()
+
+        # LLM is enabled if requested AND client is available
+        self.use_llm = use_llm and self.llm is not None
+
+        # Messiness level for realistic chart artifacts (0=pristine, 5=hostile)
+        self.messiness_level = messiness_level
+        self.messiness = MessinessInjector(level=messiness_level)
 
     def _build_condition_lookups(self):
         """Build lookup tables from conditions database."""
@@ -173,6 +187,217 @@ class PedsEngine(BaseEngine):
                     'min_months': min_months,
                     'seasonality': data.get('seasonality', {}),
                 }
+
+        # Build display name to key mapping for reverse lookups
+        self._display_to_key = {}
+        for key, data in self._conditions.items():
+            if key.startswith('_') or not isinstance(data, dict):
+                continue
+            display_name = data.get('display_name', key.replace('_', ' ').title())
+            self._display_to_key[display_name.lower()] = key
+
+    def _get_condition_key(self, reason: str) -> str | None:
+        """Map a display name or reason text to a condition key."""
+        # Try exact match first (case-insensitive)
+        key = self._display_to_key.get(reason.lower())
+        if key:
+            return key
+
+        # Try partial matching for conditions mentioned in reason
+        reason_lower = reason.lower()
+        for display_name, key in self._display_to_key.items():
+            if display_name in reason_lower:
+                return key
+
+        return None
+
+    def _apply_vitals_impact(
+        self,
+        vitals_dict: dict,
+        condition_key: str | None,
+        encounter_type: EncounterType
+    ) -> dict:
+        """Apply illness-aware modifications to vitals based on condition."""
+        if not condition_key or encounter_type not in (
+            EncounterType.ACUTE_ILLNESS,
+            EncounterType.URGENT_CARE,
+            EncounterType.ED_VISIT
+        ):
+            return vitals_dict
+
+        condition_data = self._conditions.get(condition_key, {})
+        vitals_impact = condition_data.get('vitals_impact', {})
+
+        if not vitals_impact:
+            return vitals_dict
+
+        # Apply temperature range if specified
+        temp_range = vitals_impact.get('temp_f')
+        if temp_range and len(temp_range) == 2:
+            vitals_dict['temperature_f'] = random.uniform(temp_range[0], temp_range[1])
+
+        # Apply heart rate multiplier
+        hr_mult = vitals_impact.get('hr_multiplier', 1.0)
+        if 'heart_rate' in vitals_dict:
+            vitals_dict['heart_rate'] = int(vitals_dict['heart_rate'] * hr_mult)
+
+        # Apply respiratory rate multiplier
+        rr_mult = vitals_impact.get('rr_multiplier', 1.0)
+        if 'respiratory_rate' in vitals_dict:
+            vitals_dict['respiratory_rate'] = int(vitals_dict['respiratory_rate'] * rr_mult)
+
+        # Apply SpO2 minimum
+        spo2_min = vitals_impact.get('spo2_min')
+        if spo2_min is not None:
+            # Generate SpO2 between condition-specific minimum and 100
+            vitals_dict['o2_sat'] = random.randint(spo2_min, 100)
+
+        return vitals_dict
+
+    def _select_symptoms(self, condition_key: str, age_months: int) -> list[str]:
+        """Probabilistically select symptoms from condition definition."""
+        condition_data = self._conditions.get(condition_key, {})
+        presentation = condition_data.get('presentation', {})
+        symptoms_def = presentation.get('symptoms', [])
+
+        if not symptoms_def:
+            return []
+
+        selected = []
+        for s in symptoms_def:
+            # Handle old format (simple strings)
+            if isinstance(s, str):
+                selected.append(s)
+                continue
+
+            # Handle new format (dicts with probability)
+            name = s.get('name', '')
+            probability = s.get('probability', 1.0)
+            description = s.get('description', name)
+            age_min = s.get('age_min')
+            age_max = s.get('age_max')
+
+            # Check age constraints
+            if age_min is not None and age_months < age_min:
+                continue
+            if age_max is not None and age_months > age_max:
+                continue
+
+            # Probabilistic selection
+            if random.random() < probability:
+                selected.append(description if description else name)
+
+        return selected
+
+    def _generate_condition_physical_exam(
+        self,
+        condition_key: str | None,
+        encounter_type: EncounterType
+    ) -> dict[str, str]:
+        """Generate condition-specific physical exam findings."""
+        from src.models import PhysicalExam
+
+        # Default findings by system
+        findings = {
+            'general': "Alert, in no acute distress",
+            'heent': "Normocephalic, atraumatic",
+            'cardiovascular': "Regular rate and rhythm",
+            'respiratory': "Clear to auscultation bilaterally",
+        }
+
+        if not condition_key or encounter_type not in (
+            EncounterType.ACUTE_ILLNESS,
+            EncounterType.URGENT_CARE,
+            EncounterType.ED_VISIT
+        ):
+            return findings
+
+        condition_data = self._conditions.get(condition_key, {})
+        presentation = condition_data.get('presentation', {})
+        exam_findings = presentation.get('physical_exam', [])
+
+        if not exam_findings:
+            return findings
+
+        # Apply probabilistic exam findings
+        system_findings = {}
+        for f in exam_findings:
+            if not isinstance(f, dict):
+                continue
+
+            system = f.get('system', '').lower()
+            finding_text = f.get('finding', '')
+            probability = f.get('probability', 1.0)
+
+            if not system or not finding_text:
+                continue
+
+            # Probabilistic selection
+            if random.random() < probability:
+                if system not in system_findings:
+                    system_findings[system] = []
+                system_findings[system].append(finding_text)
+
+        # Merge condition findings with defaults
+        for system, exam_texts in system_findings.items():
+            if exam_texts:
+                findings[system] = ". ".join(exam_texts)
+
+        return findings
+
+    def _generate_labs(
+        self,
+        condition_key: str | None,
+        encounter_date: date,
+        encounter_type: EncounterType
+    ) -> list:
+        """Generate condition-specific lab results."""
+        from src.models import LabResult, CodeableConcept, Interpretation
+
+        if not condition_key or encounter_type not in (
+            EncounterType.ACUTE_ILLNESS,
+            EncounterType.URGENT_CARE,
+            EncounterType.ED_VISIT
+        ):
+            return []
+
+        condition_data = self._conditions.get(condition_key, {})
+        diagnostics = condition_data.get('diagnostics', {})
+        labs_def = diagnostics.get('labs', [])
+
+        if not labs_def:
+            return []
+
+        results = []
+        for lab in labs_def:
+            if not isinstance(lab, dict):
+                continue
+
+            name = lab.get('name', '')
+            loinc = lab.get('loinc', '')
+            result_positive = lab.get('result_positive', 'Positive')
+            result_negative = lab.get('result_negative', 'Negative')
+            prob_positive = lab.get('probability_positive', 0.5)
+
+            if not name or not loinc:
+                continue
+
+            # Probabilistically determine if result is positive
+            is_positive = random.random() < prob_positive
+
+            results.append(LabResult(
+                code=CodeableConcept(
+                    system="http://loinc.org",
+                    code=loinc,
+                    display=name
+                ),
+                display_name=name,
+                value=result_positive if is_positive else result_negative,
+                interpretation=Interpretation.POSITIVE if is_positive else Interpretation.NEGATIVE,
+                resulted_date=datetime.combine(encounter_date, datetime.min.time()),
+            ))
+
+        return results
 
     # Well-child visit schedule (age in months)
     WELL_CHILD_SCHEDULE = [
@@ -354,18 +579,40 @@ class PedsEngine(BaseEngine):
             )
             problem_list.append(condition)
         
+        # Generate message frequency (some patients message a lot, some rarely)
+        # Higher complexity patients tend to message more
+        base_frequency = random.random()
+        complexity_boost = len(life_arc.major_conditions) * 0.1
+        message_frequency = min(1.0, base_frequency + complexity_boost)
+
+        # Generate patient messages based on encounters, medications, and frequency
+        patient_messages = self._generate_patient_messages(
+            demographics=demographics,
+            encounters=encounters,
+            conditions=problem_list,
+            message_frequency=message_frequency,
+            provider=provider,
+        )
+
+        # Extract resolved conditions and past medications from acute illness encounters
+        resolved_conditions, past_medications = self._extract_resolved_history(encounters)
+        problem_list.extend(resolved_conditions)
+
         # Build the patient
         patient = Patient(
             demographics=demographics,
             social_history=social_history,
             problem_list=problem_list,
+            medication_list=past_medications,
             encounters=encounters,
             growth_data=growth_data,
             immunization_record=immunizations,
             complexity_tier=tier,
             generation_seed=seed.model_dump(),
+            patient_messages=patient_messages,
+            message_frequency=message_frequency,
         )
-        
+
         return patient
     
     def _generate_demographics(self, seed: GenerationSeed) -> Demographics:
@@ -712,9 +959,14 @@ class PedsEngine(BaseEngine):
         
         # Get latest growth data
         latest_growth = growth_data[-1] if growth_data else None
-        
-        # Generate vitals
+
+        # Generate vitals (illness-aware for acute encounters)
         vitals_dict = generate_normal_vitals(age_months)
+
+        # Apply illness-specific vital sign modifications
+        condition_key = self._get_condition_key(stub.reason)
+        vitals_dict = self._apply_vitals_impact(vitals_dict, condition_key, stub.type)
+
         vitals = VitalSigns(
             date=datetime.combine(stub.date, datetime.min.time()),
             temperature_f=vitals_dict.get("temperature_f", 98.6),
@@ -760,12 +1012,17 @@ class PedsEngine(BaseEngine):
                 neurological="Alert, appropriate for age, normal tone",
             )
         else:
-            # Simplified exam for acute visits
+            # Generate condition-specific physical exam for acute visits
+            exam_findings = self._generate_condition_physical_exam(condition_key, stub.type)
             physical_exam = PhysicalExam(
-                general="Alert, active, in no acute distress",
-                heent="Normocephalic. TMs clear. Oropharynx mildly erythematous." if "URI" in stub.reason or "respiratory" in stub.reason.lower() else "Unremarkable",
-                cardiovascular="Regular rate and rhythm",
-                respiratory="Clear to auscultation bilaterally",
+                general=exam_findings.get('general', "Alert, in no acute distress"),
+                heent=exam_findings.get('heent', "Normocephalic, atraumatic"),
+                neck=exam_findings.get('neck'),
+                cardiovascular=exam_findings.get('cardiovascular', "Regular rate and rhythm"),
+                respiratory=exam_findings.get('respiratory', "Clear to auscultation bilaterally"),
+                abdomen=exam_findings.get('abdomen'),
+                skin=exam_findings.get('skin'),
+                neurological=exam_findings.get('neurological'),
             )
         
         # Generate assessment
@@ -797,6 +1054,7 @@ class PedsEngine(BaseEngine):
         
         # Generate plan based on encounter type
         plan = []
+        illness_prescriptions = []  # Prescriptions generated from treatment plans
         if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN):
             plan.append(PlanItem(
                 category="education",
@@ -808,8 +1066,14 @@ class PedsEngine(BaseEngine):
                 description="Return for next well-child visit",
             ))
         elif stub.type == EncounterType.ACUTE_ILLNESS:
-            # Generate appropriate plan for acute illnesses
-            illness_plans = self._generate_acute_illness_plan(stub.reason)
+            # Generate appropriate plan for acute illnesses (with weight-based prescriptions)
+            weight_kg = latest_growth.weight_kg if latest_growth else None
+            illness_plans, illness_prescriptions = self._generate_acute_illness_plan(
+                reason=stub.reason,
+                weight_kg=weight_kg,
+                age_months=age_months,
+                encounter_date=stub.date
+            )
             plan.extend(illness_plans)
         elif stub.type == EncounterType.CHRONIC_FOLLOWUP:
             # Generate plan for chronic condition management
@@ -830,7 +1094,10 @@ class PedsEngine(BaseEngine):
         immunizations = []
         if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN):
             immunizations = self._generate_immunizations(age_months, stub.date)
-        
+
+        # Generate lab results for acute illness encounters
+        lab_results = self._generate_labs(condition_key, stub.date, stub.type)
+
         # Build the encounter
         encounter = Encounter(
             date=datetime.combine(stub.date, datetime.min.time().replace(hour=random.randint(8, 16))),
@@ -844,6 +1111,8 @@ class PedsEngine(BaseEngine):
             plan=plan,
             growth_percentiles=growth_percentiles,
             immunizations_given=immunizations,
+            lab_results=lab_results,
+            prescriptions=illness_prescriptions,
             anticipatory_guidance=self._generate_anticipatory_guidance_list(age_months) if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN) else [],
         )
         
@@ -892,9 +1161,105 @@ class PedsEngine(BaseEngine):
         return immunizations
     
     def _generate_narrative_note(self, encounter: Encounter, demographics: Demographics, age_months: int) -> str:
-        """Generate a narrative clinical note."""
+        """Generate a narrative clinical note, using LLM if available."""
+        if not self.use_llm:
+            note = self._generate_templated_note(encounter, demographics, age_months)
+        else:
+            try:
+                note = self._generate_llm_narrative(encounter, demographics, age_months)
+            except Exception:
+                # Fall back to template on any LLM error
+                note = self._generate_templated_note(encounter, demographics, age_months)
+
+        # Apply chart messiness if configured
+        if self.messiness_level > 0:
+            context = {
+                "sex": demographics.sex_at_birth.value,
+                "age_months": age_months,
+            }
+            note = self.messiness.inject_text(note, context)
+            note = self.messiness.add_redundant_text(note)
+            note = self.messiness.inject_incomplete_sentence(note)
+
+            # Level 4+: potentially add wrong-sex exam finding
+            wrong_finding = self.messiness.get_wrong_sex_finding(demographics.sex_at_birth.value)
+            if wrong_finding:
+                note = note.rstrip() + f"\n\n{wrong_finding}"
+
+        return note
+
+    def _generate_llm_narrative(self, encounter: Encounter, demographics: Demographics, age_months: int) -> str:
+        """Generate a natural clinical narrative using Claude."""
         age_str = self._age_to_description(age_months)
-        
+
+        # Build structured context for the LLM
+        vitals_str = ""
+        if encounter.vital_signs:
+            vs = encounter.vital_signs
+            parts = []
+            if vs.temperature_f:
+                parts.append(f"Temp {vs.temperature_f}F")
+            if vs.heart_rate:
+                parts.append(f"HR {vs.heart_rate}")
+            if vs.respiratory_rate:
+                parts.append(f"RR {vs.respiratory_rate}")
+            if vs.oxygen_saturation:
+                parts.append(f"SpO2 {vs.oxygen_saturation}%")
+            if vs.weight_kg:
+                parts.append(f"Wt {vs.weight_kg}kg")
+            vitals_str = ", ".join(parts)
+
+        exam_str = ""
+        if encounter.physical_exam:
+            pe = encounter.physical_exam
+            exam_parts = []
+            if pe.general:
+                exam_parts.append(f"General: {pe.general}")
+            if pe.heent:
+                exam_parts.append(f"HEENT: {pe.heent}")
+            if pe.cardiovascular:
+                exam_parts.append(f"CV: {pe.cardiovascular}")
+            if pe.respiratory:
+                exam_parts.append(f"Resp: {pe.respiratory}")
+            if pe.abdomen:
+                exam_parts.append(f"Abd: {pe.abdomen}")
+            if pe.skin:
+                exam_parts.append(f"Skin: {pe.skin}")
+            exam_str = "; ".join(exam_parts)
+
+        assessment_str = ", ".join([a.diagnosis for a in encounter.assessment]) if encounter.assessment else ""
+        plan_str = "; ".join([p.description for p in encounter.plan]) if encounter.plan else ""
+
+        prompt = f"""Write a concise pediatric clinical note in natural medical prose. Professional but warm tone.
+Do not use bullet points or numbered lists in the body. Write flowing sentences.
+Include only sections with actual content.
+
+Patient: {age_str} {demographics.sex_at_birth.value}
+Visit Type: {encounter.type.value.replace('-', ' ').title()}
+Chief Complaint: {encounter.chief_complaint}
+Vitals: {vitals_str}
+Physical Exam: {exam_str}
+Assessment: {assessment_str}
+Plan: {plan_str}
+
+Write the clinical note (start with HPI, end with signature):"""
+
+        system = """You are a pediatric physician writing clinical documentation.
+Write clear, professional SOAP-style notes. Use standard medical abbreviations where appropriate.
+Keep it concise but complete. Sign as the provider."""
+
+        note = self.llm.generate(prompt, system=system, max_tokens=600, temperature=0.7)
+
+        # Ensure proper signature
+        if encounter.provider and encounter.provider.name not in note:
+            note += f"\n\nSigned: {encounter.provider.name}, {encounter.provider.credentials}"
+
+        return note
+
+    def _generate_templated_note(self, encounter: Encounter, demographics: Demographics, age_months: int) -> str:
+        """Generate a templated clinical note (fallback when LLM unavailable)."""
+        age_str = self._age_to_description(age_months)
+
         note = f"""PATIENT: {demographics.full_name}
 DATE: {encounter.date.strftime('%Y-%m-%d')}
 VISIT TYPE: {encounter.type.value.replace('-', ' ').title()}
@@ -922,7 +1287,7 @@ VITAL SIGNS:
                 note += f"Weight: {vs.weight_kg} kg\n"
             if vs.height_cm:
                 note += f"Height: {vs.height_cm} cm\n"
-        
+
         if encounter.growth_percentiles:
             gp = encounter.growth_percentiles
             note += "\nGROWTH PERCENTILES:\n"
@@ -934,7 +1299,7 @@ VITAL SIGNS:
                 note += f"Head Circumference: {gp.hc_percentile}th percentile\n"
             if gp.bmi_percentile:
                 note += f"BMI: {gp.bmi_percentile}th percentile\n"
-        
+
         if encounter.physical_exam:
             note += "\nPHYSICAL EXAMINATION:\n"
             pe = encounter.physical_exam
@@ -952,30 +1317,30 @@ VITAL SIGNS:
                 note += f"Skin: {pe.skin}\n"
             if pe.neurological:
                 note += f"Neurological: {pe.neurological}\n"
-        
+
         note += "\nASSESSMENT:\n"
         for i, a in enumerate(encounter.assessment, 1):
             note += f"{i}. {a.diagnosis}\n"
-        
+
         note += "\nPLAN:\n"
         for p in encounter.plan:
             note += f"- {p.description}"
             if p.details:
                 note += f": {p.details}"
             note += "\n"
-        
+
         if encounter.immunizations_given:
             note += "\nIMMUNIZATIONS ADMINISTERED:\n"
             for imm in encounter.immunizations_given:
                 note += f"- {imm.display_name}\n"
-        
+
         if encounter.anticipatory_guidance:
             note += "\nANTICIPATORY GUIDANCE:\n"
             for ag in encounter.anticipatory_guidance:
                 note += f"- {ag}\n"
-        
+
         note += f"\nSigned: {encounter.provider.name}, {encounter.provider.credentials}\n"
-        
+
         return note
     
     # Helper methods
@@ -1154,96 +1519,195 @@ VITAL SIGNS:
         illnesses, weights = zip(*filtered_pool)
         return random.choices(illnesses, weights=weights, k=1)[0]
 
-    def _generate_acute_illness_plan(self, reason: str) -> list[PlanItem]:
-        """Generate plan items for acute illness visits."""
-        from src.models import PlanItem
+    def _generate_acute_illness_plan(
+        self,
+        reason: str,
+        weight_kg: float | None = None,
+        age_months: int | None = None,
+        encounter_date: date | None = None
+    ) -> tuple[list, list]:
+        """
+        Generate plan items and prescriptions for acute illness visits.
 
-        plans = []
+        Returns:
+            Tuple of (plan_items, prescriptions)
+        """
+        from src.models import PlanItem, Medication, CodeableConcept, MedicationStatus
+
+        plan_items = []
+        prescriptions = []
+
+        # Try to get condition-specific treatment from YAML
+        condition_key = self._get_condition_key(reason)
+
+        if condition_key:
+            condition_data = self._conditions.get(condition_key, {})
+            treatment = condition_data.get('treatment', {})
+            medications = treatment.get('medications', [])
+            instructions = treatment.get('patient_instructions', [])
+
+            if medications or instructions:
+                # Generate medication plan items and prescriptions
+                for med in medications:
+                    if not isinstance(med, dict):
+                        continue
+
+                    agent = med.get('agent', '')
+                    rxnorm = med.get('rxnorm', '')
+                    dose_mg_kg = med.get('dose_mg_kg')
+                    max_dose_mg = med.get('max_dose_mg')
+                    fixed_dose = med.get('fixed_dose_mg')
+                    frequency = med.get('frequency', '')
+                    duration = med.get('duration_days')
+                    route = med.get('route', 'oral')
+                    indication = med.get('indication')
+                    is_prn = med.get('prn', False)
+                    age_min = med.get('age_min_months')
+
+                    if not agent:
+                        continue
+
+                    # Check age minimum
+                    if age_min and age_months and age_months < age_min:
+                        continue
+
+                    # Calculate dose
+                    if dose_mg_kg and weight_kg:
+                        dose = dose_mg_kg * weight_kg
+                        if max_dose_mg:
+                            dose = min(dose, max_dose_mg)
+                        dose_str = f"{dose:.0f}mg"
+                        dose_unit = "mg"
+                    elif fixed_dose:
+                        dose_str = f"{fixed_dose}mg"
+                        dose_unit = "mg"
+                    else:
+                        dose_str = "per package"
+                        dose_unit = ""
+
+                    # Duration string
+                    duration_str = f" x {duration} days" if duration else ""
+                    prn_str = " PRN" if is_prn else ""
+
+                    # Create plan item
+                    plan_items.append(PlanItem(
+                        category="medication",
+                        description=f"{agent} {dose_str} {frequency}{duration_str}{prn_str}",
+                        details=indication if indication else None,
+                    ))
+
+                    # Create prescription (non-PRN meds only for now)
+                    if rxnorm and encounter_date:
+                        prescriptions.append(Medication(
+                            code=CodeableConcept(
+                                system="http://www.nlm.nih.gov/research/umls/rxnorm",
+                                code=rxnorm,
+                                display=agent
+                            ),
+                            display_name=agent,
+                            dose_quantity=dose_str,
+                            dose_unit=dose_unit,
+                            frequency=frequency,
+                            route=route,
+                            status=MedicationStatus.ACTIVE,
+                            start_date=encounter_date,
+                            prn=is_prn,
+                            indication=indication,
+                        ))
+
+                # Add patient instructions
+                for instruction in instructions:
+                    plan_items.append(PlanItem(
+                        category="education",
+                        description=instruction,
+                    ))
+
+                return plan_items, prescriptions
+
+        # Fallback to legacy hardcoded plans if no YAML data
         reason_lower = reason.lower()
 
-        # Common acute illness plans
         if "respiratory" in reason_lower or "uri" in reason_lower or "cold" in reason_lower:
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="other",
                 description="Supportive care with rest and hydration",
             ))
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="medication",
                 description="Acetaminophen or ibuprofen as needed for fever/discomfort",
             ))
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="education",
                 description="Return precautions reviewed: difficulty breathing, high fever >72hrs, worsening symptoms",
             ))
         elif "otitis" in reason_lower or "ear" in reason_lower:
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="medication",
                 description="Amoxicillin 90mg/kg/day divided BID x 10 days",
             ))
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="medication",
                 description="Ibuprofen for pain management",
             ))
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="follow-up",
                 description="Return if no improvement in 48-72 hours",
             ))
         elif "gastroenteritis" in reason_lower or "vomiting" in reason_lower or "diarrhea" in reason_lower:
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="education",
                 description="Oral rehydration with small frequent amounts of fluids",
             ))
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="education",
                 description="BRAT diet as tolerated, advance as symptoms improve",
             ))
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="education",
                 description="Return if unable to keep fluids down, bloody stool, or signs of dehydration",
             ))
         elif "fever" in reason_lower:
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="medication",
                 description="Acetaminophen or ibuprofen for temperature control",
             ))
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="education",
                 description="Monitor for source of infection, return if fever persists >3 days",
             ))
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="follow-up",
                 description="Follow up as needed if symptoms worsen",
             ))
         elif "rash" in reason_lower:
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="other",
                 description="Topical care as appropriate for rash type",
             ))
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="education",
                 description="Return if rash spreads, becomes painful, or child develops fever",
             ))
         elif "conjunctivitis" in reason_lower or "pink eye" in reason_lower:
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="medication",
                 description="Antibiotic eye drops if bacterial; supportive care if viral",
             ))
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="education",
                 description="Good hand hygiene to prevent spread",
             ))
         else:
-            # Generic acute illness plan
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="other",
                 description="Supportive care with rest and hydration",
             ))
-            plans.append(PlanItem(
+            plan_items.append(PlanItem(
                 category="follow-up",
                 description="Return if symptoms worsen or do not improve in 3-5 days",
             ))
 
-        return plans
+        return plan_items, prescriptions
 
     def _generate_chronic_condition_plan(self, condition: str, is_new_diagnosis: bool) -> list[PlanItem]:
         """Generate plan items for chronic condition management."""
@@ -1382,6 +1846,394 @@ VITAL SIGNS:
             ))
 
         return plans
+
+    def _generate_patient_messages(
+        self,
+        demographics: Demographics,
+        encounters: list[Encounter],
+        conditions: list[Condition],
+        message_frequency: float,
+        provider: Provider,
+    ) -> list[PatientMessage]:
+        """
+        Generate patient messages (portal messages, phone messages) with replies.
+
+        Args:
+            demographics: Patient demographics
+            encounters: List of patient encounters
+            conditions: List of patient conditions
+            message_frequency: 0.0 (never messages) to 1.0 (frequent messager)
+            provider: Primary provider for replies
+
+        Returns:
+            List of PatientMessage objects
+        """
+        messages = []
+
+        # Determine base number of messages based on frequency and encounter count
+        # A patient with 10 encounters and 0.5 frequency might have ~2-3 messages
+        base_count = int(len(encounters) * message_frequency * 0.3)
+
+        # Add some randomness - some patients message more than expected
+        if random.random() < 0.2:  # 20% chance of being more prolific
+            base_count = int(base_count * 1.5) + 1
+
+        # Ensure at least 0, cap at reasonable maximum
+        num_messages = max(0, min(base_count, 8))
+
+        if num_messages == 0:
+            return messages
+
+        # Get parent/guardian name as sender
+        if demographics.legal_guardian:
+            sender_name = demographics.legal_guardian.name
+        elif demographics.emergency_contact:
+            sender_name = demographics.emergency_contact.name
+        else:
+            sender_name = f"Parent of {demographics.first_name}"
+
+        # Get provider info for replies
+        provider_name = provider.name if provider else "Office Staff"
+        provider_role = "RN" if random.random() < 0.6 else "MD"  # Most replies from nurses
+
+        # Message templates by category
+        message_templates = {
+            MessageCategory.REFILL_REQUEST: [
+                {
+                    "subject": "Medication refill needed",
+                    "body": "Hi, we need a refill on {medication}. The pharmacy is {pharmacy}. Thank you.",
+                    "reply": "Hi {parent_name}, the refill for {medication} has been sent to your pharmacy. Please allow 24-48 hours for processing."
+                },
+                {
+                    "subject": "Prescription refill request",
+                    "body": "Hello, {child_name} is running low on {medication}. Can you please send a refill to the pharmacy? Thanks!",
+                    "reply": "Refill has been submitted. If you don't receive it within 2 business days, please call the pharmacy directly."
+                },
+            ],
+            MessageCategory.CLINICAL_QUESTION: [
+                {
+                    "subject": "Question about symptoms",
+                    "body": "Hi, {child_name} has been having {symptom} for the past few days. Should we come in or is this something we can manage at home?",
+                    "reply": "Thank you for reaching out. Based on what you've described, here are some recommendations: {advice}. If symptoms worsen or you have concerns, please call the office or go to urgent care."
+                },
+                {
+                    "subject": "Side effects question",
+                    "body": "We started {medication} last week and noticed {side_effect}. Is this normal? Should we continue?",
+                    "reply": "The symptoms you're describing can be a common side effect. Continue the medication unless symptoms worsen significantly. If you notice {warning_sign}, please call us right away."
+                },
+            ],
+            MessageCategory.FOLLOW_UP: [
+                {
+                    "subject": "Follow up on visit",
+                    "body": "Hi, we saw you last week for {reason}. {child_name} is doing better but I wanted to check if we should schedule a follow-up appointment?",
+                    "reply": "Glad to hear {child_name} is improving! Since symptoms are resolving, no follow-up is needed unless symptoms return. If you have any concerns, don't hesitate to reach out."
+                },
+                {
+                    "subject": "Update after appointment",
+                    "body": "Just wanted to let you know that {child_name} is feeling much better after starting the treatment. Thank you!",
+                    "reply": "Thank you for the update! We're happy to hear {child_name} is doing well. Take care!"
+                },
+            ],
+            MessageCategory.APPOINTMENT_REQUEST: [
+                {
+                    "subject": "Need to schedule appointment",
+                    "body": "Hello, we need to schedule an appointment for {child_name}. {reason}. What times do you have available this week?",
+                    "reply": "We have availability on {day} at {time}. Please call the office at {phone} to confirm, or reply to this message if that time works."
+                },
+            ],
+            MessageCategory.LAB_RESULT_QUESTION: [
+                {
+                    "subject": "Question about lab results",
+                    "body": "Hi, I saw that {child_name}'s lab results are in the portal. Can someone explain what they mean? I'm not sure if they're normal.",
+                    "reply": "I've reviewed the results and everything looks normal/within expected ranges. {explanation} Let us know if you have any other questions."
+                },
+            ],
+            MessageCategory.SCHOOL_FORM: [
+                {
+                    "subject": "School form request",
+                    "body": "Hi, {child_name} needs a {form_type} filled out for school. Can you please complete it? The deadline is {deadline}.",
+                    "reply": "The form has been completed and is ready for pickup at the front desk. You can also request a digital copy be sent to the school directly."
+                },
+            ],
+            MessageCategory.AVOID_VISIT: [
+                {
+                    "subject": "Quick question - hoping to avoid visit",
+                    "body": "Hi, {child_name} has {symptom}. I'm trying to figure out if we need to come in or if there's something we can try at home first?",
+                    "reply": "Based on what you've described, you can try {home_treatment} for the next 24-48 hours. If {warning_signs}, please come in for an evaluation."
+                },
+            ],
+        }
+
+        # Symptoms and related data for templates
+        common_symptoms = ["a cough", "a runny nose", "a fever", "stomach aches", "a rash", "ear pain", "a headache", "trouble sleeping"]
+        side_effects = ["some stomach upset", "drowsiness", "decreased appetite", "mild headaches", "some irritability"]
+        warning_signs = ["high fever over 104F", "difficulty breathing", "severe pain", "refusing to eat or drink", "extreme lethargy"]
+        home_treatments = ["rest and fluids", "cool mist humidifier", "saline drops and suction", "age-appropriate pain reliever", "honey for cough (if over 1 year)"]
+        pharmacies = ["CVS", "Walgreens", "Walmart Pharmacy", "Target Pharmacy", "local pharmacy"]
+        form_types = ["sports physical form", "immunization record", "medical clearance form", "allergy action plan", "asthma action plan"]
+        advice_options = ["ensure adequate hydration", "use a cool mist humidifier", "monitor temperature", "keep them comfortable with rest"]
+
+        # Get medications from conditions for refill requests
+        medication_names = ["the regular medication"]
+        for condition in conditions:
+            cond_lower = condition.display_name.lower()
+            if "asthma" in cond_lower:
+                medication_names.extend(["albuterol inhaler", "Flovent", "Qvar"])
+            elif "adhd" in cond_lower:
+                medication_names.extend(["methylphenidate", "Adderall", "Concerta"])
+            elif "eczema" in cond_lower:
+                medication_names.extend(["hydrocortisone cream", "Eucrisa", "triamcinolone"])
+            elif "allergy" in cond_lower or "allergic" in cond_lower:
+                medication_names.extend(["Zyrtec", "Flonase", "Claritin"])
+            elif "anxiety" in cond_lower:
+                medication_names.extend(["medication", "fluoxetine"])
+            elif "constipation" in cond_lower:
+                medication_names.extend(["MiraLAX", "polyethylene glycol"])
+
+        # Select categories weighted by realism
+        category_weights = {
+            MessageCategory.CLINICAL_QUESTION: 30,
+            MessageCategory.REFILL_REQUEST: 25 if len(conditions) > 0 else 5,
+            MessageCategory.FOLLOW_UP: 15,
+            MessageCategory.AVOID_VISIT: 15,
+            MessageCategory.APPOINTMENT_REQUEST: 10,
+            MessageCategory.SCHOOL_FORM: 8 if demographics.age_years >= 5 else 0,
+            MessageCategory.LAB_RESULT_QUESTION: 5,
+        }
+
+        # Filter out zero-weight categories
+        available_categories = [(cat, weight) for cat, weight in category_weights.items() if weight > 0]
+        categories, weights = zip(*available_categories)
+
+        # Generate messages
+        for _ in range(num_messages):
+            # Select category
+            category = random.choices(categories, weights=weights, k=1)[0]
+
+            # Select template
+            templates = message_templates.get(category, message_templates[MessageCategory.CLINICAL_QUESTION])
+            template = random.choice(templates)
+
+            # Select medium (mostly portal, some phone)
+            medium = MessageMedium.PORTAL if random.random() < 0.75 else MessageMedium.PHONE
+
+            # Generate timestamp relative to encounters
+            if encounters:
+                # Pick a random encounter as reference point
+                ref_encounter = random.choice(encounters)
+                # Message can be 1-14 days after encounter
+                days_after = random.randint(1, 14)
+                sent_dt = ref_encounter.date + timedelta(days=days_after, hours=random.randint(7, 21))
+                related_encounter_id = ref_encounter.id if random.random() < 0.5 else None
+            else:
+                # No encounters, generate within last year
+                days_ago = random.randint(1, 365)
+                sent_dt = datetime.now() - timedelta(days=days_ago)
+                related_encounter_id = None
+
+            # Reply typically within 4-48 hours (business hours more common)
+            reply_hours = random.choices([4, 8, 24, 48], weights=[15, 40, 35, 10], k=1)[0]
+            reply_dt = sent_dt + timedelta(hours=reply_hours)
+
+            # Fill in template variables
+            child_name = demographics.given_names[0] if demographics.given_names else "Child"
+            symptom = random.choice(common_symptoms)
+            medication = random.choice(medication_names)
+            pharmacy = random.choice(pharmacies)
+            side_effect = random.choice(side_effects)
+            warning_sign = random.choice(warning_signs)
+            home_treatment = random.choice(home_treatments)
+            form_type = random.choice(form_types)
+            advice = random.choice(advice_options)
+            reason = random.choice(["a checkup", "follow-up on previous issue", "ongoing symptoms"])
+
+            # Format message body
+            body = template["body"].format(
+                child_name=child_name,
+                medication=medication,
+                pharmacy=pharmacy,
+                symptom=symptom,
+                side_effect=side_effect,
+                reason=reason,
+                form_type=form_type,
+                deadline="next week",
+            )
+
+            # Format reply
+            reply = template["reply"].format(
+                parent_name=sender_name.split()[0],
+                child_name=child_name,
+                medication=medication,
+                advice=advice,
+                warning_sign=warning_sign,
+                warning_signs=warning_sign,
+                home_treatment=home_treatment,
+                explanation="No action needed at this time.",
+                day="Thursday",
+                time="2:30 PM",
+                phone="(555) 123-4567",
+            )
+
+            # Determine related medication/condition
+            related_medication_id = None
+            related_condition = None
+            if category == MessageCategory.REFILL_REQUEST and medication != "the regular medication":
+                related_condition = medication
+
+            # Create message
+            message = PatientMessage(
+                sent_datetime=sent_dt,
+                reply_datetime=reply_dt,
+                sender_name=sender_name,
+                sender_is_patient=True,
+                recipient_name=provider_name,
+                replier_name=provider_name if medium == MessageMedium.PORTAL else f"Office - {provider_role}",
+                replier_role=provider_role,
+                category=category,
+                medium=medium,
+                subject=template["subject"].format(
+                    child_name=child_name,
+                    medication=medication,
+                ),
+                message_body=body,
+                reply_body=reply,
+                status=MessageStatus.COMPLETED,
+                related_encounter_id=related_encounter_id,
+                related_medication_id=related_medication_id,
+                related_condition=related_condition,
+            )
+
+            messages.append(message)
+
+        # Sort by sent datetime
+        messages.sort(key=lambda m: m.sent_datetime)
+
+        return messages
+
+    def _extract_resolved_history(
+        self,
+        encounters: list[Encounter],
+    ) -> tuple[list[Condition], list[Medication]]:
+        """
+        Extract resolved conditions and past medications from acute illness encounters.
+
+        This creates the "resolved problems" and "past medications" sections by looking
+        at what was diagnosed and prescribed in past acute illness visits.
+
+        Returns:
+            Tuple of (resolved_conditions, past_medications)
+        """
+        resolved_conditions = []
+        past_medications = []
+        seen_diagnoses = set()  # Avoid duplicates
+        seen_medications = set()  # Avoid duplicates
+
+        # ICD-10 codes for common acute conditions
+        acute_icd_codes = {
+            "acute otitis media": ("H66.90", "Otitis media, unspecified"),
+            "otitis media": ("H66.90", "Otitis media, unspecified"),
+            "upper respiratory infection": ("J06.9", "Acute upper respiratory infection, unspecified"),
+            "uri": ("J06.9", "Acute upper respiratory infection, unspecified"),
+            "fever": ("R50.9", "Fever, unspecified"),
+            "viral syndrome": ("B34.9", "Viral infection, unspecified"),
+            "gastroenteritis": ("A09", "Infectious gastroenteritis and colitis, unspecified"),
+            "vomiting": ("R11.10", "Vomiting, unspecified"),
+            "diarrhea": ("R19.7", "Diarrhea, unspecified"),
+            "pharyngitis": ("J02.9", "Acute pharyngitis, unspecified"),
+            "strep pharyngitis": ("J02.0", "Streptococcal pharyngitis"),
+            "bronchiolitis": ("J21.9", "Acute bronchiolitis, unspecified"),
+            "croup": ("J05.0", "Acute obstructive laryngitis [croup]"),
+            "conjunctivitis": ("H10.9", "Unspecified conjunctivitis"),
+            "pink eye": ("H10.9", "Unspecified conjunctivitis"),
+            "influenza": ("J11.1", "Influenza due to unidentified influenza virus with other respiratory manifestations"),
+            "hand foot mouth disease": ("B08.4", "Enteroviral vesicular stomatitis with exanthem"),
+            "hfmd": ("B08.4", "Enteroviral vesicular stomatitis with exanthem"),
+            "rash": ("R21", "Rash and other nonspecific skin eruption"),
+            "insect bite": ("T14.0", "Superficial injury of unspecified body region"),
+            "insect bite reaction": ("T14.0", "Superficial injury of unspecified body region"),
+            "cellulitis": ("L03.90", "Cellulitis, unspecified"),
+            "impetigo": ("L01.00", "Impetigo, unspecified"),
+            "sinusitis": ("J01.90", "Acute sinusitis, unspecified"),
+            "pneumonia": ("J18.9", "Pneumonia, unspecified organism"),
+            "bronchitis": ("J20.9", "Acute bronchitis, unspecified"),
+            "urinary tract infection": ("N39.0", "Urinary tract infection, site not specified"),
+            "uti": ("N39.0", "Urinary tract infection, site not specified"),
+        }
+
+        # Process acute illness encounters
+        for encounter in encounters:
+            if encounter.type.value != "acute-illness":
+                continue
+
+            # Extract diagnoses as resolved conditions
+            if encounter.assessment:
+                for assessment in encounter.assessment:
+                    if not assessment.diagnosis:
+                        continue
+
+                    diagnosis_lower = assessment.diagnosis.lower().strip()
+                    if diagnosis_lower in seen_diagnoses:
+                        continue
+                    seen_diagnoses.add(diagnosis_lower)
+
+                    # Get ICD-10 code
+                    code_info = acute_icd_codes.get(diagnosis_lower, ("R69", assessment.diagnosis))
+
+                    # Calculate resolution date (typically 7-14 days after encounter for acute)
+                    resolution_days = random.randint(7, 14)
+                    resolution_date = encounter.date.date() + timedelta(days=resolution_days)
+
+                    resolved_condition = Condition(
+                        display_name=assessment.diagnosis,
+                        code=CodeableConcept(
+                            system="http://hl7.org/fhir/sid/icd-10-cm",
+                            code=code_info[0],
+                            display=code_info[1],
+                        ),
+                        clinical_status=ConditionStatus.RESOLVED,
+                        onset_date=encounter.date.date() if isinstance(encounter.date, datetime) else encounter.date,
+                        abatement_date=resolution_date,
+                    )
+                    resolved_conditions.append(resolved_condition)
+
+            # Extract prescriptions as past medications
+            if encounter.prescriptions:
+                for rx in encounter.prescriptions:
+                    # Skip if we've seen this medication
+                    med_key = f"{rx.display_name}_{rx.start_date}"
+                    if med_key in seen_medications:
+                        continue
+                    seen_medications.add(med_key)
+
+                    # Create a copy with completed/stopped status
+                    # PRN meds get "stopped", scheduled meds get "completed"
+                    new_status = MedicationStatus.STOPPED if rx.prn else MedicationStatus.COMPLETED
+
+                    # Calculate end date based on typical course
+                    if rx.end_date:
+                        end_date = rx.end_date
+                    else:
+                        # Typical antibiotic course is 7-10 days
+                        course_days = 10 if "amox" in rx.display_name.lower() else 7
+                        end_date = rx.start_date + timedelta(days=course_days)
+
+                    past_med = Medication(
+                        code=rx.code,
+                        display_name=rx.display_name,
+                        status=new_status,
+                        dose_quantity=rx.dose_quantity,
+                        dose_unit=rx.dose_unit,
+                        frequency=rx.frequency,
+                        route=rx.route,
+                        prn=rx.prn,
+                        start_date=rx.start_date,
+                        end_date=end_date,
+                        indication=rx.indication,
+                        discontinuation_reason="Course completed" if new_status == MedicationStatus.COMPLETED else "No longer needed",
+                    )
+                    past_medications.append(past_med)
+
+        return resolved_conditions, past_medications
 
 
 class AdultEngine(BaseEngine):

@@ -111,7 +111,10 @@ def export_markdown(
             status = condition.clinical_status.value.title()
             severity = f" ({condition.severity.value})" if condition.severity else ""
             lines.append(f"- **{condition.display_name}**{severity} - {status}")
-            lines.append(f"  - ICD-10: {condition.code.code}")
+            # Display code with appropriate system name
+            if condition.code:
+                code_system = "SNOMED" if "snomed" in condition.code.system.lower() else "ICD-10"
+                lines.append(f"  - {code_system}: {condition.code.code}")
             lines.append(f"  - Onset: {condition.onset_date.strftime('%Y-%m-%d')}")
             if condition.notes:
                 lines.append(f"  - Notes: {condition.notes}")
@@ -130,7 +133,11 @@ def export_markdown(
             lines.append("### Active Medications")
             lines.append("")
             for med in active_meds:
-                lines.append(f"- **{med.display_name}** {med.dose_quantity} {med.dose_unit} {med.frequency}")
+                # Include RxNorm code if available
+                rxnorm_str = ""
+                if med.code and "rxnorm" in med.code.system.lower():
+                    rxnorm_str = f" (RxNorm: {med.code.code})"
+                lines.append(f"- **{med.display_name}**{rxnorm_str} {med.dose_quantity} {med.dose_unit} {med.frequency}")
                 if med.indication:
                     lines.append(f"  - Indication: {med.indication}")
                 lines.append(f"  - Started: {med.start_date.strftime('%Y-%m-%d')}")

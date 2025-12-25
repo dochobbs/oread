@@ -1,0 +1,3067 @@
+# =============================================================================
+# Adult Conditions Registry
+# Comprehensive list of conditions for synthetic patient generation
+# =============================================================================
+#
+# CHRONIC CONDITIONS SCHEMA:
+#   icd10: ICD-10-CM code
+#   display: Human-readable name
+#   prevalence: Relative weight 0.01-0.50 (higher = more common)
+#   onset_age: [min, max] typical age range for onset
+#   sex: null | male | female (sex restriction)
+#   risk_factors: Conditions that increase likelihood (for clustering)
+#   meds: List of "drug dose" strings
+#   labs: Monitoring tests ordered
+#   visits: annual | biannual | quarterly | monthly | quarterly_then_annual
+#
+# ACUTE CONDITIONS SCHEMA:
+#   icd10: ICD-10-CM code
+#   display: Human-readable name
+#   frequency: Relative weight for selection (higher = more common)
+#   seasonality: null | winter | summer | spring | fall | [list]
+#   duration_days: [min, max] typical duration
+#   age_bias: null | young | middle | older
+#   recurrence: Typical episodes per year (0 if one-time)
+#   treatment: Medications commonly prescribed
+#   workup: Labs/imaging or "none" or "clinical"
+#
+# Visit frequency patterns:
+#   annual: once yearly monitoring
+#   biannual: twice yearly
+#   quarterly: 4x/year (chronic disease management)
+#   monthly: intensive management
+#   quarterly_then_annual: frequent initially, then annual once stable
+# =============================================================================
+
+# =============================================================================
+# CHRONIC CONDITIONS
+# =============================================================================
+
+cardiovascular:
+  hypertension:
+    icd10: I10
+    display: Essential hypertension
+    prevalence: 0.47
+    onset_age: [25, 75]
+    sex: null
+    risk_factors: [obesity, ckd, sleep_apnea, type2_diabetes]
+    meds:
+      - lisinopril 10mg
+      - lisinopril 20mg
+      - amlodipine 5mg
+      - amlodipine 10mg
+      - hydrochlorothiazide 25mg
+      - losartan 50mg
+      - losartan 100mg
+      - metoprolol 25mg
+      - metoprolol 50mg
+    labs: [bmp, cmp, urinalysis, lipid_panel]
+    visits: quarterly_then_annual
+
+  hyperlipidemia:
+    icd10: E78.5
+    display: Hyperlipidemia, unspecified
+    prevalence: 0.38
+    onset_age: [30, 70]
+    sex: null
+    risk_factors: [obesity, type2_diabetes, hypothyroidism]
+    meds:
+      - atorvastatin 10mg
+      - atorvastatin 20mg
+      - atorvastatin 40mg
+      - atorvastatin 80mg
+      - rosuvastatin 5mg
+      - rosuvastatin 10mg
+      - rosuvastatin 20mg
+      - simvastatin 20mg
+      - simvastatin 40mg
+      - pravastatin 40mg
+      - ezetimibe 10mg
+    labs: [lipid_panel, cmp]
+    visits: annual
+
+  coronary_artery_disease:
+    icd10: I25.10
+    display: Atherosclerotic heart disease of native coronary artery
+    prevalence: 0.07
+    onset_age: [45, 80]
+    sex: null
+    risk_factors: [hypertension, hyperlipidemia, type2_diabetes, obesity, smoking]
+    meds:
+      - aspirin 81mg
+      - atorvastatin 80mg
+      - metoprolol 50mg
+      - metoprolol 100mg
+      - lisinopril 10mg
+      - clopidogrel 75mg
+      - isosorbide mononitrate 30mg
+    labs: [lipid_panel, cmp, troponin, bnp]
+    visits: quarterly
+
+  atrial_fibrillation:
+    icd10: I48.91
+    display: Unspecified atrial fibrillation
+    prevalence: 0.04
+    onset_age: [50, 85]
+    sex: null
+    risk_factors: [hypertension, heart_failure, coronary_artery_disease, sleep_apnea, hyperthyroidism]
+    meds:
+      - apixaban 5mg
+      - apixaban 2.5mg
+      - rivaroxaban 20mg
+      - warfarin 5mg
+      - metoprolol 50mg
+      - diltiazem 120mg
+      - digoxin 0.125mg
+    labs: [cmp, cbc, tsh, inr]
+    visits: quarterly
+
+  heart_failure:
+    icd10: I50.9
+    display: Heart failure, unspecified
+    prevalence: 0.03
+    onset_age: [55, 85]
+    sex: null
+    risk_factors: [hypertension, coronary_artery_disease, atrial_fibrillation, type2_diabetes, obesity]
+    meds:
+      - lisinopril 20mg
+      - carvedilol 12.5mg
+      - carvedilol 25mg
+      - furosemide 20mg
+      - furosemide 40mg
+      - spironolactone 25mg
+      - sacubitril/valsartan 49/51mg
+      - empagliflozin 10mg
+    labs: [cmp, bnp, cbc]
+    visits: quarterly
+
+  peripheral_artery_disease:
+    icd10: I73.9
+    display: Peripheral vascular disease, unspecified
+    prevalence: 0.05
+    onset_age: [50, 80]
+    sex: null
+    risk_factors: [hypertension, hyperlipidemia, type2_diabetes, smoking]
+    meds:
+      - aspirin 81mg
+      - clopidogrel 75mg
+      - atorvastatin 40mg
+      - cilostazol 100mg
+    labs: [lipid_panel, cmp, abi]
+    visits: biannual
+
+metabolic:
+  type2_diabetes:
+    icd10: E11.9
+    display: Type 2 diabetes mellitus without complications
+    prevalence: 0.14
+    onset_age: [30, 70]
+    sex: null
+    risk_factors: [obesity, prediabetes, hypertension, hyperlipidemia]
+    meds:
+      - metformin 500mg
+      - metformin 1000mg
+      - empagliflozin 10mg
+      - empagliflozin 25mg
+      - semaglutide 0.25mg
+      - semaglutide 0.5mg
+      - semaglutide 1mg
+      - glipizide 5mg
+      - glipizide 10mg
+      - sitagliptin 100mg
+      - pioglitazone 15mg
+      - insulin glargine 10units
+    labs: [hba1c, cmp, lipid_panel, urine_microalbumin]
+    visits: quarterly
+
+  prediabetes:
+    icd10: R73.03
+    display: Prediabetes
+    prevalence: 0.35
+    onset_age: [25, 65]
+    sex: null
+    risk_factors: [obesity, hypertension]
+    meds:
+      - metformin 500mg
+    labs: [hba1c, fasting_glucose]
+    visits: annual
+
+  obesity:
+    icd10: E66.9
+    display: Obesity, unspecified
+    prevalence: 0.42
+    onset_age: [20, 60]
+    sex: null
+    risk_factors: []
+    meds:
+      - semaglutide 2.4mg
+      - tirzepatide 5mg
+      - phentermine 37.5mg
+      - orlistat 120mg
+    labs: [cmp, lipid_panel, hba1c, tsh]
+    visits: quarterly_then_annual
+
+  hypothyroidism:
+    icd10: E03.9
+    display: Hypothyroidism, unspecified
+    prevalence: 0.12
+    onset_age: [25, 70]
+    sex: female
+    risk_factors: []
+    meds:
+      - levothyroxine 25mcg
+      - levothyroxine 50mcg
+      - levothyroxine 75mcg
+      - levothyroxine 100mcg
+      - levothyroxine 125mcg
+    labs: [tsh, free_t4]
+    visits: annual
+
+  hyperthyroidism:
+    icd10: E05.90
+    display: Thyrotoxicosis, unspecified
+    prevalence: 0.02
+    onset_age: [20, 60]
+    sex: female
+    risk_factors: []
+    meds:
+      - methimazole 5mg
+      - methimazole 10mg
+      - propranolol 20mg
+      - propranolol 40mg
+    labs: [tsh, free_t4, free_t3]
+    visits: quarterly_then_annual
+
+  gout:
+    icd10: M10.9
+    display: Gout, unspecified
+    prevalence: 0.04
+    onset_age: [35, 70]
+    sex: male
+    risk_factors: [ckd, hypertension, obesity, type2_diabetes]
+    meds:
+      - allopurinol 100mg
+      - allopurinol 300mg
+      - febuxostat 40mg
+      - colchicine 0.6mg
+    labs: [uric_acid, cmp]
+    visits: biannual
+
+  vitamin_d_deficiency:
+    icd10: E55.9
+    display: Vitamin D deficiency, unspecified
+    prevalence: 0.25
+    onset_age: [20, 80]
+    sex: null
+    risk_factors: [obesity]
+    meds:
+      - cholecalciferol 1000IU
+      - cholecalciferol 2000IU
+      - cholecalciferol 50000IU
+    labs: [vitamin_d]
+    visits: annual
+
+respiratory:
+  copd:
+    icd10: J44.9
+    display: Chronic obstructive pulmonary disease, unspecified
+    prevalence: 0.06
+    onset_age: [45, 80]
+    sex: null
+    risk_factors: [smoking]
+    meds:
+      - tiotropium 18mcg
+      - fluticasone/salmeterol 250/50
+      - budesonide/formoterol 160/4.5
+      - albuterol inhaler
+      - ipratropium/albuterol inhaler
+    labs: [cbc, cmp, spirometry]
+    visits: quarterly
+
+  asthma:
+    icd10: J45.20
+    display: Mild intermittent asthma, uncomplicated
+    prevalence: 0.08
+    onset_age: [18, 55]
+    sex: null
+    risk_factors: [allergic_rhinitis, eczema]
+    meds:
+      - fluticasone 44mcg
+      - fluticasone 110mcg
+      - fluticasone 220mcg
+      - montelukast 10mg
+      - albuterol inhaler
+      - budesonide/formoterol 80/4.5
+    labs: [spirometry]
+    visits: biannual
+
+  sleep_apnea:
+    icd10: G47.33
+    display: Obstructive sleep apnea
+    prevalence: 0.15
+    onset_age: [30, 70]
+    sex: male
+    risk_factors: [obesity, hypertension]
+    meds: []
+    labs: [sleep_study]
+    visits: annual
+
+  allergic_rhinitis:
+    icd10: J30.9
+    display: Allergic rhinitis, unspecified
+    prevalence: 0.20
+    onset_age: [18, 50]
+    sex: null
+    risk_factors: [asthma, eczema]
+    meds:
+      - cetirizine 10mg
+      - loratadine 10mg
+      - fexofenadine 180mg
+      - fluticasone nasal spray
+      - azelastine nasal spray
+      - montelukast 10mg
+    labs: []
+    visits: annual
+
+mental_health:
+  depression:
+    icd10: F32.9
+    display: Major depressive disorder, single episode, unspecified
+    prevalence: 0.08
+    onset_age: [18, 65]
+    sex: female
+    risk_factors: [anxiety]
+    meds:
+      - sertraline 25mg
+      - sertraline 50mg
+      - sertraline 100mg
+      - escitalopram 5mg
+      - escitalopram 10mg
+      - escitalopram 20mg
+      - fluoxetine 20mg
+      - fluoxetine 40mg
+      - bupropion 150mg
+      - bupropion 300mg
+      - venlafaxine 75mg
+      - venlafaxine 150mg
+      - duloxetine 30mg
+      - duloxetine 60mg
+      - mirtazapine 15mg
+    labs: [tsh, cbc, cmp]
+    visits: monthly_then_quarterly
+
+  anxiety:
+    icd10: F41.1
+    display: Generalized anxiety disorder
+    prevalence: 0.07
+    onset_age: [18, 55]
+    sex: female
+    risk_factors: [depression]
+    meds:
+      - sertraline 50mg
+      - escitalopram 10mg
+      - buspirone 5mg
+      - buspirone 10mg
+      - buspirone 15mg
+      - duloxetine 30mg
+      - hydroxyzine 25mg
+    labs: [tsh]
+    visits: monthly_then_quarterly
+
+  bipolar_disorder:
+    icd10: F31.9
+    display: Bipolar disorder, unspecified
+    prevalence: 0.03
+    onset_age: [18, 40]
+    sex: null
+    risk_factors: []
+    meds:
+      - lithium 300mg
+      - lithium 450mg
+      - lamotrigine 25mg
+      - lamotrigine 100mg
+      - lamotrigine 200mg
+      - quetiapine 50mg
+      - quetiapine 100mg
+      - valproate 250mg
+      - valproate 500mg
+      - aripiprazole 5mg
+      - aripiprazole 10mg
+    labs: [lithium_level, cmp, tsh, cbc]
+    visits: monthly
+
+  ptsd:
+    icd10: F43.10
+    display: Post-traumatic stress disorder, unspecified
+    prevalence: 0.04
+    onset_age: [18, 60]
+    sex: null
+    risk_factors: [depression, anxiety]
+    meds:
+      - sertraline 50mg
+      - sertraline 100mg
+      - paroxetine 20mg
+      - prazosin 1mg
+      - prazosin 2mg
+      - prazosin 5mg
+    labs: []
+    visits: monthly_then_quarterly
+
+  adhd:
+    icd10: F90.9
+    display: Attention-deficit hyperactivity disorder, unspecified
+    prevalence: 0.05
+    onset_age: [18, 45]
+    sex: male
+    risk_factors: [anxiety, depression]
+    meds:
+      - amphetamine/dextroamphetamine 10mg
+      - amphetamine/dextroamphetamine 20mg
+      - amphetamine/dextroamphetamine 30mg
+      - lisdexamfetamine 30mg
+      - lisdexamfetamine 50mg
+      - lisdexamfetamine 70mg
+      - methylphenidate 18mg
+      - methylphenidate 36mg
+      - atomoxetine 40mg
+      - atomoxetine 80mg
+    labs: [cbc, cmp]
+    visits: quarterly
+
+  insomnia:
+    icd10: G47.00
+    display: Insomnia, unspecified
+    prevalence: 0.10
+    onset_age: [25, 70]
+    sex: null
+    risk_factors: [depression, anxiety]
+    meds:
+      - trazodone 50mg
+      - trazodone 100mg
+      - zolpidem 5mg
+      - zolpidem 10mg
+      - eszopiclone 1mg
+      - eszopiclone 2mg
+      - suvorexant 10mg
+      - melatonin 3mg
+      - melatonin 5mg
+    labs: []
+    visits: annual
+
+  alcohol_use_disorder:
+    icd10: F10.20
+    display: Alcohol dependence, uncomplicated
+    prevalence: 0.06
+    onset_age: [20, 60]
+    sex: male
+    risk_factors: [depression, anxiety]
+    meds:
+      - naltrexone 50mg
+      - acamprosate 333mg
+      - gabapentin 300mg
+      - disulfiram 250mg
+    labs: [cmp, cbc, ggt, ast, alt]
+    visits: monthly_then_quarterly
+
+  opioid_use_disorder:
+    icd10: F11.20
+    display: Opioid dependence, uncomplicated
+    prevalence: 0.02
+    onset_age: [20, 55]
+    sex: null
+    risk_factors: [depression, anxiety, chronic_pain]
+    meds:
+      - buprenorphine/naloxone 8/2mg
+      - buprenorphine/naloxone 16/4mg
+      - naltrexone 380mg
+    labs: [cmp, cbc, uds]
+    visits: monthly
+
+musculoskeletal:
+  osteoarthritis:
+    icd10: M19.90
+    display: Unspecified osteoarthritis, unspecified site
+    prevalence: 0.25
+    onset_age: [40, 80]
+    sex: null
+    risk_factors: [obesity]
+    meds:
+      - acetaminophen 500mg
+      - acetaminophen 650mg
+      - ibuprofen 400mg
+      - ibuprofen 600mg
+      - meloxicam 7.5mg
+      - meloxicam 15mg
+      - diclofenac gel
+      - duloxetine 30mg
+      - duloxetine 60mg
+    labs: []
+    visits: annual
+
+  rheumatoid_arthritis:
+    icd10: M06.9
+    display: Rheumatoid arthritis, unspecified
+    prevalence: 0.01
+    onset_age: [25, 65]
+    sex: female
+    risk_factors: []
+    meds:
+      - methotrexate 7.5mg
+      - methotrexate 15mg
+      - hydroxychloroquine 200mg
+      - prednisone 5mg
+      - adalimumab 40mg
+      - etanercept 50mg
+      - sulfasalazine 500mg
+    labs: [cbc, cmp, rf, anti_ccp, esr, crp]
+    visits: quarterly
+
+  osteoporosis:
+    icd10: M81.0
+    display: Age-related osteoporosis without current pathological fracture
+    prevalence: 0.10
+    onset_age: [50, 80]
+    sex: female
+    risk_factors: [hypothyroidism]
+    meds:
+      - alendronate 70mg
+      - risedronate 35mg
+      - calcium/vitamin_d 600/400
+      - calcium/vitamin_d 1200/800
+      - denosumab 60mg
+    labs: [vitamin_d, calcium, dexa_scan]
+    visits: annual
+
+  low_back_pain:
+    icd10: M54.50
+    display: Low back pain, unspecified
+    prevalence: 0.20
+    onset_age: [25, 70]
+    sex: null
+    risk_factors: [obesity]
+    meds:
+      - ibuprofen 600mg
+      - naproxen 500mg
+      - cyclobenzaprine 5mg
+      - cyclobenzaprine 10mg
+      - meloxicam 15mg
+      - methocarbamol 500mg
+    labs: []
+    visits: annual
+
+  fibromyalgia:
+    icd10: M79.7
+    display: Fibromyalgia
+    prevalence: 0.02
+    onset_age: [25, 60]
+    sex: female
+    risk_factors: [depression, anxiety, insomnia]
+    meds:
+      - duloxetine 30mg
+      - duloxetine 60mg
+      - pregabalin 50mg
+      - pregabalin 75mg
+      - pregabalin 150mg
+      - milnacipran 12.5mg
+      - amitriptyline 10mg
+      - amitriptyline 25mg
+      - cyclobenzaprine 5mg
+    labs: [tsh, cbc, cmp, vitamin_d]
+    visits: quarterly
+
+  chronic_neck_pain:
+    icd10: M54.2
+    display: Cervicalgia
+    prevalence: 0.10
+    onset_age: [30, 65]
+    sex: null
+    risk_factors: []
+    meds:
+      - ibuprofen 600mg
+      - naproxen 500mg
+      - cyclobenzaprine 10mg
+      - meloxicam 15mg
+    labs: []
+    visits: annual
+
+gastrointestinal:
+  gerd:
+    icd10: K21.0
+    display: Gastro-esophageal reflux disease with esophagitis
+    prevalence: 0.20
+    onset_age: [25, 65]
+    sex: null
+    risk_factors: [obesity]
+    meds:
+      - omeprazole 20mg
+      - omeprazole 40mg
+      - pantoprazole 40mg
+      - esomeprazole 20mg
+      - esomeprazole 40mg
+      - famotidine 20mg
+      - famotidine 40mg
+    labs: []
+    visits: annual
+
+  ibs:
+    icd10: K58.9
+    display: Irritable bowel syndrome without diarrhea
+    prevalence: 0.10
+    onset_age: [20, 55]
+    sex: female
+    risk_factors: [anxiety, depression]
+    meds:
+      - dicyclomine 10mg
+      - dicyclomine 20mg
+      - hyoscyamine 0.125mg
+      - amitriptyline 10mg
+      - rifaximin 550mg
+      - alosetron 0.5mg
+      - linaclotide 145mcg
+    labs: [cbc, cmp, celiac_panel]
+    visits: biannual
+
+  chronic_constipation:
+    icd10: K59.00
+    display: Constipation, unspecified
+    prevalence: 0.12
+    onset_age: [35, 80]
+    sex: female
+    risk_factors: [hypothyroidism]
+    meds:
+      - polyethylene glycol 17g
+      - docusate 100mg
+      - senna 8.6mg
+      - lubiprostone 24mcg
+      - linaclotide 145mcg
+      - prucalopride 2mg
+    labs: [tsh]
+    visits: annual
+
+  fatty_liver:
+    icd10: K76.0
+    display: Fatty (change of) liver, not elsewhere classified
+    prevalence: 0.25
+    onset_age: [30, 65]
+    sex: null
+    risk_factors: [obesity, type2_diabetes, hyperlipidemia]
+    meds:
+      - vitamin_e 800IU
+    labs: [cmp, ast, alt, lipid_panel, hba1c]
+    visits: annual
+
+  crohns_disease:
+    icd10: K50.90
+    display: Crohn's disease, unspecified, without complications
+    prevalence: 0.01
+    onset_age: [15, 45]
+    sex: null
+    risk_factors: []
+    meds:
+      - mesalamine 800mg
+      - budesonide 9mg
+      - prednisone 40mg
+      - azathioprine 50mg
+      - adalimumab 40mg
+      - infliximab 5mg/kg
+      - vedolizumab 300mg
+    labs: [cbc, cmp, crp, esr, fecal_calprotectin]
+    visits: quarterly
+
+  ulcerative_colitis:
+    icd10: K51.90
+    display: Ulcerative colitis, unspecified, without complications
+    prevalence: 0.01
+    onset_age: [15, 45]
+    sex: null
+    risk_factors: []
+    meds:
+      - mesalamine 800mg
+      - mesalamine 2.4g
+      - budesonide 9mg
+      - prednisone 40mg
+      - adalimumab 40mg
+      - infliximab 5mg/kg
+      - vedolizumab 300mg
+      - tofacitinib 5mg
+    labs: [cbc, cmp, crp, fecal_calprotectin]
+    visits: quarterly
+
+  diverticulosis:
+    icd10: K57.30
+    display: Diverticulosis of large intestine without perforation or abscess without bleeding
+    prevalence: 0.15
+    onset_age: [45, 80]
+    sex: null
+    risk_factors: [chronic_constipation, obesity]
+    meds: []
+    labs: []
+    visits: annual
+
+renal:
+  ckd_stage3:
+    icd10: N18.3
+    display: Chronic kidney disease, stage 3 (moderate)
+    prevalence: 0.08
+    onset_age: [45, 85]
+    sex: null
+    risk_factors: [hypertension, type2_diabetes, coronary_artery_disease]
+    meds:
+      - lisinopril 10mg
+      - losartan 50mg
+      - sodium_bicarbonate 650mg
+      - sevelamer 800mg
+    labs: [cmp, cbc, pth, phosphorus, gfr]
+    visits: quarterly
+
+  kidney_stones:
+    icd10: N20.0
+    display: Calculus of kidney
+    prevalence: 0.05
+    onset_age: [25, 65]
+    sex: male
+    risk_factors: [gout, obesity]
+    meds:
+      - potassium_citrate 10mEq
+      - hydrochlorothiazide 25mg
+      - allopurinol 300mg
+    labs: [cmp, urinalysis, 24hr_urine]
+    visits: annual
+
+neurologic:
+  migraine:
+    icd10: G43.909
+    display: Migraine, unspecified, not intractable, without status migrainosus
+    prevalence: 0.12
+    onset_age: [18, 50]
+    sex: female
+    risk_factors: [depression, anxiety]
+    meds:
+      - sumatriptan 50mg
+      - sumatriptan 100mg
+      - rizatriptan 10mg
+      - topiramate 25mg
+      - topiramate 50mg
+      - topiramate 100mg
+      - propranolol 40mg
+      - propranolol 80mg
+      - amitriptyline 10mg
+      - amitriptyline 25mg
+      - erenumab 70mg
+      - fremanezumab 225mg
+    labs: []
+    visits: quarterly_then_annual
+
+  epilepsy:
+    icd10: G40.909
+    display: Epilepsy, unspecified, not intractable, without status epilepticus
+    prevalence: 0.01
+    onset_age: [18, 55]
+    sex: null
+    risk_factors: []
+    meds:
+      - levetiracetam 250mg
+      - levetiracetam 500mg
+      - levetiracetam 1000mg
+      - lamotrigine 25mg
+      - lamotrigine 100mg
+      - lamotrigine 200mg
+      - carbamazepine 200mg
+      - valproate 250mg
+      - valproate 500mg
+    labs: [cbc, cmp, drug_levels]
+    visits: biannual
+
+  parkinsons:
+    icd10: G20
+    display: Parkinson's disease
+    prevalence: 0.01
+    onset_age: [55, 80]
+    sex: male
+    risk_factors: []
+    meds:
+      - carbidopa/levodopa 25/100
+      - carbidopa/levodopa 50/200
+      - pramipexole 0.25mg
+      - pramipexole 0.5mg
+      - pramipexole 1mg
+      - rasagiline 0.5mg
+      - rasagiline 1mg
+      - amantadine 100mg
+    labs: []
+    visits: quarterly
+
+  dementia:
+    icd10: F03.90
+    display: Unspecified dementia without behavioral disturbance
+    prevalence: 0.05
+    onset_age: [65, 90]
+    sex: null
+    risk_factors: [hypertension, type2_diabetes, depression]
+    meds:
+      - donepezil 5mg
+      - donepezil 10mg
+      - memantine 5mg
+      - memantine 10mg
+      - rivastigmine 4.6mg
+    labs: [tsh, b12, cmp]
+    visits: quarterly
+
+  peripheral_neuropathy:
+    icd10: G62.9
+    display: Polyneuropathy, unspecified
+    prevalence: 0.05
+    onset_age: [40, 80]
+    sex: null
+    risk_factors: [type2_diabetes, alcohol_use_disorder, ckd_stage3]
+    meds:
+      - gabapentin 100mg
+      - gabapentin 300mg
+      - gabapentin 600mg
+      - pregabalin 50mg
+      - pregabalin 75mg
+      - pregabalin 150mg
+      - duloxetine 30mg
+      - duloxetine 60mg
+      - amitriptyline 25mg
+    labs: [hba1c, b12, tsh]
+    visits: biannual
+
+  essential_tremor:
+    icd10: G25.0
+    display: Essential tremor
+    prevalence: 0.04
+    onset_age: [40, 80]
+    sex: null
+    risk_factors: []
+    meds:
+      - propranolol 20mg
+      - propranolol 40mg
+      - primidone 50mg
+      - primidone 250mg
+    labs: [tsh]
+    visits: annual
+
+genitourinary:
+  bph:
+    icd10: N40.0
+    display: Benign prostatic hyperplasia without lower urinary tract symptoms
+    prevalence: 0.25
+    onset_age: [45, 80]
+    sex: male
+    risk_factors: [obesity]
+    meds:
+      - tamsulosin 0.4mg
+      - finasteride 5mg
+      - dutasteride 0.5mg
+      - silodosin 8mg
+      - alfuzosin 10mg
+    labs: [psa, urinalysis, cmp]
+    visits: annual
+
+  overactive_bladder:
+    icd10: N32.81
+    display: Overactive bladder
+    prevalence: 0.12
+    onset_age: [40, 80]
+    sex: female
+    risk_factors: [obesity, type2_diabetes]
+    meds:
+      - oxybutynin 5mg
+      - tolterodine 2mg
+      - tolterodine 4mg
+      - solifenacin 5mg
+      - mirabegron 25mg
+      - mirabegron 50mg
+    labs: [urinalysis, cmp]
+    visits: annual
+
+  menopause:
+    icd10: N95.1
+    display: Menopausal and female climacteric states
+    prevalence: 0.10
+    onset_age: [45, 58]
+    sex: female
+    risk_factors: []
+    meds:
+      - estradiol 0.5mg
+      - estradiol 1mg
+      - estradiol patch 0.05mg
+      - conjugated_estrogens 0.3mg
+      - conjugated_estrogens 0.625mg
+    labs: [fsh, lipid_panel, dexa_scan]
+    visits: annual
+
+  erectile_dysfunction:
+    icd10: N52.9
+    display: Male erectile dysfunction, unspecified
+    prevalence: 0.15
+    onset_age: [40, 75]
+    sex: male
+    risk_factors: [type2_diabetes, hypertension, coronary_artery_disease, depression]
+    meds:
+      - sildenafil 25mg
+      - sildenafil 50mg
+      - sildenafil 100mg
+      - tadalafil 5mg
+      - tadalafil 10mg
+      - tadalafil 20mg
+    labs: [testosterone, hba1c, lipid_panel]
+    visits: annual
+
+  pcos:
+    icd10: E28.2
+    display: Polycystic ovarian syndrome
+    prevalence: 0.08
+    onset_age: [18, 40]
+    sex: female
+    risk_factors: [obesity, prediabetes]
+    meds:
+      - metformin 500mg
+      - metformin 1000mg
+      - spironolactone 50mg
+      - spironolactone 100mg
+      - oral_contraceptive
+    labs: [testosterone, dheas, fsh, lh, hba1c]
+    visits: biannual
+
+dermatologic:
+  psoriasis:
+    icd10: L40.9
+    display: Psoriasis, unspecified
+    prevalence: 0.03
+    onset_age: [15, 55]
+    sex: null
+    risk_factors: [obesity]
+    meds:
+      - triamcinolone cream
+      - clobetasol cream
+      - calcipotriene cream
+      - methotrexate 7.5mg
+      - methotrexate 15mg
+      - adalimumab 40mg
+      - apremilast 30mg
+    labs: [cbc, cmp]
+    visits: quarterly_then_annual
+
+  eczema:
+    icd10: L30.9
+    display: Dermatitis, unspecified
+    prevalence: 0.10
+    onset_age: [18, 55]
+    sex: null
+    risk_factors: [allergic_rhinitis, asthma]
+    meds:
+      - hydrocortisone cream
+      - triamcinolone cream
+      - tacrolimus ointment
+      - pimecrolimus cream
+      - dupilumab 300mg
+    labs: []
+    visits: annual
+
+  rosacea:
+    icd10: L71.9
+    display: Rosacea, unspecified
+    prevalence: 0.05
+    onset_age: [30, 60]
+    sex: female
+    risk_factors: []
+    meds:
+      - metronidazole gel
+      - azelaic acid gel
+      - ivermectin cream
+      - doxycycline 40mg
+      - doxycycline 100mg
+    labs: []
+    visits: annual
+
+  acne:
+    icd10: L70.0
+    display: Acne vulgaris
+    prevalence: 0.05
+    onset_age: [18, 40]
+    sex: null
+    risk_factors: [pcos]
+    meds:
+      - tretinoin cream
+      - adapalene gel
+      - benzoyl peroxide gel
+      - clindamycin gel
+      - doxycycline 50mg
+      - doxycycline 100mg
+      - spironolactone 50mg
+    labs: []
+    visits: quarterly_then_annual
+
+infectious:
+  hiv:
+    icd10: B20
+    display: Human immunodeficiency virus [HIV] disease
+    prevalence: 0.004
+    onset_age: [20, 55]
+    sex: null
+    risk_factors: []
+    meds:
+      - bictegravir/emtricitabine/tenofovir
+      - dolutegravir 50mg
+      - elvitegravir/cobicistat/emtricitabine/tenofovir
+    labs: [cd4, viral_load, cmp, cbc, lipid_panel]
+    visits: quarterly
+
+  hepatitis_c:
+    icd10: B18.2
+    display: Chronic viral hepatitis C
+    prevalence: 0.01
+    onset_age: [30, 70]
+    sex: null
+    risk_factors: []
+    meds:
+      - sofosbuvir/velpatasvir
+      - glecaprevir/pibrentasvir
+    labs: [hcv_viral_load, cmp, cbc, inr]
+    visits: quarterly_then_annual
+
+  hepatitis_b:
+    icd10: B18.1
+    display: Chronic viral hepatitis B without delta-agent
+    prevalence: 0.005
+    onset_age: [20, 60]
+    sex: null
+    risk_factors: []
+    meds:
+      - tenofovir 300mg
+      - entecavir 0.5mg
+    labs: [hbv_viral_load, cmp, afp]
+    visits: quarterly
+
+other_chronic:
+  anemia:
+    icd10: D64.9
+    display: Anemia, unspecified
+    prevalence: 0.08
+    onset_age: [25, 80]
+    sex: female
+    risk_factors: [ckd_stage3, crohns_disease, ulcerative_colitis]
+    meds:
+      - ferrous_sulfate 325mg
+      - iron_polysaccharide 150mg
+      - vitamin_b12 1000mcg
+      - folic_acid 1mg
+    labs: [cbc, iron_panel, reticulocyte, b12, folate]
+    visits: quarterly_then_annual
+
+  chronic_pain:
+    icd10: G89.29
+    display: Other chronic pain
+    prevalence: 0.20
+    onset_age: [30, 75]
+    sex: null
+    risk_factors: [depression, anxiety, obesity]
+    meds:
+      - acetaminophen 500mg
+      - ibuprofen 600mg
+      - naproxen 500mg
+      - duloxetine 30mg
+      - duloxetine 60mg
+      - gabapentin 300mg
+    labs: []
+    visits: quarterly
+
+  chronic_fatigue:
+    icd10: R53.83
+    display: Other fatigue
+    prevalence: 0.05
+    onset_age: [25, 60]
+    sex: female
+    risk_factors: [depression, hypothyroidism, sleep_apnea]
+    meds: []
+    labs: [cbc, cmp, tsh, iron_panel, vitamin_d, b12]
+    visits: annual
+
+# =============================================================================
+# ACUTE CONDITIONS
+# =============================================================================
+
+acute_respiratory:
+  upper_respiratory_infection:
+    icd10: J06.9
+    display: Acute upper respiratory infection, unspecified
+    frequency: 10.0
+    seasonality: [winter, fall]
+    duration_days: [5, 14]
+    age_bias: null
+    recurrence: 2.5
+    treatment:
+      symptomatic: [acetaminophen 500mg, ibuprofen 400mg, pseudoephedrine 30mg, dextromethorphan 20mg]
+    workup: clinical
+
+  acute_sinusitis:
+    icd10: J01.90
+    display: Acute sinusitis, unspecified
+    frequency: 5.0
+    seasonality: [winter, fall]
+    duration_days: [7, 21]
+    age_bias: null
+    recurrence: 1.0
+    treatment:
+      symptomatic: [acetaminophen 500mg, pseudoephedrine 30mg, fluticasone nasal spray, saline nasal spray]
+      if_bacterial: [amoxicillin 500mg, amoxicillin/clavulanate 875mg, doxycycline 100mg]
+    workup: clinical
+
+  acute_pharyngitis:
+    icd10: J02.9
+    display: Acute pharyngitis, unspecified
+    frequency: 5.0
+    seasonality: [winter, spring]
+    duration_days: [3, 10]
+    age_bias: young
+    recurrence: 1.5
+    treatment:
+      symptomatic: [acetaminophen 500mg, ibuprofen 400mg, throat lozenges]
+      if_strep: [amoxicillin 500mg, penicillin_vk 500mg, azithromycin 500mg]
+    workup: rapid_strep
+
+  acute_bronchitis:
+    icd10: J20.9
+    display: Acute bronchitis, unspecified
+    frequency: 4.0
+    seasonality: [winter, fall]
+    duration_days: [10, 21]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      symptomatic: [dextromethorphan 20mg, guaifenesin 400mg, benzonatate 100mg, albuterol inhaler]
+    workup: clinical
+
+  influenza:
+    icd10: J11.1
+    display: Influenza due to unidentified influenza virus with other respiratory manifestations
+    frequency: 2.0
+    seasonality: [winter]
+    duration_days: [5, 10]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      antiviral: [oseltamivir 75mg, baloxavir 40mg]
+      symptomatic: [acetaminophen 500mg, ibuprofen 400mg]
+    workup: rapid_flu
+
+  covid19:
+    icd10: U07.1
+    display: COVID-19
+    frequency: 1.5
+    seasonality: null
+    duration_days: [5, 14]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      antiviral: [paxlovid]
+      symptomatic: [acetaminophen 500mg, ibuprofen 400mg]
+    workup: rapid_covid
+
+  pneumonia:
+    icd10: J18.9
+    display: Pneumonia, unspecified organism
+    frequency: 1.5
+    seasonality: [winter]
+    duration_days: [7, 21]
+    age_bias: older
+    recurrence: 0.2
+    treatment:
+      antibiotics: [amoxicillin 1g, azithromycin 500mg, levofloxacin 750mg, doxycycline 100mg]
+    workup: [chest_xray, cbc, cmp]
+
+  acute_laryngitis:
+    icd10: J04.0
+    display: Acute laryngitis
+    frequency: 1.0
+    seasonality: [winter, fall]
+    duration_days: [5, 10]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      symptomatic: [voice rest, humidifier, throat lozenges]
+    workup: clinical
+
+  asthma_exacerbation:
+    icd10: J45.901
+    display: Unspecified asthma with (acute) exacerbation
+    frequency: 1.0
+    seasonality: [spring, fall]
+    duration_days: [3, 14]
+    age_bias: null
+    recurrence: 1.0
+    treatment:
+      medications: [albuterol inhaler, prednisone 40mg, ipratropium inhaler]
+    workup: [spirometry, peak_flow]
+
+  copd_exacerbation:
+    icd10: J44.1
+    display: Chronic obstructive pulmonary disease with (acute) exacerbation
+    frequency: 0.5
+    seasonality: [winter]
+    duration_days: [7, 21]
+    age_bias: older
+    recurrence: 0.5
+    treatment:
+      medications: [prednisone 40mg, albuterol inhaler, azithromycin 250mg, doxycycline 100mg]
+    workup: [chest_xray, cbc]
+
+acute_gi:
+  gastroenteritis:
+    icd10: K52.9
+    display: Noninfective gastroenteritis and colitis, unspecified
+    frequency: 3.0
+    seasonality: null
+    duration_days: [1, 5]
+    age_bias: null
+    recurrence: 0.8
+    treatment:
+      symptomatic: [ondansetron 4mg, loperamide 2mg, oral rehydration]
+    workup: clinical
+
+  food_poisoning:
+    icd10: A05.9
+    display: Bacterial foodborne intoxication, unspecified
+    frequency: 1.0
+    seasonality: [summer]
+    duration_days: [1, 3]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      symptomatic: [ondansetron 4mg, oral rehydration]
+    workup: clinical
+
+  acute_gastritis:
+    icd10: K29.70
+    display: Gastritis, unspecified, without bleeding
+    frequency: 1.5
+    seasonality: null
+    duration_days: [3, 14]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [omeprazole 20mg, famotidine 20mg, sucralfate 1g]
+    workup: clinical
+
+  constipation_acute:
+    icd10: K59.00
+    display: Constipation, unspecified
+    frequency: 2.0
+    seasonality: null
+    duration_days: [1, 7]
+    age_bias: older
+    recurrence: 1.0
+    treatment:
+      medications: [polyethylene glycol 17g, magnesium citrate, bisacodyl 10mg, docusate 100mg]
+    workup: clinical
+
+  hemorrhoids:
+    icd10: K64.9
+    display: Unspecified hemorrhoids
+    frequency: 2.0
+    seasonality: null
+    duration_days: [7, 21]
+    age_bias: middle
+    recurrence: 0.5
+    treatment:
+      medications: [hydrocortisone suppository, witch hazel pads, docusate 100mg]
+    workup: clinical
+
+  diverticulitis:
+    icd10: K57.32
+    display: Diverticulitis of large intestine without perforation or abscess without bleeding
+    frequency: 0.5
+    seasonality: null
+    duration_days: [7, 14]
+    age_bias: older
+    recurrence: 0.3
+    treatment:
+      antibiotics: [ciprofloxacin 500mg, metronidazole 500mg, amoxicillin/clavulanate 875mg]
+    workup: [ct_abdomen, cbc]
+
+acute_gu:
+  urinary_tract_infection:
+    icd10: N39.0
+    display: Urinary tract infection, site not specified
+    frequency: 4.0
+    seasonality: null
+    duration_days: [3, 7]
+    age_bias: null
+    recurrence: 1.5
+    treatment:
+      antibiotics: [nitrofurantoin 100mg, trimethoprim/sulfamethoxazole 160/800mg, ciprofloxacin 500mg, cephalexin 500mg]
+      symptomatic: [phenazopyridine 200mg]
+    workup: [urinalysis, urine_culture]
+
+  pyelonephritis:
+    icd10: N10
+    display: Acute tubulo-interstitial nephritis
+    frequency: 0.5
+    seasonality: null
+    duration_days: [7, 14]
+    age_bias: null
+    recurrence: 0.2
+    treatment:
+      antibiotics: [ciprofloxacin 500mg, levofloxacin 750mg, ceftriaxone 1g]
+    workup: [urinalysis, urine_culture, cbc, cmp]
+
+  kidney_stone_acute:
+    icd10: N23
+    display: Unspecified renal colic
+    frequency: 1.0
+    seasonality: [summer]
+    duration_days: [1, 14]
+    age_bias: middle
+    recurrence: 0.3
+    treatment:
+      medications: [ketorolac 30mg, ibuprofen 800mg, tamsulosin 0.4mg, ondansetron 4mg]
+    workup: [ct_abdomen, urinalysis, cmp]
+
+  vaginitis:
+    icd10: N76.0
+    display: Acute vaginitis
+    frequency: 2.0
+    seasonality: null
+    duration_days: [3, 10]
+    age_bias: null
+    recurrence: 1.0
+    treatment:
+      medications: [fluconazole 150mg, metronidazole 500mg, clindamycin cream]
+    workup: [wet_prep, vaginal_culture]
+
+  epididymitis:
+    icd10: N45.1
+    display: Epididymitis
+    frequency: 0.5
+    seasonality: null
+    duration_days: [7, 14]
+    age_bias: young
+    recurrence: 0.1
+    treatment:
+      antibiotics: [doxycycline 100mg, ceftriaxone 500mg, levofloxacin 500mg]
+    workup: [urinalysis, std_testing]
+
+  prostatitis:
+    icd10: N41.9
+    display: Inflammatory disease of prostate, unspecified
+    frequency: 0.5
+    seasonality: null
+    duration_days: [14, 28]
+    age_bias: middle
+    recurrence: 0.3
+    treatment:
+      antibiotics: [ciprofloxacin 500mg, levofloxacin 500mg, trimethoprim/sulfamethoxazole 160/800mg]
+    workup: [urinalysis, psa]
+
+acute_skin:
+  cellulitis:
+    icd10: L03.90
+    display: Cellulitis, unspecified
+    frequency: 2.0
+    seasonality: [summer]
+    duration_days: [5, 14]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      antibiotics: [cephalexin 500mg, dicloxacillin 500mg, clindamycin 300mg, trimethoprim/sulfamethoxazole 160/800mg]
+    workup: clinical
+
+  skin_abscess:
+    icd10: L02.91
+    display: Cutaneous abscess, unspecified
+    frequency: 1.5
+    seasonality: null
+    duration_days: [5, 14]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      procedure: [incision_and_drainage]
+      antibiotics: [trimethoprim/sulfamethoxazole 160/800mg, doxycycline 100mg]
+    workup: clinical
+
+  contact_dermatitis:
+    icd10: L25.9
+    display: Unspecified contact dermatitis, unspecified cause
+    frequency: 2.0
+    seasonality: [summer, spring]
+    duration_days: [7, 21]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [hydrocortisone cream, triamcinolone cream, prednisone 40mg, diphenhydramine 25mg]
+    workup: clinical
+
+  urticaria:
+    icd10: L50.9
+    display: Urticaria, unspecified
+    frequency: 1.5
+    seasonality: null
+    duration_days: [1, 7]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [diphenhydramine 25mg, cetirizine 10mg, prednisone 40mg, epinephrine if severe]
+    workup: clinical
+
+  herpes_zoster:
+    icd10: B02.9
+    display: Zoster without complications
+    frequency: 0.5
+    seasonality: null
+    duration_days: [14, 28]
+    age_bias: older
+    recurrence: 0.1
+    treatment:
+      antivirals: [valacyclovir 1000mg, acyclovir 800mg]
+      pain: [gabapentin 300mg, acetaminophen 500mg]
+    workup: clinical
+
+  herpes_simplex:
+    icd10: B00.9
+    display: Herpesviral infection, unspecified
+    frequency: 1.0
+    seasonality: null
+    duration_days: [7, 14]
+    age_bias: null
+    recurrence: 2.0
+    treatment:
+      antivirals: [valacyclovir 500mg, acyclovir 400mg]
+    workup: clinical
+
+  insect_bite:
+    icd10: T63.4
+    display: Toxic effect of venom of other arthropods
+    frequency: 2.0
+    seasonality: [summer]
+    duration_days: [3, 10]
+    age_bias: null
+    recurrence: 1.0
+    treatment:
+      medications: [hydrocortisone cream, diphenhydramine 25mg, cetirizine 10mg]
+    workup: clinical
+
+  superficial_burn:
+    icd10: T30.0
+    display: Burn of unspecified body region, unspecified degree
+    frequency: 0.5
+    seasonality: [summer]
+    duration_days: [7, 21]
+    age_bias: null
+    recurrence: 0.1
+    treatment:
+      medications: [silver sulfadiazine cream, ibuprofen 400mg, acetaminophen 500mg]
+    workup: clinical
+
+  sunburn:
+    icd10: L55.9
+    display: Sunburn, unspecified
+    frequency: 1.0
+    seasonality: [summer]
+    duration_days: [3, 7]
+    age_bias: young
+    recurrence: 0.5
+    treatment:
+      medications: [aloe vera gel, ibuprofen 400mg, hydrocortisone cream]
+    workup: none
+
+  impetigo:
+    icd10: L01.00
+    display: Impetigo, unspecified
+    frequency: 0.5
+    seasonality: [summer]
+    duration_days: [7, 14]
+    age_bias: null
+    recurrence: 0.2
+    treatment:
+      antibiotics: [mupirocin ointment, cephalexin 500mg]
+    workup: clinical
+
+  paronychia:
+    icd10: L03.019
+    display: Cellulitis of unspecified finger
+    frequency: 0.5
+    seasonality: null
+    duration_days: [5, 10]
+    age_bias: null
+    recurrence: 0.2
+    treatment:
+      procedure: [incision if abscess]
+      antibiotics: [cephalexin 500mg, trimethoprim/sulfamethoxazole 160/800mg]
+    workup: clinical
+
+  fungal_skin:
+    icd10: B35.9
+    display: Dermatophytosis, unspecified
+    frequency: 2.0
+    seasonality: [summer]
+    duration_days: [14, 42]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      antifungals: [clotrimazole cream, terbinafine cream, fluconazole 150mg]
+    workup: clinical
+
+acute_msk:
+  ankle_sprain:
+    icd10: S93.409A
+    display: Sprain of unspecified ligament of unspecified ankle, initial encounter
+    frequency: 2.0
+    seasonality: null
+    duration_days: [14, 42]
+    age_bias: young
+    recurrence: 0.3
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg, acetaminophen 500mg]
+      other: [RICE, ankle brace]
+    workup: [xray if severe]
+
+  wrist_sprain:
+    icd10: S63.509A
+    display: Unspecified sprain of unspecified wrist, initial encounter
+    frequency: 1.0
+    seasonality: null
+    duration_days: [14, 28]
+    age_bias: null
+    recurrence: 0.2
+    treatment:
+      medications: [ibuprofen 600mg, acetaminophen 500mg]
+      other: [splint, RICE]
+    workup: xray
+
+  knee_sprain:
+    icd10: S83.90XA
+    display: Sprain of unspecified site of unspecified knee, initial encounter
+    frequency: 1.0
+    seasonality: null
+    duration_days: [14, 42]
+    age_bias: young
+    recurrence: 0.2
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg]
+      other: [knee brace, RICE, PT]
+    workup: [xray, mri if severe]
+
+  back_strain:
+    icd10: S39.012A
+    display: Strain of muscle, fascia and tendon of lower back, initial encounter
+    frequency: 3.0
+    seasonality: null
+    duration_days: [7, 28]
+    age_bias: middle
+    recurrence: 0.8
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg, cyclobenzaprine 10mg, methocarbamol 500mg]
+    workup: clinical
+
+  muscle_strain:
+    icd10: M62.82
+    display: Rhabdomyolysis
+    frequency: 1.5
+    seasonality: null
+    duration_days: [3, 14]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      medications: [ibuprofen 600mg, acetaminophen 500mg]
+      other: [rest, ice]
+    workup: clinical
+
+  contusion:
+    icd10: T14.8
+    display: Other injury of unspecified body region
+    frequency: 2.0
+    seasonality: null
+    duration_days: [7, 21]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [ibuprofen 400mg, acetaminophen 500mg]
+      other: [ice, compression]
+    workup: clinical
+
+  laceration:
+    icd10: T14.1
+    display: Open wound of unspecified body region
+    frequency: 2.0
+    seasonality: null
+    duration_days: [7, 14]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      procedure: [wound closure, tetanus if needed]
+      medications: [cephalexin 500mg if infected]
+    workup: clinical
+
+  tendinitis:
+    icd10: M77.9
+    display: Enthesopathy, unspecified
+    frequency: 1.5
+    seasonality: null
+    duration_days: [14, 60]
+    age_bias: middle
+    recurrence: 0.5
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg, meloxicam 15mg]
+      other: [rest, ice, PT]
+    workup: clinical
+
+  bursitis:
+    icd10: M71.9
+    display: Bursopathy, unspecified
+    frequency: 1.0
+    seasonality: null
+    duration_days: [14, 42]
+    age_bias: middle
+    recurrence: 0.3
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg, steroid injection]
+    workup: clinical
+
+  carpal_tunnel_acute:
+    icd10: G56.00
+    display: Carpal tunnel syndrome, unspecified upper limb
+    frequency: 0.5
+    seasonality: null
+    duration_days: [14, 90]
+    age_bias: middle
+    recurrence: 0.3
+    treatment:
+      medications: [ibuprofen 600mg, wrist splint]
+    workup: [nerve_conduction if persistent]
+
+  plantar_fasciitis:
+    icd10: M72.2
+    display: Plantar fascial fibromatosis
+    frequency: 1.0
+    seasonality: null
+    duration_days: [30, 180]
+    age_bias: middle
+    recurrence: 0.3
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg]
+      other: [stretching, orthotics, heel pads]
+    workup: clinical
+
+acute_neuro:
+  tension_headache:
+    icd10: G44.209
+    display: Tension-type headache, unspecified, not intractable
+    frequency: 5.0
+    seasonality: null
+    duration_days: [1, 3]
+    age_bias: null
+    recurrence: 4.0
+    treatment:
+      medications: [acetaminophen 500mg, ibuprofen 400mg, naproxen 500mg]
+    workup: clinical
+
+  migraine_acute:
+    icd10: G43.909
+    display: Migraine, unspecified, not intractable
+    frequency: 2.0
+    seasonality: null
+    duration_days: [1, 3]
+    age_bias: null
+    recurrence: 3.0
+    treatment:
+      medications: [sumatriptan 50mg, rizatriptan 10mg, ibuprofen 600mg, metoclopramide 10mg]
+    workup: clinical
+
+  vertigo:
+    icd10: R42
+    display: Dizziness and giddiness
+    frequency: 2.0
+    seasonality: null
+    duration_days: [1, 14]
+    age_bias: older
+    recurrence: 0.5
+    treatment:
+      medications: [meclizine 25mg, dimenhydrinate 50mg]
+      other: [epley maneuver if BPPV]
+    workup: clinical
+
+  bell_palsy:
+    icd10: G51.0
+    display: Bell's palsy
+    frequency: 0.3
+    seasonality: null
+    duration_days: [14, 90]
+    age_bias: null
+    recurrence: 0.1
+    treatment:
+      medications: [prednisone 60mg, valacyclovir 1000mg]
+    workup: clinical
+
+acute_eye_ear:
+  conjunctivitis:
+    icd10: H10.9
+    display: Unspecified conjunctivitis
+    frequency: 2.0
+    seasonality: null
+    duration_days: [5, 14]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [erythromycin ointment, ofloxacin drops, artificial tears]
+    workup: clinical
+
+  otitis_externa:
+    icd10: H60.90
+    display: Unspecified otitis externa, unspecified ear
+    frequency: 1.5
+    seasonality: [summer]
+    duration_days: [5, 10]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      medications: [ciprofloxacin/dexamethasone otic, acetic acid otic]
+    workup: clinical
+
+  otitis_media:
+    icd10: H66.90
+    display: Otitis media, unspecified, unspecified ear
+    frequency: 1.0
+    seasonality: [winter]
+    duration_days: [7, 14]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      medications: [amoxicillin 500mg, amoxicillin/clavulanate 875mg, ibuprofen 400mg]
+    workup: clinical
+
+  corneal_abrasion:
+    icd10: S05.00XA
+    display: Injury of conjunctiva and corneal abrasion without foreign body, unspecified eye, initial encounter
+    frequency: 0.5
+    seasonality: null
+    duration_days: [2, 5]
+    age_bias: null
+    recurrence: 0.1
+    treatment:
+      medications: [erythromycin ointment, artificial tears]
+    workup: [fluorescein exam]
+
+  subconjunctival_hemorrhage:
+    icd10: H11.30
+    display: Conjunctival hemorrhage, unspecified eye
+    frequency: 0.5
+    seasonality: null
+    duration_days: [7, 21]
+    age_bias: older
+    recurrence: 0.2
+    treatment:
+      medications: [artificial tears]
+    workup: [bp check]
+
+  hordeolum:
+    icd10: H00.019
+    display: Hordeolum externum unspecified eye, unspecified eyelid
+    frequency: 1.0
+    seasonality: null
+    duration_days: [5, 14]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      medications: [warm compresses, erythromycin ointment]
+    workup: clinical
+
+acute_other:
+  allergic_reaction:
+    icd10: T78.40XA
+    display: Allergy, unspecified, initial encounter
+    frequency: 1.5
+    seasonality: [spring, summer]
+    duration_days: [1, 7]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [diphenhydramine 25mg, cetirizine 10mg, prednisone 40mg]
+      severe: [epinephrine 0.3mg]
+    workup: clinical
+
+  chest_pain_noncardiac:
+    icd10: R07.9
+    display: Chest pain, unspecified
+    frequency: 2.0
+    seasonality: null
+    duration_days: [1, 7]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      medications: [omeprazole 20mg, ibuprofen 400mg]
+    workup: [ecg, troponin, chest_xray]
+
+  abdominal_pain:
+    icd10: R10.9
+    display: Unspecified abdominal pain
+    frequency: 3.0
+    seasonality: null
+    duration_days: [1, 7]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [ondansetron 4mg, dicyclomine 10mg]
+    workup: [cbc, cmp, lipase, urinalysis]
+
+  syncope:
+    icd10: R55
+    display: Syncope and collapse
+    frequency: 0.5
+    seasonality: null
+    duration_days: [1, 1]
+    age_bias: older
+    recurrence: 0.2
+    treatment:
+      medications: []
+    workup: [ecg, cbc, cmp, glucose, orthostatic_vitals]
+
+  anxiety_attack:
+    icd10: F41.0
+    display: Panic disorder [episodic paroxysmal anxiety]
+    frequency: 1.5
+    seasonality: null
+    duration_days: [1, 1]
+    age_bias: young
+    recurrence: 2.0
+    treatment:
+      medications: [lorazepam 0.5mg, hydroxyzine 25mg]
+    workup: clinical
+
+  gout_flare:
+    icd10: M10.9
+    display: Gout, unspecified
+    frequency: 0.5
+    seasonality: null
+    duration_days: [3, 10]
+    age_bias: middle
+    recurrence: 0.5
+    treatment:
+      medications: [colchicine 0.6mg, indomethacin 50mg, prednisone 40mg]
+    workup: [uric_acid, joint_aspiration_if_needed]
+
+  nosebleed:
+    icd10: R04.0
+    display: Epistaxis
+    frequency: 0.5
+    seasonality: [winter]
+    duration_days: [1, 1]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      procedure: [direct pressure, nasal packing if needed]
+    workup: [cbc, coag_studies_if_severe]
+
+  tick_bite:
+    icd10: S00.97XA
+    display: Superficial bite of other part of head, initial encounter
+    frequency: 0.5
+    seasonality: [summer, spring]
+    duration_days: [1, 3]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      prophylaxis: [doxycycline 200mg single dose if endemic area]
+    workup: clinical
+
+  heat_exhaustion:
+    icd10: T67.5XXA
+    display: Heat exhaustion, unspecified, initial encounter
+    frequency: 0.3
+    seasonality: [summer]
+    duration_days: [1, 2]
+    age_bias: null
+    recurrence: 0.1
+    treatment:
+      supportive: [oral rehydration, cooling, rest]
+    workup: [cbc, cmp if severe]
+
+  costochondritis:
+    icd10: M94.0
+    display: Chondrocostal junction syndrome [Tietze]
+    frequency: 1.5
+    seasonality: null
+    duration_days: [7, 42]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg, acetaminophen 500mg]
+    workup: [ecg if concerning, chest_xray if needed]
+
+  palpitations:
+    icd10: R00.2
+    display: Palpitations
+    frequency: 1.5
+    seasonality: null
+    duration_days: [1, 3]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [metoprolol 25mg prn]
+    workup: [ecg, tsh, cbc, cmp, holter if recurrent]
+
+  presyncope:
+    icd10: R55
+    display: Presyncope
+    frequency: 1.0
+    seasonality: null
+    duration_days: [1, 1]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      medications: []
+    workup: [ecg, orthostatic_vitals, cbc, glucose]
+
+  viral_syndrome:
+    icd10: B34.9
+    display: Viral infection, unspecified
+    frequency: 3.0
+    seasonality: [winter, fall]
+    duration_days: [3, 10]
+    age_bias: null
+    recurrence: 1.5
+    treatment:
+      symptomatic: [acetaminophen 500mg, ibuprofen 400mg, rest, fluids]
+    workup: clinical
+
+  mononucleosis:
+    icd10: B27.90
+    display: Infectious mononucleosis, unspecified without complication
+    frequency: 0.3
+    seasonality: null
+    duration_days: [14, 42]
+    age_bias: young
+    recurrence: 0.0
+    treatment:
+      supportive: [rest, fluids, acetaminophen 500mg]
+    workup: [monospot, cbc, cmp]
+
+  strep_pharyngitis:
+    icd10: J02.0
+    display: Streptococcal pharyngitis
+    frequency: 2.0
+    seasonality: [winter, spring]
+    duration_days: [5, 10]
+    age_bias: young
+    recurrence: 0.5
+    treatment:
+      antibiotics: [amoxicillin 500mg, penicillin_vk 500mg, azithromycin 500mg]
+    workup: rapid_strep
+
+  pertussis:
+    icd10: A37.90
+    display: Whooping cough, unspecified species without pneumonia
+    frequency: 0.2
+    seasonality: null
+    duration_days: [42, 90]
+    age_bias: null
+    recurrence: 0.0
+    treatment:
+      antibiotics: [azithromycin 500mg, trimethoprim/sulfamethoxazole 160/800mg]
+    workup: [pertussis_pcr, cbc]
+
+  croup_adult:
+    icd10: J05.0
+    display: Acute obstructive laryngitis [croup]
+    frequency: 0.1
+    seasonality: [fall, winter]
+    duration_days: [3, 7]
+    age_bias: null
+    recurrence: 0.1
+    treatment:
+      medications: [dexamethasone 0.6mg/kg, racemic epinephrine if severe]
+    workup: clinical
+
+acute_dental:
+  dental_abscess:
+    icd10: K04.7
+    display: Periapical abscess without sinus
+    frequency: 1.0
+    seasonality: null
+    duration_days: [3, 10]
+    age_bias: null
+    recurrence: 0.2
+    treatment:
+      antibiotics: [amoxicillin 500mg, clindamycin 300mg, metronidazole 500mg]
+      pain: [ibuprofen 600mg, acetaminophen 500mg]
+    workup: clinical
+
+  toothache:
+    icd10: K08.89
+    display: Other specified disorders of teeth and supporting structures
+    frequency: 1.5
+    seasonality: null
+    duration_days: [1, 7]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      pain: [ibuprofen 600mg, acetaminophen 500mg]
+    workup: clinical
+
+  temporomandibular_disorder:
+    icd10: M26.60
+    display: Temporomandibular joint disorder, unspecified
+    frequency: 0.5
+    seasonality: null
+    duration_days: [7, 30]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [ibuprofen 600mg, cyclobenzaprine 5mg]
+      other: [soft diet, moist heat, jaw exercises]
+    workup: clinical
+
+acute_sti:
+  chlamydia:
+    icd10: A56.00
+    display: Chlamydial infection of lower genitourinary tract, unspecified
+    frequency: 0.8
+    seasonality: null
+    duration_days: [7, 14]
+    age_bias: young
+    recurrence: 0.3
+    treatment:
+      antibiotics: [azithromycin 1g single dose, doxycycline 100mg]
+    workup: [chlamydia_naat, gonorrhea_naat]
+
+  gonorrhea:
+    icd10: A54.00
+    display: Gonococcal infection of lower genitourinary tract, unspecified
+    frequency: 0.4
+    seasonality: null
+    duration_days: [7, 14]
+    age_bias: young
+    recurrence: 0.2
+    treatment:
+      antibiotics: [ceftriaxone 500mg IM, azithromycin 1g]
+    workup: [gonorrhea_naat, chlamydia_naat]
+
+  trichomoniasis:
+    icd10: A59.00
+    display: Urogenital trichomoniasis, unspecified
+    frequency: 0.3
+    seasonality: null
+    duration_days: [5, 10]
+    age_bias: null
+    recurrence: 0.2
+    treatment:
+      antibiotics: [metronidazole 2g single dose, metronidazole 500mg]
+    workup: wet_prep
+
+  genital_herpes_outbreak:
+    icd10: A60.00
+    display: Herpesviral infection of urogenital system, unspecified
+    frequency: 0.5
+    seasonality: null
+    duration_days: [7, 14]
+    age_bias: null
+    recurrence: 2.0
+    treatment:
+      antivirals: [valacyclovir 500mg, acyclovir 400mg]
+    workup: clinical
+
+acute_pain_syndromes:
+  sciatica:
+    icd10: M54.30
+    display: Sciatica, unspecified side
+    frequency: 1.5
+    seasonality: null
+    duration_days: [14, 60]
+    age_bias: middle
+    recurrence: 0.5
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg, gabapentin 300mg, prednisone taper]
+    workup: clinical
+
+  cervical_radiculopathy:
+    icd10: M54.12
+    display: Radiculopathy, cervical region
+    frequency: 0.5
+    seasonality: null
+    duration_days: [14, 60]
+    age_bias: middle
+    recurrence: 0.3
+    treatment:
+      medications: [ibuprofen 600mg, cyclobenzaprine 10mg, gabapentin 300mg]
+    workup: [mri if severe or persistent]
+
+  shoulder_impingement:
+    icd10: M75.40
+    display: Impingement syndrome of unspecified shoulder
+    frequency: 1.0
+    seasonality: null
+    duration_days: [21, 90]
+    age_bias: middle
+    recurrence: 0.3
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg]
+      other: [PT, steroid injection]
+    workup: [xray if needed]
+
+  rotator_cuff_strain:
+    icd10: M75.100
+    display: Unspecified rotator cuff tear or rupture of unspecified shoulder, not specified as traumatic
+    frequency: 0.8
+    seasonality: null
+    duration_days: [21, 90]
+    age_bias: middle
+    recurrence: 0.2
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg]
+      other: [PT, sling]
+    workup: [mri if persistent]
+
+  lateral_epicondylitis:
+    icd10: M77.10
+    display: Lateral epicondylitis, unspecified elbow
+    frequency: 0.8
+    seasonality: null
+    duration_days: [30, 180]
+    age_bias: middle
+    recurrence: 0.3
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg]
+      other: [counterforce brace, PT, steroid injection]
+    workup: clinical
+
+  medial_epicondylitis:
+    icd10: M77.00
+    display: Medial epicondylitis, unspecified elbow
+    frequency: 0.4
+    seasonality: null
+    duration_days: [30, 180]
+    age_bias: middle
+    recurrence: 0.2
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg]
+      other: [brace, PT]
+    workup: clinical
+
+  de_quervain:
+    icd10: M65.4
+    display: Radial styloid tenosynovitis [de Quervain]
+    frequency: 0.4
+    seasonality: null
+    duration_days: [30, 90]
+    age_bias: null
+    recurrence: 0.2
+    treatment:
+      medications: [ibuprofen 600mg, thumb spica splint]
+      other: [steroid injection]
+    workup: clinical
+
+  trigger_finger:
+    icd10: M65.30
+    display: Trigger finger, unspecified finger
+    frequency: 0.3
+    seasonality: null
+    duration_days: [30, 180]
+    age_bias: middle
+    recurrence: 0.2
+    treatment:
+      medications: [splint, steroid injection]
+    workup: clinical
+
+  hip_bursitis:
+    icd10: M70.60
+    display: Trochanteric bursitis, unspecified hip
+    frequency: 0.8
+    seasonality: null
+    duration_days: [14, 60]
+    age_bias: middle
+    recurrence: 0.3
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg]
+      other: [steroid injection, PT]
+    workup: clinical
+
+  knee_bursitis:
+    icd10: M70.50
+    display: Other bursitis of knee, unspecified knee
+    frequency: 0.5
+    seasonality: null
+    duration_days: [14, 42]
+    age_bias: null
+    recurrence: 0.2
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg]
+      other: [ice, knee pad]
+    workup: clinical
+
+  achilles_tendinitis:
+    icd10: M76.60
+    display: Achilles tendinitis, unspecified leg
+    frequency: 0.5
+    seasonality: null
+    duration_days: [30, 90]
+    age_bias: middle
+    recurrence: 0.3
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg]
+      other: [heel lifts, eccentric exercises, PT]
+    workup: clinical
+
+acute_skin_additional:
+  ingrown_toenail:
+    icd10: L60.0
+    display: Ingrowing nail
+    frequency: 1.0
+    seasonality: null
+    duration_days: [7, 21]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      procedure: [nail avulsion if needed]
+      medications: [cephalexin 500mg if infected]
+    workup: clinical
+
+  folliculitis:
+    icd10: L73.9
+    display: Follicular disorder, unspecified
+    frequency: 1.0
+    seasonality: [summer]
+    duration_days: [5, 14]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [mupirocin ointment, benzoyl peroxide wash]
+      if_severe: [doxycycline 100mg, cephalexin 500mg]
+    workup: clinical
+
+  furuncle:
+    icd10: L02.92
+    display: Furuncle, unspecified
+    frequency: 0.8
+    seasonality: null
+    duration_days: [7, 14]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      procedure: [incision_and_drainage if fluctuant]
+      antibiotics: [trimethoprim/sulfamethoxazole 160/800mg, doxycycline 100mg]
+    workup: clinical
+
+  wound_infection:
+    icd10: T79.3XXA
+    display: Post-traumatic wound infection, not elsewhere classified, initial encounter
+    frequency: 0.5
+    seasonality: null
+    duration_days: [7, 14]
+    age_bias: null
+    recurrence: 0.1
+    treatment:
+      antibiotics: [cephalexin 500mg, clindamycin 300mg]
+      wound_care: [cleaning, dressing changes]
+    workup: clinical
+
+  onychomycosis:
+    icd10: B35.1
+    display: Tinea unguium
+    frequency: 0.5
+    seasonality: null
+    duration_days: [90, 365]
+    age_bias: older
+    recurrence: 0.3
+    treatment:
+      antifungals: [terbinafine 250mg, ciclopirox lacquer]
+    workup: [koh_prep, fungal_culture]
+
+  seborrheic_dermatitis:
+    icd10: L21.9
+    display: Seborrheic dermatitis, unspecified
+    frequency: 1.0
+    seasonality: null
+    duration_days: [7, 30]
+    age_bias: null
+    recurrence: 1.0
+    treatment:
+      medications: [ketoconazole shampoo, hydrocortisone cream, selenium sulfide]
+    workup: clinical
+
+  pityriasis_rosea:
+    icd10: L42
+    display: Pityriasis rosea
+    frequency: 0.3
+    seasonality: [spring, fall]
+    duration_days: [30, 90]
+    age_bias: young
+    recurrence: 0.1
+    treatment:
+      medications: [hydrocortisone cream, antihistamines for itch]
+    workup: clinical
+
+  animal_bite:
+    icd10: W55.01XA
+    display: Bitten by cat, initial encounter
+    frequency: 0.5
+    seasonality: null
+    duration_days: [5, 14]
+    age_bias: null
+    recurrence: 0.1
+    treatment:
+      antibiotics: [amoxicillin/clavulanate 875mg]
+      other: [wound care, tetanus if needed, rabies evaluation]
+    workup: clinical
+
+  human_bite:
+    icd10: W50.3XXA
+    display: Accidental bite by another person, initial encounter
+    frequency: 0.1
+    seasonality: null
+    duration_days: [7, 14]
+    age_bias: null
+    recurrence: 0.0
+    treatment:
+      antibiotics: [amoxicillin/clavulanate 875mg]
+      other: [wound care, hiv/hep evaluation]
+    workup: clinical
+
+acute_gi_additional:
+  dyspepsia:
+    icd10: K30
+    display: Functional dyspepsia
+    frequency: 2.0
+    seasonality: null
+    duration_days: [3, 14]
+    age_bias: null
+    recurrence: 1.0
+    treatment:
+      medications: [omeprazole 20mg, famotidine 20mg, antacids]
+    workup: [h_pylori if recurrent]
+
+  nausea_vomiting:
+    icd10: R11.2
+    display: Nausea with vomiting, unspecified
+    frequency: 2.0
+    seasonality: null
+    duration_days: [1, 5]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [ondansetron 4mg, promethazine 25mg]
+    workup: [cbc, cmp, lipase if severe]
+
+  acute_diarrhea:
+    icd10: K59.1
+    display: Functional diarrhea
+    frequency: 2.0
+    seasonality: null
+    duration_days: [1, 7]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [loperamide 2mg, oral rehydration]
+    workup: [stool_studies if prolonged]
+
+  rectal_bleeding:
+    icd10: K62.5
+    display: Hemorrhage of anus and rectum
+    frequency: 1.0
+    seasonality: null
+    duration_days: [1, 14]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      medications: [hydrocortisone suppository, fiber supplement]
+    workup: [cbc, colonoscopy_referral if concerning]
+
+  anal_fissure:
+    icd10: K60.2
+    display: Anal fissure, unspecified
+    frequency: 0.5
+    seasonality: null
+    duration_days: [14, 60]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      medications: [nifedipine ointment, nitroglycerin ointment, sitz baths]
+    workup: clinical
+
+acute_gu_additional:
+  hematuria:
+    icd10: R31.9
+    display: Hematuria, unspecified
+    frequency: 0.8
+    seasonality: null
+    duration_days: [1, 14]
+    age_bias: null
+    recurrence: 0.2
+    treatment:
+      medications: []
+    workup: [urinalysis, urine_culture, ct_urogram, cystoscopy_referral]
+
+  dysuria:
+    icd10: R30.0
+    display: Dysuria
+    frequency: 1.5
+    seasonality: null
+    duration_days: [3, 7]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [phenazopyridine 200mg]
+      if_uti: [antibiotics per UTI protocol]
+    workup: [urinalysis, urine_culture]
+
+  testicular_pain:
+    icd10: N50.819
+    display: Other specified disorders of the male genital organs, unspecified
+    frequency: 0.3
+    seasonality: null
+    duration_days: [3, 14]
+    age_bias: young
+    recurrence: 0.2
+    treatment:
+      medications: [ibuprofen 600mg, scrotal support]
+    workup: [ultrasound to rule out torsion]
+
+  dysmenorrhea:
+    icd10: N94.6
+    display: Dysmenorrhea, unspecified
+    frequency: 1.5
+    seasonality: null
+    duration_days: [1, 5]
+    age_bias: young
+    recurrence: 12.0
+    treatment:
+      medications: [ibuprofen 600mg, naproxen 500mg, oral_contraceptive]
+    workup: clinical
+
+  abnormal_uterine_bleeding:
+    icd10: N93.9
+    display: Abnormal uterine and vaginal bleeding, unspecified
+    frequency: 1.0
+    seasonality: null
+    duration_days: [3, 14]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [medroxyprogesterone 10mg, oral_contraceptive, tranexamic acid]
+    workup: [cbc, pregnancy_test, ultrasound, endometrial_biopsy_if_indicated]
+
+  mastitis:
+    icd10: N61.0
+    display: Mastitis without abscess
+    frequency: 0.3
+    seasonality: null
+    duration_days: [5, 14]
+    age_bias: null
+    recurrence: 0.2
+    treatment:
+      antibiotics: [dicloxacillin 500mg, cephalexin 500mg]
+      supportive: [warm compresses, continued nursing]
+    workup: clinical
+
+acute_neuro_additional:
+  concussion:
+    icd10: S06.0X0A
+    display: Concussion without loss of consciousness, initial encounter
+    frequency: 0.5
+    seasonality: null
+    duration_days: [7, 30]
+    age_bias: young
+    recurrence: 0.1
+    treatment:
+      supportive: [cognitive rest, physical rest, acetaminophen 500mg]
+    workup: [ct_head if red flags]
+
+  post_concussion_syndrome:
+    icd10: F07.81
+    display: Postconcussional syndrome
+    frequency: 0.2
+    seasonality: null
+    duration_days: [30, 180]
+    age_bias: null
+    recurrence: 0.1
+    treatment:
+      medications: [amitriptyline 10mg for headache, rest]
+    workup: clinical
+
+  peripheral_vertigo:
+    icd10: H81.10
+    display: Benign paroxysmal vertigo, unspecified ear
+    frequency: 1.0
+    seasonality: null
+    duration_days: [3, 21]
+    age_bias: older
+    recurrence: 0.3
+    treatment:
+      medications: [meclizine 25mg]
+      maneuvers: [epley maneuver, brandt-daroff exercises]
+    workup: [dix_hallpike test]
+
+  cluster_headache:
+    icd10: G44.009
+    display: Cluster headache syndrome, unspecified, not intractable
+    frequency: 0.2
+    seasonality: [spring, fall]
+    duration_days: [30, 90]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      acute: [sumatriptan 6mg injection, high-flow oxygen]
+      preventive: [verapamil 240mg]
+    workup: clinical
+
+acute_eye_ear_additional:
+  cerumen_impaction:
+    icd10: H61.20
+    display: Impacted cerumen, unspecified ear
+    frequency: 1.5
+    seasonality: null
+    duration_days: [1, 1]
+    age_bias: older
+    recurrence: 0.5
+    treatment:
+      procedure: [ear irrigation, curette removal]
+      medications: [debrox drops]
+    workup: clinical
+
+  foreign_body_ear:
+    icd10: T16.9XXA
+    display: Foreign body in ear, unspecified ear, initial encounter
+    frequency: 0.3
+    seasonality: null
+    duration_days: [1, 1]
+    age_bias: null
+    recurrence: 0.1
+    treatment:
+      procedure: [removal with forceps or irrigation]
+    workup: clinical
+
+  foreign_body_eye:
+    icd10: T15.90XA
+    display: Foreign body on external eye, unspecified eye, unspecified, initial encounter
+    frequency: 0.5
+    seasonality: null
+    duration_days: [1, 3]
+    age_bias: null
+    recurrence: 0.1
+    treatment:
+      procedure: [removal, irrigation]
+      medications: [erythromycin ointment]
+    workup: [fluorescein exam, slit lamp]
+
+  allergic_conjunctivitis:
+    icd10: H10.10
+    display: Acute atopic conjunctivitis, unspecified eye
+    frequency: 1.5
+    seasonality: [spring, summer]
+    duration_days: [3, 14]
+    age_bias: null
+    recurrence: 1.0
+    treatment:
+      medications: [ketotifen drops, olopatadine drops, artificial tears]
+    workup: clinical
+
+  blepharitis:
+    icd10: H01.009
+    display: Unspecified blepharitis unspecified eye, unspecified eyelid
+    frequency: 0.8
+    seasonality: null
+    duration_days: [7, 30]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [warm compresses, lid scrubs, erythromycin ointment]
+    workup: clinical
+
+  chalazion:
+    icd10: H00.19
+    display: Chalazion unspecified eye, unspecified eyelid
+    frequency: 0.5
+    seasonality: null
+    duration_days: [14, 60]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      medications: [warm compresses, lid massage]
+      procedure: [incision_and_drainage if persistent]
+    workup: clinical
+
+  dry_eye:
+    icd10: H04.129
+    display: Dry eye syndrome of unspecified lacrimal gland
+    frequency: 1.5
+    seasonality: null
+    duration_days: [7, 365]
+    age_bias: older
+    recurrence: 1.0
+    treatment:
+      medications: [artificial tears, restasis, xiidra]
+    workup: clinical
+
+  acute_hearing_loss:
+    icd10: H91.90
+    display: Unspecified hearing loss, unspecified ear
+    frequency: 0.3
+    seasonality: null
+    duration_days: [1, 30]
+    age_bias: older
+    recurrence: 0.1
+    treatment:
+      medications: [prednisone 60mg if sudden SNHL]
+    workup: [audiogram, ent_referral]
+
+  tinnitus_acute:
+    icd10: H93.19
+    display: Tinnitus, unspecified ear
+    frequency: 0.5
+    seasonality: null
+    duration_days: [7, 90]
+    age_bias: older
+    recurrence: 0.3
+    treatment:
+      medications: []
+    workup: [audiogram, ent_referral if persistent]
+
+acute_misc:
+  fatigue_workup:
+    icd10: R53.83
+    display: Other fatigue
+    frequency: 2.0
+    seasonality: null
+    duration_days: [14, 90]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      medications: []
+    workup: [cbc, cmp, tsh, iron_panel, b12, vitamin_d]
+
+  weight_loss_unintentional:
+    icd10: R63.4
+    display: Abnormal weight loss
+    frequency: 0.3
+    seasonality: null
+    duration_days: [30, 180]
+    age_bias: older
+    recurrence: 0.1
+    treatment:
+      medications: []
+    workup: [cbc, cmp, tsh, hba1c, ct_chest_abdomen, colonoscopy]
+
+  lymphadenopathy:
+    icd10: R59.9
+    display: Enlarged lymph nodes, unspecified
+    frequency: 0.5
+    seasonality: null
+    duration_days: [7, 60]
+    age_bias: null
+    recurrence: 0.2
+    treatment:
+      medications: []
+    workup: [cbc, monospot, hiv if risk factors]
+
+  night_sweats:
+    icd10: R61
+    display: Generalized hyperhidrosis
+    frequency: 0.5
+    seasonality: null
+    duration_days: [7, 90]
+    age_bias: null
+    recurrence: 0.2
+    treatment:
+      medications: []
+    workup: [cbc, cmp, tsh, hiv, tb_test]
+
+  leg_swelling:
+    icd10: R60.0
+    display: Localized edema
+    frequency: 1.0
+    seasonality: null
+    duration_days: [3, 30]
+    age_bias: older
+    recurrence: 0.3
+    treatment:
+      medications: [compression stockings]
+    workup: [doppler_ultrasound to rule out DVT, cbc, cmp, bnp]
+
+  dvt_suspected:
+    icd10: I82.409
+    display: Acute embolism and thrombosis of unspecified deep veins of unspecified lower extremity
+    frequency: 0.3
+    seasonality: null
+    duration_days: [90, 180]
+    age_bias: older
+    recurrence: 0.2
+    treatment:
+      anticoagulation: [apixaban 10mg, rivaroxaban 15mg]
+    workup: [doppler_ultrasound, d_dimer]
+
+  shortness_of_breath:
+    icd10: R06.02
+    display: Shortness of breath
+    frequency: 2.0
+    seasonality: null
+    duration_days: [1, 14]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [depends on cause]
+    workup: [chest_xray, ecg, cbc, bnp, pulse_ox]
+
+  cough_chronic:
+    icd10: R05.9
+    display: Cough, unspecified
+    frequency: 2.0
+    seasonality: null
+    duration_days: [21, 60]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      medications: [benzonatate 100mg, guaifenesin 400mg, omeprazole 20mg for GERD-related]
+    workup: [chest_xray, spirometry if persistent]
+
+  hoarseness:
+    icd10: R49.0
+    display: Dysphonia
+    frequency: 0.5
+    seasonality: null
+    duration_days: [7, 30]
+    age_bias: null
+    recurrence: 0.2
+    treatment:
+      medications: [voice rest, hydration]
+    workup: [ent_referral if persistent >2 weeks]
+
+  globus:
+    icd10: R09.89
+    display: Other specified symptoms and signs involving the circulatory and respiratory systems
+    frequency: 0.5
+    seasonality: null
+    duration_days: [7, 90]
+    age_bias: null
+    recurrence: 0.3
+    treatment:
+      medications: [omeprazole 20mg, reassurance]
+    workup: [ent_referral if concerning]
+
+  insomnia_acute:
+    icd10: G47.00
+    display: Insomnia, unspecified
+    frequency: 2.0
+    seasonality: null
+    duration_days: [7, 30]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [trazodone 50mg, melatonin 3mg, hydroxyzine 25mg]
+    workup: clinical
+
+  restless_legs_acute:
+    icd10: G25.81
+    display: Restless legs syndrome
+    frequency: 0.5
+    seasonality: null
+    duration_days: [7, 90]
+    age_bias: null
+    recurrence: 0.5
+    treatment:
+      medications: [gabapentin 300mg, pramipexole 0.125mg]
+    workup: [iron_panel, ferritin]
+
+  muscle_cramps:
+    icd10: R25.2
+    display: Cramp and spasm
+    frequency: 1.5
+    seasonality: null
+    duration_days: [1, 7]
+    age_bias: older
+    recurrence: 1.0
+    treatment:
+      medications: [magnesium supplement, stretching]
+    workup: [cmp, magnesium_level]
+
+# =============================================================================
+# ADDITIONAL CHRONIC CONDITIONS
+# =============================================================================
+
+chronic_additional:
+  chronic_sinusitis:
+    icd10: J32.9
+    display: Chronic sinusitis, unspecified
+    prevalence: 0.12
+    onset_age: [25, 60]
+    sex: null
+    risk_factors: [allergic_rhinitis, asthma]
+    meds:
+      - fluticasone nasal spray
+      - mometasone nasal spray
+      - saline irrigation
+      - montelukast 10mg
+    labs: []
+    visits: annual
+
+  glaucoma:
+    icd10: H40.9
+    display: Unspecified glaucoma
+    prevalence: 0.03
+    onset_age: [50, 85]
+    sex: null
+    risk_factors: [type2_diabetes, hypertension]
+    meds:
+      - latanoprost 0.005%
+      - timolol 0.5%
+      - brimonidine 0.2%
+    labs: []
+    visits: quarterly
+
+  cataracts:
+    icd10: H26.9
+    display: Unspecified cataract
+    prevalence: 0.15
+    onset_age: [55, 85]
+    sex: null
+    risk_factors: [type2_diabetes]
+    meds: []
+    labs: []
+    visits: annual
+
+  macular_degeneration:
+    icd10: H35.30
+    display: Unspecified macular degeneration
+    prevalence: 0.05
+    onset_age: [60, 90]
+    sex: null
+    risk_factors: [hypertension, smoking]
+    meds:
+      - areds2 vitamins
+    labs: []
+    visits: biannual
+
+  hearing_loss:
+    icd10: H91.90
+    display: Unspecified hearing loss, unspecified ear
+    prevalence: 0.15
+    onset_age: [55, 90]
+    sex: null
+    risk_factors: []
+    meds: []
+    labs: []
+    visits: annual
+
+  restless_leg_syndrome:
+    icd10: G25.81
+    display: Restless legs syndrome
+    prevalence: 0.07
+    onset_age: [30, 70]
+    sex: female
+    risk_factors: [anemia, ckd_stage3]
+    meds:
+      - gabapentin 300mg
+      - pramipexole 0.125mg
+      - pramipexole 0.25mg
+      - ropinirole 0.25mg
+    labs: [ferritin, iron_panel]
+    visits: annual
+
+  interstitial_cystitis:
+    icd10: N30.10
+    display: Interstitial cystitis (chronic) without hematuria
+    prevalence: 0.02
+    onset_age: [25, 55]
+    sex: female
+    risk_factors: [fibromyalgia, ibs]
+    meds:
+      - pentosan polysulfate 100mg
+      - amitriptyline 10mg
+      - hydroxyzine 25mg
+    labs: []
+    visits: quarterly
+
+  endometriosis:
+    icd10: N80.9
+    display: Endometriosis, unspecified
+    prevalence: 0.06
+    onset_age: [18, 45]
+    sex: female
+    risk_factors: []
+    meds:
+      - oral_contraceptive
+      - medroxyprogesterone 10mg
+      - leuprolide depot
+      - norethindrone 5mg
+    labs: []
+    visits: quarterly
+
+  chronic_pelvic_pain:
+    icd10: R10.2
+    display: Pelvic and perineal pain
+    prevalence: 0.04
+    onset_age: [25, 55]
+    sex: female
+    risk_factors: [endometriosis, ibs, interstitial_cystitis]
+    meds:
+      - ibuprofen 600mg
+      - naproxen 500mg
+      - amitriptyline 10mg
+      - gabapentin 300mg
+    labs: []
+    visits: quarterly
+
+  cirrhosis:
+    icd10: K74.60
+    display: Unspecified cirrhosis of liver
+    prevalence: 0.01
+    onset_age: [40, 75]
+    sex: null
+    risk_factors: [alcohol_use_disorder, hepatitis_c, fatty_liver]
+    meds:
+      - lactulose 30ml
+      - furosemide 40mg
+      - spironolactone 100mg
+      - propranolol 20mg
+    labs: [cmp, cbc, inr, afp, ammonia]
+    visits: quarterly
+
+  barrett_esophagus:
+    icd10: K22.70
+    display: Barrett's esophagus without dysplasia
+    prevalence: 0.02
+    onset_age: [40, 70]
+    sex: male
+    risk_factors: [gerd, obesity]
+    meds:
+      - omeprazole 40mg
+      - pantoprazole 40mg
+    labs: []
+    visits: annual
+
+  celiac_disease:
+    icd10: K90.0
+    display: Celiac disease
+    prevalence: 0.01
+    onset_age: [18, 55]
+    sex: null
+    risk_factors: []
+    meds: []
+    labs: [ttg_iga, total_iga, cbc]
+    visits: annual
+
+  multiple_sclerosis:
+    icd10: G35
+    display: Multiple sclerosis
+    prevalence: 0.003
+    onset_age: [20, 50]
+    sex: female
+    risk_factors: []
+    meds:
+      - interferon beta-1a
+      - glatiramer acetate
+      - dimethyl fumarate 240mg
+      - fingolimod 0.5mg
+    labs: [cbc, cmp]
+    visits: quarterly
+
+  lupus:
+    icd10: M32.9
+    display: Systemic lupus erythematosus, unspecified
+    prevalence: 0.002
+    onset_age: [15, 45]
+    sex: female
+    risk_factors: []
+    meds:
+      - hydroxychloroquine 200mg
+      - prednisone 5mg
+      - mycophenolate 500mg
+      - azathioprine 50mg
+    labs: [cbc, cmp, ana, anti_dsdna, complement]
+    visits: quarterly
+
+  sjogren_syndrome:
+    icd10: M35.00
+    display: Sicca syndrome, unspecified
+    prevalence: 0.004
+    onset_age: [40, 60]
+    sex: female
+    risk_factors: [rheumatoid_arthritis, lupus]
+    meds:
+      - pilocarpine 5mg
+      - cevimeline 30mg
+      - hydroxychloroquine 200mg
+    labs: [ana, ssa_ssb, cbc]
+    visits: biannual
+
+  hypersomnia:
+    icd10: G47.10
+    display: Hypersomnia, unspecified
+    prevalence: 0.02
+    onset_age: [18, 45]
+    sex: null
+    risk_factors: [depression, sleep_apnea]
+    meds:
+      - modafinil 100mg
+      - modafinil 200mg
+      - armodafinil 150mg
+    labs: [tsh, sleep_study]
+    visits: biannual
+
+  narcolepsy:
+    icd10: G47.419
+    display: Narcolepsy without cataplexy
+    prevalence: 0.001
+    onset_age: [15, 35]
+    sex: null
+    risk_factors: []
+    meds:
+      - modafinil 200mg
+      - methylphenidate 10mg
+      - sodium oxybate
+    labs: [sleep_study, mslt]
+    visits: quarterly
+
+  hidradenitis_suppurativa:
+    icd10: L73.2
+    display: Hidradenitis suppurativa
+    prevalence: 0.01
+    onset_age: [18, 40]
+    sex: female
+    risk_factors: [obesity, smoking]
+    meds:
+      - doxycycline 100mg
+      - clindamycin gel
+      - adalimumab 40mg
+    labs: []
+    visits: quarterly
+
+  chronic_urticaria:
+    icd10: L50.8
+    display: Other urticaria
+    prevalence: 0.02
+    onset_age: [20, 50]
+    sex: female
+    risk_factors: []
+    meds:
+      - cetirizine 10mg
+      - fexofenadine 180mg
+      - montelukast 10mg
+      - omalizumab 300mg
+    labs: [cbc, tsh]
+    visits: quarterly
+
+  alopecia_areata:
+    icd10: L63.9
+    display: Alopecia areata, unspecified
+    prevalence: 0.02
+    onset_age: [15, 40]
+    sex: null
+    risk_factors: []
+    meds:
+      - triamcinolone injection
+      - minoxidil 5%
+    labs: [tsh]
+    visits: quarterly_then_annual
+
+  vitiligo:
+    icd10: L80
+    display: Vitiligo
+    prevalence: 0.01
+    onset_age: [10, 40]
+    sex: null
+    risk_factors: [hypothyroidism]
+    meds:
+      - tacrolimus ointment
+      - phototherapy
+    labs: [tsh]
+    visits: annual

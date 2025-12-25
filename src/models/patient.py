@@ -152,10 +152,41 @@ class ImmunizationStatus(str, Enum):
 
 
 class ComplexityTier(str, Enum):
-    TIER_0 = "tier-0"  # Healthy
-    TIER_1 = "tier-1"  # Single chronic condition
-    TIER_2 = "tier-2"  # Multiple conditions
-    TIER_3 = "tier-3"  # Complex/fragile
+    TIER_0 = "tier-0"  # Healthy (no conditions)
+    TIER_1 = "tier-1"  # 1 condition
+    TIER_2 = "tier-2"  # 2 conditions
+    TIER_3 = "tier-3"  # 3 conditions
+    TIER_4 = "tier-4"  # 4+ conditions
+    TIER_5 = "tier-5"  # Complex (multi-system)
+
+
+class MessageCategory(str, Enum):
+    """FHIR Communication category codes."""
+    REFILL_REQUEST = "refill-request"  # Medication refill request
+    CLINICAL_QUESTION = "clinical-question"  # Question about symptoms/treatment
+    APPOINTMENT_REQUEST = "appointment-request"  # Request to schedule/change appointment
+    LAB_RESULT_QUESTION = "lab-result-question"  # Question about lab results
+    FOLLOW_UP = "follow-up"  # Follow-up after visit
+    AVOID_VISIT = "avoid-visit"  # Trying to avoid coming in
+    SCHOOL_FORM = "school-form"  # School/camp form request
+    REFERRAL_STATUS = "referral-status"  # Referral status inquiry
+    OTHER = "other"
+
+
+class MessageMedium(str, Enum):
+    """FHIR Communication medium codes."""
+    PORTAL = "portal"  # Patient portal (MyChart, etc.)
+    PHONE = "phone"  # Phone call/voicemail
+    EMAIL = "email"
+    FAX = "fax"
+    SMS = "sms"  # Text message
+
+
+class MessageStatus(str, Enum):
+    """FHIR Communication status codes."""
+    COMPLETED = "completed"  # Reply sent
+    IN_PROGRESS = "in-progress"  # Being reviewed
+    NOT_DONE = "not-done"  # No reply needed/sent
 
 
 # =============================================================================
@@ -182,6 +213,202 @@ class ReferenceRange(BaseModel):
     age_low: int | None = Field(default=None, description="Minimum age in years")
     age_high: int | None = Field(default=None, description="Maximum age in years")
     sex: Sex | None = None
+
+
+# =============================================================================
+# CONDITION DEFINITION SCHEMA (for conditions.yaml)
+# =============================================================================
+
+
+class VitalsImpact(BaseModel):
+    """Vitals modification for illness-aware vital signs generation."""
+    temp_f: tuple[float, float] | None = Field(
+        default=None,
+        description="Temperature range [min, max] in Fahrenheit"
+    )
+    hr_multiplier: float = Field(
+        default=1.0,
+        ge=0.5,
+        le=2.0,
+        description="Multiplier for heart rate (1.0 = normal)"
+    )
+    rr_multiplier: float = Field(
+        default=1.0,
+        ge=0.5,
+        le=2.0,
+        description="Multiplier for respiratory rate (1.0 = normal)"
+    )
+    spo2_min: int | None = Field(
+        default=None,
+        ge=70,
+        le=100,
+        description="Minimum SpO2 percentage"
+    )
+
+
+class SymptomDefinition(BaseModel):
+    """Definition of a symptom with probability and age constraints."""
+    name: str = Field(description="Symptom name/identifier")
+    probability: float = Field(
+        ge=0.0,
+        le=1.0,
+        default=1.0,
+        description="Probability of this symptom occurring (0.0-1.0)"
+    )
+    description: str | None = Field(
+        default=None,
+        description="Human-readable description of the symptom"
+    )
+    age_min: int | None = Field(
+        default=None,
+        description="Minimum age in months for this symptom"
+    )
+    age_max: int | None = Field(
+        default=None,
+        description="Maximum age in months for this symptom"
+    )
+
+
+class PhysicalExamFindingDef(BaseModel):
+    """Definition of a physical exam finding with probability."""
+    system: str = Field(description="Body system (e.g., 'heent', 'respiratory', 'skin')")
+    finding: str = Field(description="The physical exam finding text")
+    probability: float = Field(
+        ge=0.0,
+        le=1.0,
+        default=1.0,
+        description="Probability of this finding being present (0.0-1.0)"
+    )
+
+
+class LabDefinition(BaseModel):
+    """Definition of a laboratory test with LOINC coding."""
+    name: str = Field(description="Lab test display name")
+    loinc: str = Field(description="LOINC code for the lab test")
+    result_positive: str = Field(description="Result text when positive/abnormal")
+    result_negative: str = Field(description="Result text when negative/normal")
+    probability_positive: float = Field(
+        ge=0.0,
+        le=1.0,
+        default=0.5,
+        description="Probability of positive result given the condition"
+    )
+
+
+class MedicationDefinition(BaseModel):
+    """Definition of a medication with RxNorm coding and dosing."""
+    agent: str = Field(description="Medication name")
+    rxnorm: str = Field(description="RxNorm code")
+    dose_mg_kg: float | None = Field(
+        default=None,
+        description="Weight-based dose in mg/kg"
+    )
+    max_dose_mg: float | None = Field(
+        default=None,
+        description="Maximum dose in mg"
+    )
+    fixed_dose_mg: float | None = Field(
+        default=None,
+        description="Fixed dose in mg (for non-weight-based dosing)"
+    )
+    frequency: str = Field(description="Dosing frequency (e.g., 'BID', 'Q6H PRN')")
+    duration_days: int | None = Field(
+        default=None,
+        description="Duration of treatment in days"
+    )
+    route: str = Field(
+        default="oral",
+        description="Route of administration"
+    )
+    indication: str | None = Field(
+        default=None,
+        description="Clinical indication for use"
+    )
+    prn: bool = Field(
+        default=False,
+        description="Whether this is an as-needed medication"
+    )
+    age_min_months: int | None = Field(
+        default=None,
+        description="Minimum age in months for this medication"
+    )
+
+
+class ConditionDemographics(BaseModel):
+    """Demographics constraints for a condition."""
+    age_months: dict[str, int | list[int]] = Field(
+        description="Age range: {min, peak: [start, end], max}"
+    )
+    gender_bias: dict[str, float] | None = Field(
+        default=None,
+        description="Gender distribution: {male: 0.5, female: 0.5}"
+    )
+    risk_factors: list[str] = Field(
+        default_factory=list,
+        description="List of risk factors"
+    )
+
+
+class ConditionPresentation(BaseModel):
+    """Clinical presentation of a condition."""
+    symptoms: list[SymptomDefinition] = Field(default_factory=list)
+    duration_days: tuple[int, int] | None = Field(
+        default=None,
+        description="Expected duration range [min, max] days"
+    )
+    physical_exam: list[PhysicalExamFindingDef] = Field(default_factory=list)
+
+
+class ConditionDiagnostics(BaseModel):
+    """Diagnostic tests for a condition."""
+    labs: list[LabDefinition] = Field(default_factory=list)
+    notes: str | None = None
+
+
+class ConditionTreatment(BaseModel):
+    """Treatment information for a condition."""
+    approach: str | None = Field(
+        default=None,
+        description="General treatment approach"
+    )
+    medications: list[MedicationDefinition] = Field(default_factory=list)
+    patient_instructions: list[str] = Field(default_factory=list)
+
+
+class ConditionDefinition(BaseModel):
+    """
+    Complete definition of a medical condition.
+
+    This model represents the structure used in conditions.yaml for
+    generating condition-specific patient data.
+    """
+    display_name: str
+    aliases: list[str] = Field(default_factory=list)
+
+    # Coding
+    billing_codes: dict[str, str | list[str]] | None = Field(
+        default=None,
+        description="ICD-10 and SNOMED codes"
+    )
+
+    # Classification
+    category: Literal["acute", "chronic"]
+    system: str = Field(description="Body system (e.g., 'respiratory', 'ent', 'skin')")
+
+    # Demographics
+    demographics: ConditionDemographics | None = None
+
+    # Clinical
+    vitals_impact: VitalsImpact | None = None
+    presentation: ConditionPresentation | None = None
+    diagnostics: ConditionDiagnostics | None = None
+    treatment: ConditionTreatment | None = None
+
+    # Relationships
+    comorbidities: dict[str, list[str]] | None = Field(
+        default=None,
+        description="Related conditions: {strong: [...], moderate: [...]}"
+    )
 
 
 # =============================================================================
@@ -936,6 +1163,53 @@ class CareGap(BaseModel):
 
 
 # =============================================================================
+# PATIENT MESSAGES (PORTAL/PHONE COMMUNICATIONS)
+# =============================================================================
+
+
+class PatientMessage(BaseModel):
+    """
+    Patient-provider message (portal, phone, etc.).
+
+    Maps to FHIR Communication resource.
+    These are one-shot exchanges: patient message + office reply.
+    """
+    id: str = Field(default_factory=generate_id)
+
+    # When
+    sent_datetime: datetime
+    reply_datetime: datetime | None = None
+
+    # Who
+    sender_name: str  # Usually patient/parent name
+    sender_is_patient: bool = True  # False if from office
+    recipient_name: str  # Provider or staff name
+    replier_name: str | None = None  # Who replied (nurse, MA, provider)
+    replier_role: str | None = None  # "RN", "MA", "MD", etc.
+
+    # What
+    category: MessageCategory
+    medium: MessageMedium = MessageMedium.PORTAL
+    subject: str  # Brief subject line
+    message_body: str  # Patient's message
+    reply_body: str | None = None  # Office reply
+
+    # Status
+    status: MessageStatus = MessageStatus.COMPLETED
+
+    # Context
+    related_encounter_id: str | None = None  # If related to a visit
+    related_medication_id: str | None = None  # If about a medication
+    related_condition: str | None = None  # If about a condition
+
+    # FHIR reference
+    @computed_field
+    @property
+    def fhir_resource_type(self) -> str:
+        return "Communication"
+
+
+# =============================================================================
 # PATIENT (ROOT MODEL)
 # =============================================================================
 
@@ -976,12 +1250,16 @@ class Patient(BaseModel):
     
     # Care management
     care_gaps: list[CareGap] = Field(default_factory=list)
-    
+
+    # Patient communications (portal messages, phone calls)
+    patient_messages: list[PatientMessage] = Field(default_factory=list)
+
     # Generation metadata
     generation_seed: dict[str, Any] = Field(default_factory=dict)
     engine_version: str = "1.0.0"
     generated_at: datetime = Field(default_factory=datetime.now)
     complexity_tier: ComplexityTier = ComplexityTier.TIER_0
+    message_frequency: float = Field(default=0.5, description="0.0=never messages, 1.0=frequent messager")
     
     @computed_field
     @property
@@ -1053,6 +1331,9 @@ class GenerationSeed(BaseModel):
     # Output control
     include_narrative_notes: bool = True
     include_billing: bool = False
-    
+
+    # Data quality / messiness (for training realistic ML models)
+    messiness_level: int = Field(default=0, ge=0, le=5, description="Chart messiness 0=pristine to 5=hostile")
+
     # Reproducibility
     random_seed: int | None = Field(default=None, description="Seed for random generation")

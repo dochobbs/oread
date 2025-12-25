@@ -6,6 +6,8 @@ Command-line interface for generating synthetic patient records.
 """
 
 import json
+import os
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -28,6 +30,121 @@ def setup_paths():
 
 
 setup_paths()
+
+
+def parse_patient_description(description: str) -> dict:
+    """
+    Parse a natural language patient description using LLM.
+
+    Returns dict with: age_months, sex, conditions, complexity_tier
+    """
+    from src.llm import get_client
+
+    try:
+        llm = get_client()
+    except (ValueError, Exception):
+        # No API key, fall back to regex parsing
+        return _parse_description_regex(description)
+
+    prompt = f'''Extract patient parameters from this description. Return valid JSON only.
+
+Description: "{description}"
+
+Extract:
+- age_months: integer (convert years to months, e.g. "2 year old" = 24)
+- sex: "male" or "female" or null if not specified
+- conditions: array of condition names (lowercase, e.g. ["asthma", "eczema"])
+- complexity_tier: "tier-0" (healthy), "tier-1" (single chronic), "tier-2" (multiple), "tier-3" (complex)
+
+Examples:
+"2 year old boy with asthma" -> {{"age_months": 24, "sex": "male", "conditions": ["asthma"], "complexity_tier": "tier-1"}}
+"healthy 6 month old girl" -> {{"age_months": 6, "sex": "female", "conditions": [], "complexity_tier": "tier-0"}}
+"teenager with ADHD and anxiety" -> {{"age_months": 168, "sex": null, "conditions": ["adhd", "anxiety"], "complexity_tier": "tier-2"}}
+"newborn" -> {{"age_months": 0, "sex": null, "conditions": [], "complexity_tier": "tier-0"}}
+
+Return ONLY the JSON object, no explanation:'''
+
+    try:
+        response = llm.generate(prompt, max_tokens=200, temperature=0.3)
+        # Extract JSON from response
+        response = response.strip()
+        if response.startswith("```"):
+            response = response.split("```")[1]
+            if response.startswith("json"):
+                response = response[4:]
+        result = json.loads(response)
+        return result
+    except Exception:
+        # Fall back to regex parsing
+        return _parse_description_regex(description)
+
+
+def _parse_description_regex(description: str) -> dict:
+    """Fallback regex-based parsing for patient descriptions."""
+    result = {
+        "age_months": None,
+        "sex": None,
+        "conditions": [],
+        "complexity_tier": "tier-0",
+    }
+
+    desc_lower = description.lower()
+
+    # Parse age
+    # "X year old" or "X yo"
+    year_match = re.search(r'(\d+)\s*(?:year|yr|yo)', desc_lower)
+    if year_match:
+        result["age_months"] = int(year_match.group(1)) * 12
+
+    # "X month old" or "X mo"
+    month_match = re.search(r'(\d+)\s*(?:month|mo)', desc_lower)
+    if month_match:
+        result["age_months"] = int(month_match.group(1))
+
+    # "newborn"
+    if "newborn" in desc_lower:
+        result["age_months"] = 0
+
+    # "infant"
+    if "infant" in desc_lower and result["age_months"] is None:
+        result["age_months"] = 6
+
+    # "toddler"
+    if "toddler" in desc_lower and result["age_months"] is None:
+        result["age_months"] = 24
+
+    # "teenager" or "teen"
+    if "teen" in desc_lower and result["age_months"] is None:
+        result["age_months"] = 168  # 14 years
+
+    # Parse sex
+    if any(x in desc_lower for x in ["boy", "male", " son", "his "]):
+        result["sex"] = "male"
+    elif any(x in desc_lower for x in ["girl", "female", "daughter", "her "]):
+        result["sex"] = "female"
+
+    # Parse conditions
+    known_conditions = [
+        "asthma", "eczema", "adhd", "anxiety", "obesity", "diabetes",
+        "allergies", "ear infection", "otitis", "pneumonia", "bronchiolitis",
+        "croup", "uti", "urinary tract infection", "gastroenteritis",
+        "pharyngitis", "strep", "conjunctivitis"
+    ]
+    for cond in known_conditions:
+        if cond in desc_lower:
+            result["conditions"].append(cond.replace(" ", "_"))
+
+    # Determine complexity
+    if not result["conditions"]:
+        result["complexity_tier"] = "tier-0"
+    elif len(result["conditions"]) == 1:
+        result["complexity_tier"] = "tier-1"
+    elif len(result["conditions"]) <= 3:
+        result["complexity_tier"] = "tier-2"
+    else:
+        result["complexity_tier"] = "tier-3"
+
+    return result
 
 
 @click.group()
@@ -57,7 +174,8 @@ def cli():
 @click.option("--format", "formats", type=click.Choice(["json", "fhir", "markdown", "all"]),
               multiple=True, default=["all"], help="Output format(s)")
 @click.option("--output", "-o", type=click.Path(), help="Output directory")
-@click.option("--describe", type=str, help="Natural language description of the patient")
+@click.option("--describe", "-d", type=str, help="Natural language description of the patient")
+@click.option("--no-llm", is_flag=True, help="Disable LLM features (use templates only)")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress progress output")
 def generate(
     engine: str,
@@ -72,26 +190,52 @@ def generate(
     formats: tuple,
     output: Optional[str],
     describe: Optional[str],
+    no_llm: bool,
     quiet: bool,
 ):
     """
     Generate a synthetic patient record.
-    
+
     Examples:
-    
+
         oread generate --age 5
 
         oread generate --age 8 --conditions "asthma,adhd"
 
         oread generate --describe "A 3yo girl with poorly controlled eczema"
+
+        oread generate -d "healthy newborn boy" --no-llm
     """
     from src.models import GenerationSeed, Sex, ComplexityTier
     from src.engines import EngineOrchestrator, PedsEngine
     from src.exporters import export_json, export_markdown, export_fhir
-    
+
     # Build generation seed
     seed_params = {}
-    
+
+    # If --describe is provided, parse it to extract parameters
+    if describe:
+        if not quiet:
+            console.print(f"[dim]Parsing description: \"{describe}\"[/dim]")
+
+        parsed = parse_patient_description(description=describe)
+
+        if parsed.get("age_months") is not None:
+            seed_params["age_months"] = parsed["age_months"]
+        if parsed.get("sex"):
+            seed_params["sex"] = Sex(parsed["sex"])
+        if parsed.get("conditions"):
+            seed_params["conditions"] = parsed["conditions"]
+        if parsed.get("complexity_tier"):
+            seed_params["complexity_tier"] = ComplexityTier(parsed["complexity_tier"])
+
+        # Store original description
+        seed_params["description"] = describe
+
+        if not quiet:
+            console.print(f"[dim]  -> age: {parsed.get('age_months')} months, sex: {parsed.get('sex')}, conditions: {parsed.get('conditions')}[/dim]")
+
+    # Explicit options override parsed values
     if age is not None:
         seed_params["age"] = age
     if age_months is not None:
@@ -108,18 +252,19 @@ def generate(
         seed_params["years_of_history"] = years
     if seed:
         seed_params["random_seed"] = seed
-    if describe:
-        seed_params["description"] = describe
-    
+
     gen_seed = GenerationSeed(**seed_params)
-    
+
     # Determine output directory
     if output:
         output_dir = Path(output)
     else:
         output_dir = Path.cwd() / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
+    # LLM usage
+    use_llm = not no_llm
+
     # Generate patient
     if not quiet:
         with Progress(
@@ -128,19 +273,19 @@ def generate(
             console=console,
         ) as progress:
             task = progress.add_task("Generating patient...", total=None)
-            
+
             # Use appropriate engine
             if engine == "peds" or (engine == "auto" and (age is None or age < 22)):
-                eng = PedsEngine()
+                eng = PedsEngine(use_llm=use_llm)
             else:
                 console.print("[red]Adult engine not yet implemented[/red]")
                 return
-            
+
             patient = eng.generate(gen_seed)
             progress.update(task, description="Patient generated!")
     else:
         if engine == "peds" or (engine == "auto" and (age is None or age < 22)):
-            eng = PedsEngine()
+            eng = PedsEngine(use_llm=use_llm)
         else:
             console.print("[red]Adult engine not yet implemented[/red]")
             return

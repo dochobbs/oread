@@ -438,19 +438,20 @@ class CCDAExporter:
         )
 
         text = ET.SubElement(section, "text")
-        active_meds = [m for m in patient.medication_list if m.status.value == "active"]
+        # Include ALL medications (active, completed, discontinued, etc.)
+        all_meds = list(patient.medication_list)
 
-        if active_meds:
+        if all_meds:
             # Narrative table
             table = ET.SubElement(text, "table")
             thead = ET.SubElement(table, "thead")
             tr = ET.SubElement(thead, "tr")
-            for header in ["Medication", "Dose", "Frequency", "Route", "Start Date"]:
+            for header in ["Medication", "Dose", "Frequency", "Route", "Start Date", "End Date", "Status"]:
                 th = ET.SubElement(tr, "th")
                 th.text = header
 
             tbody = ET.SubElement(table, "tbody")
-            for idx, med in enumerate(active_meds):
+            for idx, med in enumerate(all_meds):
                 tr = ET.SubElement(tbody, "tr")
                 tr.set("ID", f"med{idx}")
                 td = ET.SubElement(tr, "td")
@@ -463,9 +464,13 @@ class CCDAExporter:
                 td.text = med.route or ""
                 td = ET.SubElement(tr, "td")
                 td.text = str(med.start_date) if med.start_date else ""
+                td = ET.SubElement(tr, "td")
+                td.text = str(med.end_date) if med.end_date else ""
+                td = ET.SubElement(tr, "td")
+                td.text = med.status.value.title() if med.status else "Active"
 
             # Structured entries for each medication
-            for idx, med in enumerate(active_meds):
+            for idx, med in enumerate(all_meds):
                 entry = ET.SubElement(section, "entry")
                 entry.set("typeCode", "DRIV")
 
@@ -614,7 +619,7 @@ class CCDAExporter:
                     ind_val.set("displayName", med.indication)
         else:
             para = ET.SubElement(text, "paragraph")
-            para.text = "No current medications"
+            para.text = "No medications on record"
 
     def _add_allergies_section(self, parent: ET.Element, patient: Patient) -> None:
         """Add allergies section with structured entries."""

@@ -27,7 +27,7 @@ class LLMClient:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "claude-sonnet-4-20250514",
+        model: str = "claude-haiku-4-5-20251001",
         cache_dir: Path | None = None,
         enable_cache: bool = True,
     ):

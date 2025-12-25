@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import yaml
 from pydantic import BaseModel
 
 from src.models import (
@@ -94,10 +95,85 @@ class BaseEngine(ABC):
 class PedsEngine(BaseEngine):
     """
     Pediatric patient generation engine.
-    
+
     Handles patients from birth through age 21.
     """
-    
+
+    # Class-level cache for conditions data
+    _conditions_cache: dict | None = None
+
+    @classmethod
+    def _load_conditions(cls, knowledge_dir: Path) -> dict:
+        """Load conditions from YAML file, with caching."""
+        if cls._conditions_cache is not None:
+            return cls._conditions_cache
+
+        conditions_path = knowledge_dir / "conditions" / "conditions.yaml"
+        if conditions_path.exists():
+            with open(conditions_path, 'r') as f:
+                cls._conditions_cache = yaml.safe_load(f)
+        else:
+            # Fallback to empty dict if file doesn't exist
+            cls._conditions_cache = {}
+
+        return cls._conditions_cache
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Load conditions database
+        self._conditions = self._load_conditions(self.knowledge_dir)
+
+        # Build derived data structures for efficient lookups
+        self._build_condition_lookups()
+
+    def _build_condition_lookups(self):
+        """Build lookup tables from conditions database."""
+        # Chronic conditions with their minimum ages
+        self._chronic_conditions = {}
+        self._acute_conditions = {}
+        self._comorbidity_map = {}
+        self._seasonal_weights = self._conditions.get('_seasonal_weights', {})
+
+        for key, data in self._conditions.items():
+            if key.startswith('_'):  # Skip metadata keys like _seasonal_weights
+                continue
+            if not isinstance(data, dict):
+                continue
+
+            category = data.get('category', 'acute')
+            display_name = data.get('display_name', key.replace('_', ' ').title())
+            age_ranges = data.get('age_ranges', {})
+            min_months = age_ranges.get('min_months', 0)
+
+            if category == 'chronic':
+                self._chronic_conditions[display_name] = {
+                    'key': key,
+                    'min_months': min_months,
+                    'typical_diagnosis_months': age_ranges.get('typical_diagnosis_months', min_months),
+                    'comorbidities': data.get('comorbidities', {}),
+                }
+                # Build comorbidity map
+                comorbidities = data.get('comorbidities', {})
+                if comorbidities:
+                    strong = comorbidities.get('strong', [])
+                    moderate = comorbidities.get('moderate', [])
+                    comorb_list = []
+                    for c in strong:
+                        # Convert key to display name
+                        c_display = c.replace('_', ' ').title()
+                        comorb_list.append((c_display, 0.35))
+                    for c in moderate:
+                        c_display = c.replace('_', ' ').title()
+                        comorb_list.append((c_display, 0.20))
+                    if comorb_list:
+                        self._comorbidity_map[display_name] = comorb_list
+            else:
+                self._acute_conditions[display_name] = {
+                    'key': key,
+                    'min_months': min_months,
+                    'seasonality': data.get('seasonality', {}),
+                }
+
     # Well-child visit schedule (age in months)
     WELL_CHILD_SCHEDULE = [
         0,  # Newborn
@@ -443,38 +519,23 @@ class PedsEngine(BaseEngine):
                 min_onset = min(6, max_onset)  # Don't use 6 if child is younger
                 onset_ages[cond] = random.randint(min_onset, max(min_onset, max_onset))
         elif tier != ComplexityTier.TIER_0:
-            # Condition pool with minimum diagnosis ages (in months)
-            # These reflect typical ages when conditions are diagnosed in pediatrics
-            condition_min_ages = {
-                "Eczema": 2,                  # Can present early in infancy
-                "Food allergy": 4,            # Typically after introducing solids
-                "Constipation": 6,            # After dietary changes
-                "GERD": 1,                    # Can present in young infants
-                "Recurrent otitis media": 6,  # Ear infections rare before 6 months
-                "Asthma": 24,                 # Usually diagnosed after age 2
-                "Allergic rhinitis": 24,      # Allergies develop over time
-                "ADHD": 48,                   # Typically diagnosed 4+ years
-                "Anxiety": 48,                # Diagnosed school age+
-                "Obesity": 24,                # BMI tracking meaningful after 2
-            }
-
-            # Full condition pool
-            all_conditions = [
-                "Asthma", "ADHD", "Eczema", "Allergic rhinitis", "Anxiety",
-                "Food allergy", "Obesity", "Constipation", "Recurrent otitis media"
-            ]
-
-            # Filter to age-appropriate conditions
+            # Use conditions loaded from YAML database
             age_months = demographics.age_months
+
+            # Filter to age-appropriate chronic conditions
             condition_pool = [
-                c for c in all_conditions
-                if condition_min_ages.get(c, 0) <= age_months
+                name for name, data in self._chronic_conditions.items()
+                if data['min_months'] <= age_months
             ]
 
-            # If too young for most conditions, add infant-appropriate ones
+            # If too young for most conditions, use infant-appropriate ones
             if len(condition_pool) < 3:
-                infant_conditions = ["Eczema", "GERD", "Food allergy"]
-                condition_pool = [c for c in infant_conditions if condition_min_ages.get(c, 0) <= age_months]
+                infant_conditions = ["Eczema", "GERD", "Food Allergy"]
+                condition_pool = [
+                    c for c in infant_conditions
+                    if c in self._chronic_conditions and
+                    self._chronic_conditions[c]['min_months'] <= age_months
+                ]
 
             # If still no valid conditions for this age, return healthy
             if not condition_pool:
@@ -497,8 +558,9 @@ class PedsEngine(BaseEngine):
             conditions = self._apply_comorbidity_logic(conditions)
 
             for cond in conditions:
-                # Use condition-specific minimum onset age
-                cond_min_age = condition_min_ages.get(cond, 6)
+                # Use condition-specific minimum onset age from YAML
+                cond_data = self._chronic_conditions.get(cond, {})
+                cond_min_age = cond_data.get('min_months', 6)
                 max_onset = min(demographics.age_months, 120)
                 min_onset = min(cond_min_age, max_onset)
                 onset_ages[cond] = random.randint(min_onset, max(min_onset, max_onset))
@@ -980,6 +1042,7 @@ VITAL SIGNS:
         """
         Apply realistic co-morbidity patterns to condition lists.
 
+        Uses comorbidity associations loaded from conditions.yaml.
         Research shows certain conditions cluster together:
         - Obesity: associated with asthma, ADHD, anxiety, sleep apnea, GERD
         - Asthma: associated with eczema, allergic rhinitis (atopic triad)
@@ -988,40 +1051,8 @@ VITAL SIGNS:
         """
         result = list(conditions)
 
-        # Co-morbidity associations with probabilities
-        comorbidity_map = {
-            "Obesity": [
-                ("Asthma", 0.35),  # 35% chance to add if obesity present
-                ("ADHD", 0.25),
-                ("Anxiety", 0.30),
-                ("Obstructive sleep apnea", 0.20),
-                ("GERD", 0.15),
-                ("Prediabetes", 0.15),
-            ],
-            "Asthma": [
-                ("Eczema", 0.40),  # Atopic triad
-                ("Allergic rhinitis", 0.50),
-                ("Food allergy", 0.25),
-            ],
-            "Eczema": [
-                ("Asthma", 0.35),  # Allergic march
-                ("Food allergy", 0.30),
-                ("Allergic rhinitis", 0.35),
-            ],
-            "ADHD": [
-                ("Anxiety", 0.35),
-                ("Learning disorder", 0.25),
-                ("Sleep disorder", 0.20),
-            ],
-            "Anxiety": [
-                ("ADHD", 0.20),
-                ("Depression", 0.25),
-            ],
-            "Food allergy": [
-                ("Eczema", 0.40),
-                ("Asthma", 0.30),
-            ],
-        }
+        # Use comorbidity map loaded from YAML (built in _build_condition_lookups)
+        comorbidity_map = self._comorbidity_map
 
         # Check each existing condition for potential co-morbidities
         for condition in list(result):  # Iterate over copy to allow modification
@@ -1035,6 +1066,7 @@ VITAL SIGNS:
     def _get_seasonal_illness(self, visit_date: date, age_months: int = 12) -> str:
         """Select an illness based on the season and patient age.
 
+        Uses seasonal weights from conditions.yaml.
         Age-appropriate illness selection:
         - 2-6 months: Mainly bronchiolitis, viral syndrome, fever (no ear infections)
         - 6-12 months: Can add ear infections, croup
@@ -1042,92 +1074,81 @@ VITAL SIGNS:
         """
         month = visit_date.month
 
-        # Define seasonal illness distributions
-        # Winter (Dec-Feb): More respiratory illness, flu
-        # Spring (Mar-May): Allergies, some viral
-        # Summer (Jun-Aug): Skin issues, GI, injuries
-        # Fall (Sep-Nov): Back-to-school illnesses, respiratory
+        # Get seasonal weights from YAML (loaded in _build_condition_lookups)
+        seasonal_weights = self._seasonal_weights
 
-        winter_illnesses = [
-            ("Upper respiratory infection", 25),
-            ("Influenza-like illness", 15),
-            ("Viral syndrome", 15),
-            ("Otitis media", 15),
-            ("Croup", 10),
-            ("Bronchiolitis", 10),
-            ("Fever", 5),
-            ("Gastroenteritis", 5),
-        ]
-
-        spring_illnesses = [
-            ("Allergic rhinitis flare", 20),
-            ("Upper respiratory infection", 15),
-            ("Viral syndrome", 15),
-            ("Otitis media", 15),
-            ("Conjunctivitis", 10),
-            ("Rash", 10),
-            ("Fever", 10),
-            ("Gastroenteritis", 5),
-        ]
-
-        summer_illnesses = [
-            ("Gastroenteritis", 20),
-            ("Skin infection/rash", 15),
-            ("Swimmer's ear", 10),
-            ("Viral syndrome", 15),
-            ("Insect bite reaction", 10),
-            ("Conjunctivitis", 10),
-            ("Fever", 10),
-            ("Upper respiratory infection", 10),
-        ]
-
-        fall_illnesses = [
-            ("Upper respiratory infection", 25),
-            ("Viral syndrome", 15),
-            ("Otitis media", 15),
-            ("Fever", 10),
-            ("Cough", 10),
-            ("Gastroenteritis", 10),
-            ("Conjunctivitis", 10),
-            ("Rash", 5),
-        ]
-
-        # Select illness pool based on month
+        # Select season based on month
         if month in [12, 1, 2]:  # Winter
-            illness_pool = winter_illnesses
+            season_key = 'winter'
         elif month in [3, 4, 5]:  # Spring
-            illness_pool = spring_illnesses
+            season_key = 'spring'
         elif month in [6, 7, 8]:  # Summer
-            illness_pool = summer_illnesses
+            season_key = 'summer'
         else:  # Fall (9, 10, 11)
-            illness_pool = fall_illnesses
+            season_key = 'fall'
 
-        # Age-appropriate filtering
-        # Define minimum ages for certain conditions (in months)
-        illness_min_ages = {
-            "Otitis media": 6,           # Ear infections rare before 6 months
-            "Swimmer's ear": 12,         # Swimming lessons start around 1 year
-            "Croup": 6,                  # Peak 6 months - 3 years
-            "Allergic rhinitis flare": 24,  # Allergies typically develop after 2 years
-            "Influenza-like illness": 6,  # Flu less common in young infants
-            "Insect bite reaction": 6,   # More mobile, more outdoor exposure
-        }
+        # Get illness weights for this season
+        season_data = seasonal_weights.get(season_key, {})
 
-        # Filter out age-inappropriate illnesses
-        filtered_pool = [
-            (illness, weight) for illness, weight in illness_pool
-            if illness_min_ages.get(illness, 0) <= age_months
-        ]
+        # Convert YAML keys to display names and build illness pool
+        illness_pool = []
+        for condition_key, weight in season_data.items():
+            # Look up display name from conditions
+            if condition_key in self._conditions:
+                display_name = self._conditions[condition_key].get('display_name', condition_key.replace('_', ' ').title())
+            else:
+                display_name = condition_key.replace('_', ' ').title()
+            illness_pool.append((display_name, weight))
 
-        # If all filtered out (very young infant), use basic young infant illnesses
-        if not filtered_pool:
-            filtered_pool = [
-                ("Viral syndrome", 30),
-                ("Upper respiratory infection", 25),
-                ("Bronchiolitis", 25),
+        # Fallback if no seasonal data
+        if not illness_pool:
+            illness_pool = [
+                ("Upper Respiratory Infection", 25),
+                ("Viral Syndrome", 20),
                 ("Fever", 15),
-                ("Gastroenteritis", 5),
+                ("Viral Gastroenteritis", 10),
             ]
+
+        # Age-appropriate filtering using acute conditions from YAML
+        filtered_pool = []
+        for illness, weight in illness_pool:
+            # Check minimum age from acute conditions
+            if illness in self._acute_conditions:
+                min_age = self._acute_conditions[illness].get('min_months', 0)
+            else:
+                # Fallback min ages for common conditions
+                fallback_min_ages = {
+                    "Acute Otitis Media": 6,
+                    "Swimmer's Ear": 12,
+                    "Croup": 6,
+                    "Allergic Rhinitis": 24,
+                    "Influenza": 6,
+                    "Insect Bite Reaction": 6,
+                }
+                min_age = fallback_min_ages.get(illness, 0)
+
+            if min_age <= age_months:
+                filtered_pool.append((illness, weight))
+
+        # If all filtered out (very young infant), use infant fallback from YAML
+        if not filtered_pool:
+            infant_fallback = seasonal_weights.get('infant_fallback', {})
+            if infant_fallback:
+                for condition_key, weight in infant_fallback.items():
+                    if condition_key in self._conditions:
+                        display_name = self._conditions[condition_key].get('display_name', condition_key.replace('_', ' ').title())
+                    else:
+                        display_name = condition_key.replace('_', ' ').title()
+                    filtered_pool.append((display_name, weight))
+            else:
+                # Hardcoded fallback if YAML doesn't have infant_fallback
+                filtered_pool = [
+                    ("Viral Syndrome", 30),
+                    ("Upper Respiratory Infection", 25),
+                    ("Bronchiolitis", 25),
+                    ("Fever", 15),
+                    ("Viral Gastroenteritis", 5),
+                ]
 
         # Weighted random selection
         illnesses, weights = zip(*filtered_pool)

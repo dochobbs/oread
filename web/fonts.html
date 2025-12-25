@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Oread Font Options</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600&family=DM+Sans:wght@400;500;700&family=Fira+Code:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;700&family=JetBrains+Mono:wght@400;500&family=Lato:wght@400;700&family=Libre+Baskerville:wght@400;700&family=Manrope:wght@400;500;700&family=Playfair+Display:wght@400;600&family=Roboto+Mono:wght@400;500&family=Source+Code+Pro:wght@400;500&family=Source+Sans+3:wght@400;600&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&family=Work+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: #f5f5f5; 
+            padding: 40px;
+            color: #1a1a1a;
+        }
+        .page-title {
+            font-family: 'Inter', sans-serif;
+            font-size: 32px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .page-subtitle {
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            text-align: center;
+            color: #666;
+            margin-bottom: 40px;
+        }
+        .sample {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            page-break-inside: avoid;
+        }
+        .sample-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .sample-name {
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #0066cc;
+        }
+        .sample-fonts {
+            font-family: 'Inter', sans-serif;
+            font-size: 11px;
+            color: #888;
+        }
+        .sample h1 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .sample h2 {
+            font-size: 20px;
+            font-weight: 500;
+            margin-bottom: 16px;
+            color: #444;
+        }
+        .sample p {
+            font-size: 15px;
+            line-height: 1.7;
+            margin-bottom: 16px;
+            color: #333;
+        }
+        .sample code {
+            font-size: 13px;
+            background: #f0f4f8;
+            padding: 12px 16px;
+            border-radius: 6px;
+            display: block;
+            color: #1a1a1a;
+        }
+        
+        /* Current */
+        .current h1, .current h2 { font-family: 'Fraunces', serif; }
+        .current p { font-family: 'DM Sans', sans-serif; }
+        .current code { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Modern Medical */
+        .modern h1, .modern h2, .modern p { font-family: 'Inter', sans-serif; }
+        .modern code { font-family: 'Fira Code', monospace; }
+        
+        /* Classic Clinical */
+        .classic h1, .classic h2 { font-family: 'Playfair Display', serif; }
+        .classic p { font-family: 'Source Sans 3', sans-serif; }
+        .classic code { font-family: 'Source Code Pro', monospace; }
+        
+        /* Warm/Friendly */
+        .warm h1, .warm h2 { font-family: 'Libre Baskerville', serif; }
+        .warm p { font-family: 'Lato', sans-serif; }
+        .warm code { font-family: 'IBM Plex Mono', monospace; }
+        
+        /* Tech/Clean */
+        .tech h1, .tech h2, .tech p { font-family: 'Space Grotesk', sans-serif; }
+        .tech code { font-family: 'Space Mono', monospace; }
+        
+        /* Editorial */
+        .editorial h1, .editorial h2 { font-family: 'Crimson Pro', serif; }
+        .editorial p { font-family: 'Work Sans', sans-serif; }
+        .editorial code { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Minimal */
+        .minimal h1, .minimal h2, .minimal p { font-family: 'Manrope', sans-serif; }
+        .minimal code { font-family: 'Roboto Mono', monospace; }
+        
+        /* System (Apple-like) */
+        .system h1, .system h2, .system p { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif; }
+        .system code { font-family: 'SF Mono', ui-monospace, monospace; }
+
+        @media print {
+            body { background: white; padding: 20px; }
+            .sample { box-shadow: none; border: 1px solid #ddd; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-title">Oread Font Options</div>
+    <div class="page-subtitle">Synthetic Patient Generator • UI Typography Samples</div>
+
+    <div class="sample current">
+        <div class="sample-header">
+            <span class="sample-name">Current (Default)</span>
+            <span class="sample-fonts">Fraunces + DM Sans + JetBrains Mono</span>
+        </div>
+        <h1>Patient: Emma Rodriguez</h1>
+        <h2>6-month well-child visit</h2>
+        <p>Development appropriate for age. Meeting all milestones including rolling over, sitting with support, and responding to name. No concerns at this time. Continue breastfeeding and introduce solid foods.</p>
+        <code>ICD-10: Z00.129 | Encounter for routine child health examination</code>
+    </div>
+
+    <div class="sample modern">
+        <div class="sample-header">
+            <span class="sample-name">Modern Medical</span>
+            <span class="sample-fonts">Inter + Inter + Fira Code</span>
+        </div>
+        <h1>Patient: Emma Rodriguez</h1>
+        <h2>6-month well-child visit</h2>
+        <p>Development appropriate for age. Meeting all milestones including rolling over, sitting with support, and responding to name. No concerns at this time. Continue breastfeeding and introduce solid foods.</p>
+        <code>ICD-10: Z00.129 | Encounter for routine child health examination</code>
+    </div>
+
+    <div class="sample classic">
+        <div class="sample-header">
+            <span class="sample-name">Classic Clinical</span>
+            <span class="sample-fonts">Playfair Display + Source Sans 3 + Source Code Pro</span>
+        </div>
+        <h1>Patient: Emma Rodriguez</h1>
+        <h2>6-month well-child visit</h2>
+        <p>Development appropriate for age. Meeting all milestones including rolling over, sitting with support, and responding to name. No concerns at this time. Continue breastfeeding and introduce solid foods.</p>
+        <code>ICD-10: Z00.129 | Encounter for routine child health examination</code>
+    </div>
+
+    <div class="sample warm">
+        <div class="sample-header">
+            <span class="sample-name">Warm / Friendly</span>
+            <span class="sample-fonts">Libre Baskerville + Lato + IBM Plex Mono</span>
+        </div>
+        <h1>Patient: Emma Rodriguez</h1>
+        <h2>6-month well-child visit</h2>
+        <p>Development appropriate for age. Meeting all milestones including rolling over, sitting with support, and responding to name. No concerns at this time. Continue breastfeeding and introduce solid foods.</p>
+        <code>ICD-10: Z00.129 | Encounter for routine child health examination</code>
+    </div>
+
+    <div class="sample tech">
+        <div class="sample-header">
+            <span class="sample-name">Tech / Clean</span>
+            <span class="sample-fonts">Space Grotesk + Space Grotesk + Space Mono</span>
+        </div>
+        <h1>Patient: Emma Rodriguez</h1>
+        <h2>6-month well-child visit</h2>
+        <p>Development appropriate for age. Meeting all milestones including rolling over, sitting with support, and responding to name. No concerns at this time. Continue breastfeeding and introduce solid foods.</p>
+        <code>ICD-10: Z00.129 | Encounter for routine child health examination</code>
+    </div>
+
+    <div class="sample editorial">
+        <div class="sample-header">
+            <span class="sample-name">Editorial</span>
+            <span class="sample-fonts">Crimson Pro + Work Sans + JetBrains Mono</span>
+        </div>
+        <h1>Patient: Emma Rodriguez</h1>
+        <h2>6-month well-child visit</h2>
+        <p>Development appropriate for age. Meeting all milestones including rolling over, sitting with support, and responding to name. No concerns at this time. Continue breastfeeding and introduce solid foods.</p>
+        <code>ICD-10: Z00.129 | Encounter for routine child health examination</code>
+    </div>
+
+    <div class="sample minimal">
+        <div class="sample-header">
+            <span class="sample-name">Minimal</span>
+            <span class="sample-fonts">Manrope + Manrope + Roboto Mono</span>
+        </div>
+        <h1>Patient: Emma Rodriguez</h1>
+        <h2>6-month well-child visit</h2>
+        <p>Development appropriate for age. Meeting all milestones including rolling over, sitting with support, and responding to name. No concerns at this time. Continue breastfeeding and introduce solid foods.</p>
+        <code>ICD-10: Z00.129 | Encounter for routine child health examination</code>
+    </div>
+
+    <div class="sample system">
+        <div class="sample-header">
+            <span class="sample-name">System (Apple-like)</span>
+            <span class="sample-fonts">SF Pro Display + SF Pro Text + SF Mono</span>
+        </div>
+        <h1>Patient: Emma Rodriguez</h1>
+        <h2>6-month well-child visit</h2>
+        <p>Development appropriate for age. Meeting all milestones including rolling over, sitting with support, and responding to name. No concerns at this time. Continue breastfeeding and introduce solid foods.</p>
+        <code>ICD-10: Z00.129 | Encounter for routine child health examination</code>
+    </div>
+</body>
+</html>

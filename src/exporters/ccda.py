@@ -1927,6 +1927,90 @@ class CCDAExporter:
 
         text = ET.SubElement(section, "text")
 
+        # Collect developmental screens from encounters (well-child visits)
+        developmental_screens = []
+        for enc in patient.encounters:
+            if enc.developmental_screen:
+                developmental_screens.append((enc.date, enc.developmental_screen))
+
+        # Combine patient-level milestones and encounter-based screens
+        has_data = patient.developmental_milestones or developmental_screens
+
+        if developmental_screens:
+            # Add developmental screening results from encounters
+            para = ET.SubElement(text, "paragraph")
+            para.text = "Developmental Screening History"
+
+            table = ET.SubElement(text, "table")
+            thead = ET.SubElement(table, "thead")
+            tr = ET.SubElement(thead, "tr")
+            for header in ["Date", "Screening Tool", "Result", "Domains", "Notes"]:
+                th = ET.SubElement(tr, "th")
+                th.text = header
+
+            tbody = ET.SubElement(table, "tbody")
+            for enc_date, screen in sorted(developmental_screens, key=lambda x: x[0], reverse=True):
+                tr = ET.SubElement(tbody, "tr")
+                td = ET.SubElement(tr, "td")
+                td.text = enc_date.strftime("%Y-%m-%d")
+                td = ET.SubElement(tr, "td")
+                td.text = screen.tool
+                td = ET.SubElement(tr, "td")
+                td.text = screen.result.title()
+                td = ET.SubElement(tr, "td")
+                td.text = ", ".join(screen.domains_assessed) if screen.domains_assessed else "All domains"
+                td = ET.SubElement(tr, "td")
+                notes = []
+                if screen.concerns:
+                    notes.append(f"Concerns: {', '.join(screen.concerns)}")
+                if screen.notes:
+                    notes.append(screen.notes)
+                td.text = "; ".join(notes) if notes else ""
+
+            # Add structured entries for developmental screens
+            for idx, (enc_date, screen) in enumerate(developmental_screens):
+                entry = ET.SubElement(section, "entry")
+                entry.set("typeCode", "DRIV")
+
+                obs = ET.SubElement(entry, "observation")
+                obs.set("classCode", "OBS")
+                obs.set("moodCode", "EVN")
+
+                obs_template = ET.SubElement(obs, "templateId")
+                obs_template.set("root", "2.16.840.1.113883.10.20.22.4.67")
+                obs_template.set("extension", "2014-06-09")
+
+                obs_id = ET.SubElement(obs, "id")
+                obs_id.set("root", generate_uuid())
+
+                obs_code = ET.SubElement(obs, "code")
+                obs_code.set("code", "77618-2")
+                obs_code.set("codeSystem", "2.16.840.1.113883.6.1")
+                obs_code.set("displayName", "Developmental screening status")
+
+                obs_status = ET.SubElement(obs, "statusCode")
+                obs_status.set("code", "completed")
+
+                obs_eff = ET.SubElement(obs, "effectiveTime")
+                obs_eff.set("value", format_date(enc_date.date() if hasattr(enc_date, 'date') else enc_date))
+
+                value = ET.SubElement(obs, "value")
+                value.set(f"{{{self.NS_XSI}}}type", "CD")
+                result_codes = {
+                    "normal": ("17621005", "Normal"),
+                    "at-risk": ("281694009", "At risk"),
+                    "delayed": ("248290002", "Developmental delay"),
+                    "not-completed": ("385660001", "Not done"),
+                }
+                if screen.result in result_codes:
+                    value.set("code", result_codes[screen.result][0])
+                    value.set("displayName", result_codes[screen.result][1])
+                value.set("codeSystem", "2.16.840.1.113883.6.96")
+
+                # Add screening tool as method
+                method = ET.SubElement(obs, "methodCode")
+                method.set("displayName", screen.tool)
+
         if patient.developmental_milestones:
             # Group milestones by domain
             domains = {}
@@ -2001,9 +2085,11 @@ class CCDAExporter:
                     interp.set("code", "A")
                     interp.set("displayName", "Not yet achieved")
                 interp.set("codeSystem", "2.16.840.1.113883.5.83")
-        else:
+
+        # Show message if no data at all
+        if not has_data:
             para = ET.SubElement(text, "paragraph")
-            para.text = "No developmental milestones recorded"
+            para.text = "No developmental milestones or screenings recorded"
 
 
 def export_to_ccda(patient: Patient, output_path: Path | None = None) -> str:

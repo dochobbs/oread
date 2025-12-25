@@ -799,6 +799,8 @@
         .markdown-preview {
             font-family: var(--font-body);
             line-height: 1.7;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
         
         .markdown-preview h1,
@@ -856,6 +858,8 @@
             border-radius: var(--radius-md);
             overflow-x: auto;
             font-size: 0.85rem;
+            white-space: pre-wrap;
+            word-wrap: break-word;
         }
         
         .markdown-preview pre code {
@@ -1426,6 +1430,8 @@
                 patients.unshift(patient);
                 renderPatientsList();
                 showPatientDetail(patient.id);
+                // Reset the description field after successful generation
+                document.getElementById('input-description').value = '';
             } catch (error) {
                 console.error('Generation failed:', error);
                 alert('Failed to generate patient. Please try again.');

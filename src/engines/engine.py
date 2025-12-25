@@ -27,6 +27,8 @@ from src.models import (
     Condition,
     ConditionStatus,
     Demographics,
+    DevelopmentalMilestone,
+    DevelopmentalScreen,
     Encounter,
     EncounterType,
     GenerationSeed,
@@ -215,6 +217,70 @@ class PedsEngine(BaseEngine):
                 return key
 
         return None
+
+    def _parse_description(self, seed: GenerationSeed) -> GenerationSeed:
+        """
+        Parse natural language description to extract patient parameters.
+
+        Uses LLM to interpret descriptions like:
+        - "healthy 6 month old girl"
+        - "3 year old boy with asthma and eczema"
+        - "teenager with anxiety and depression"
+        """
+        import json
+        from pydantic import BaseModel
+
+        class ParsedDescription(BaseModel):
+            age_months: int | None = None
+            sex: str | None = None
+            conditions: list[str] = []
+            complexity_tier: str | None = None
+
+        prompt = f"""Parse this patient description and extract structured data.
+
+Description: "{seed.description}"
+
+Extract:
+- age_months: Patient age in months (e.g., "6 month old" = 6, "2 year old" = 24, "teenager" = 168)
+- sex: "male" or "female" (from "boy/girl", "male/female", "son/daughter", etc.)
+- conditions: List of medical conditions mentioned (e.g., ["asthma", "eczema"])
+- complexity_tier: "tier-0" for healthy, "tier-1" for single chronic, "tier-2" for multiple chronic
+
+If something isn't specified, leave it as null.
+
+Examples:
+- "healthy 6 month old girl" -> {{"age_months": 6, "sex": "female", "conditions": [], "complexity_tier": "tier-0"}}
+- "3 year old boy with asthma" -> {{"age_months": 36, "sex": "male", "conditions": ["asthma"], "complexity_tier": "tier-1"}}
+- "infant with ear infection" -> {{"age_months": 6, "sex": null, "conditions": ["acute otitis media"], "complexity_tier": "tier-0"}}
+- "teenager with anxiety and ADHD" -> {{"age_months": 168, "sex": null, "conditions": ["anxiety", "adhd"], "complexity_tier": "tier-2"}}"""
+
+        system = "You are a medical data parser. Extract structured patient information from natural language. Return valid JSON only."
+
+        try:
+            result = self.llm.generate_structured(prompt, ParsedDescription, system=system, temperature=0.1)
+
+            # Update seed with parsed values (only if not already set)
+            updates = {}
+            if result.age_months is not None and seed.age is None and seed.age_months is None:
+                updates["age_months"] = result.age_months
+            if result.sex and seed.sex is None:
+                updates["sex"] = Sex(result.sex)
+            if result.conditions and seed.conditions is None:
+                updates["conditions"] = result.conditions
+            if result.complexity_tier and seed.complexity_tier is None:
+                updates["complexity_tier"] = ComplexityTier(result.complexity_tier)
+
+            if updates:
+                # Create new seed with updates
+                seed_dict = seed.model_dump()
+                seed_dict.update(updates)
+                return GenerationSeed(**seed_dict)
+
+        except Exception:
+            # On any error, return original seed unchanged
+            pass
+
+        return seed
 
     def _apply_vitals_impact(
         self,
@@ -579,10 +645,14 @@ class PedsEngine(BaseEngine):
 
     def generate(self, seed: GenerationSeed) -> Patient:
         """Generate a complete pediatric patient."""
+        # Parse natural language description if provided
+        if seed.description and self.use_llm:
+            seed = self._parse_description(seed)
+
         # Set random seed for reproducibility
         if seed.random_seed is not None:
             random.seed(seed.random_seed)
-        
+
         # Step 1: Generate persona (demographics, family, social)
         demographics = self._generate_demographics(seed)
         social_history = self._generate_social_history(demographics, seed)
@@ -1367,6 +1437,11 @@ class PedsEngine(BaseEngine):
         if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN):
             immunizations = self._generate_immunizations(age_months, stub.date)
 
+        # Generate developmental screening for well-child visits
+        developmental_screen = None
+        if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN):
+            developmental_screen = self._generate_developmental_screen(age_months, stub.date)
+
         # Generate lab results for acute illness encounters
         lab_results = self._generate_labs(condition_key, stub.date, stub.type)
 
@@ -1386,6 +1461,7 @@ class PedsEngine(BaseEngine):
             lab_results=lab_results,
             prescriptions=illness_prescriptions,
             anticipatory_guidance=self._generate_anticipatory_guidance_list(age_months) if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN) else [],
+            developmental_screen=developmental_screen,
         )
         
         # Note: Narrative generation is now done in parallel after all encounters are created
@@ -1430,6 +1506,88 @@ class PedsEngine(BaseEngine):
                 ))
         
         return immunizations
+
+    def _generate_developmental_screen(self, age_months: int, visit_date: date) -> DevelopmentalScreen | None:
+        """Generate age-appropriate developmental screening for well-child visits."""
+        # AAP recommends developmental screening at 9, 18, and 30 months
+        # Autism screening (M-CHAT-R) at 18 and 24 months
+        # General surveillance at all well-child visits
+
+        # Determine appropriate screening tool based on age
+        if age_months < 4:
+            # Newborn/early infant - basic developmental surveillance
+            tool = "Developmental Surveillance"
+            domains = ["reflexes", "tone", "alertness"]
+        elif age_months <= 12:
+            tool = "ASQ-3" if age_months in [9] else "Developmental Surveillance"
+            domains = ["gross-motor", "fine-motor", "communication", "problem-solving", "personal-social"]
+        elif age_months <= 24:
+            if age_months in [18, 24]:
+                tool = random.choice(["ASQ-3", "M-CHAT-R/F"])
+            else:
+                tool = "Developmental Surveillance"
+            domains = ["gross-motor", "fine-motor", "language", "social-emotional", "cognitive"]
+        elif age_months <= 36:
+            tool = "ASQ-3" if age_months == 30 else "Developmental Surveillance"
+            domains = ["gross-motor", "fine-motor", "language", "social-emotional", "cognitive"]
+        elif age_months <= 60:
+            tool = "PEDS" if random.random() < 0.3 else "Developmental Surveillance"
+            domains = ["motor", "language", "social", "self-help", "academic-readiness"]
+        else:
+            # School-age - less frequent formal screening
+            if random.random() < 0.2:
+                tool = "Developmental Surveillance"
+                domains = ["academic", "social", "behavioral"]
+            else:
+                return None  # Not every school-age visit needs formal documentation
+
+        # Generate result - most children develop normally
+        result_weights = {
+            "normal": 0.90,
+            "at-risk": 0.07,
+            "delayed": 0.02,
+            "not-completed": 0.01,
+        }
+        result = random.choices(
+            list(result_weights.keys()),
+            weights=list(result_weights.values())
+        )[0]
+
+        # Generate concerns if at-risk or delayed
+        concerns = []
+        if result in ["at-risk", "delayed"]:
+            possible_concerns = {
+                "gross-motor": ["not walking independently", "delayed crawling", "poor balance"],
+                "fine-motor": ["difficulty with pincer grasp", "not stacking blocks", "poor hand-eye coordination"],
+                "language": ["limited vocabulary", "no two-word phrases", "not following commands"],
+                "social-emotional": ["limited eye contact", "not responding to name", "difficulty with transitions"],
+                "cognitive": ["not imitating actions", "limited problem-solving", "short attention span"],
+                "communication": ["limited babbling", "not pointing", "no words"],
+            }
+            for domain in domains:
+                if domain in possible_concerns and random.random() < 0.3:
+                    concerns.append(random.choice(possible_concerns[domain]))
+
+        # Generate notes
+        notes = None
+        if result == "normal":
+            notes = random.choice([
+                "Development appropriate for age",
+                "Meeting all milestones",
+                "No developmental concerns at this time",
+                "Age-appropriate development noted",
+            ])
+        elif concerns:
+            notes = f"Discussed concerns with family. Will monitor at next visit."
+
+        return DevelopmentalScreen(
+            tool=tool,
+            date=visit_date,
+            result=result,
+            domains_assessed=domains,
+            concerns=concerns,
+            notes=notes,
+        )
 
     def _generate_narratives_parallel(
         self,

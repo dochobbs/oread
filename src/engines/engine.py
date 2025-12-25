@@ -439,7 +439,9 @@ class PedsEngine(BaseEngine):
             conditions = self._apply_comorbidity_logic(conditions)
             # Generate plausible onset ages
             for cond in conditions:
-                onset_ages[cond] = random.randint(6, min(demographics.age_months, 120))
+                max_onset = min(demographics.age_months, 120)
+                min_onset = min(6, max_onset)  # Don't use 6 if child is younger
+                onset_ages[cond] = random.randint(min_onset, max(min_onset, max_onset))
         elif tier != ComplexityTier.TIER_0:
             # Select conditions based on tier
             condition_pool = [
@@ -459,7 +461,9 @@ class PedsEngine(BaseEngine):
             conditions = self._apply_comorbidity_logic(conditions)
 
             for cond in conditions:
-                onset_ages[cond] = random.randint(6, min(demographics.age_months, 120))
+                max_onset = min(demographics.age_months, 120)
+                min_onset = min(6, max_onset)  # Don't use 6 if child is younger
+                onset_ages[cond] = random.randint(min_onset, max(min_onset, max_onset))
         
         trajectory = "healthy" if not conditions else "single_chronic" if len(conditions) == 1 else "multiple_chronic"
         
@@ -1064,7 +1068,7 @@ VITAL SIGNS:
         # Common acute illness plans
         if "respiratory" in reason_lower or "uri" in reason_lower or "cold" in reason_lower:
             plans.append(PlanItem(
-                category="treatment",
+                category="other",
                 description="Supportive care with rest and hydration",
             ))
             plans.append(PlanItem(
@@ -1081,7 +1085,7 @@ VITAL SIGNS:
                 description="Amoxicillin 90mg/kg/day divided BID x 10 days",
             ))
             plans.append(PlanItem(
-                category="treatment",
+                category="medication",
                 description="Ibuprofen for pain management",
             ))
             plans.append(PlanItem(
@@ -1090,11 +1094,11 @@ VITAL SIGNS:
             ))
         elif "gastroenteritis" in reason_lower or "vomiting" in reason_lower or "diarrhea" in reason_lower:
             plans.append(PlanItem(
-                category="treatment",
+                category="education",
                 description="Oral rehydration with small frequent amounts of fluids",
             ))
             plans.append(PlanItem(
-                category="diet",
+                category="education",
                 description="BRAT diet as tolerated, advance as symptoms improve",
             ))
             plans.append(PlanItem(
@@ -1103,7 +1107,7 @@ VITAL SIGNS:
             ))
         elif "fever" in reason_lower:
             plans.append(PlanItem(
-                category="treatment",
+                category="medication",
                 description="Acetaminophen or ibuprofen for temperature control",
             ))
             plans.append(PlanItem(
@@ -1116,7 +1120,7 @@ VITAL SIGNS:
             ))
         elif "rash" in reason_lower:
             plans.append(PlanItem(
-                category="treatment",
+                category="other",
                 description="Topical care as appropriate for rash type",
             ))
             plans.append(PlanItem(
@@ -1135,7 +1139,7 @@ VITAL SIGNS:
         else:
             # Generic acute illness plan
             plans.append(PlanItem(
-                category="treatment",
+                category="other",
                 description="Supportive care with rest and hydration",
             ))
             plans.append(PlanItem(
@@ -1172,7 +1176,7 @@ VITAL SIGNS:
                     description="Continue current asthma regimen",
                 ))
                 plans.append(PlanItem(
-                    category="assessment",
+                    category="other",
                     description="Asthma well controlled, continue current management",
                 ))
             plans.append(PlanItem(
@@ -1191,7 +1195,7 @@ VITAL SIGNS:
                 ))
             else:
                 plans.append(PlanItem(
-                    category="assessment",
+                    category="other",
                     description="Review medication efficacy and side effects",
                 ))
                 plans.append(PlanItem(
@@ -1263,7 +1267,7 @@ VITAL SIGNS:
             ))
         elif "constipation" in condition_lower:
             plans.append(PlanItem(
-                category="treatment",
+                category="education",
                 description="Increase fiber and fluid intake",
             ))
             plans.append(PlanItem(

@@ -17,6 +17,10 @@ import yaml
 from pydantic import BaseModel
 
 from src.models import (
+    Allergy,
+    AllergyCategory,
+    AllergyReaction,
+    AllergySeverity,
     CodeableConcept,
     ComplexityTier,
     Condition,
@@ -441,7 +445,137 @@ class PedsEngine(BaseEngine):
         (72, 144): 2,  # 6-12 years: ~2 acute visits/year
         (144, 264): 1, # 12-22 years: ~1 acute visit/year
     }
-    
+
+    # Evidence-based pediatric life event rates (annual probability)
+    # Sources: CDC, PMC studies on pediatric injuries/surgery
+    LIFE_EVENT_DEFINITIONS = {
+        "fracture": {
+            "annual_rate": 0.02,  # 2% per year (12-30/1000)
+            "encounter_type": EncounterType.ED_VISIT,
+            "sex_modifier": {"male": 1.4, "female": 0.7},  # Boys 2x more likely
+            "age_modifier": {  # Peak at 10-14 years
+                (0, 24): 0.3, (24, 72): 0.7, (72, 120): 1.0,
+                (120, 168): 1.5, (168, 264): 1.0
+            },
+            "variants": [
+                {"name": "Distal radius fracture", "weight": 0.30, "icd10": "S52.501A"},
+                {"name": "Clavicle fracture", "weight": 0.15, "icd10": "S42.001A"},
+                {"name": "Distal humerus fracture", "weight": 0.12, "icd10": "S42.401A"},
+                {"name": "Tibial fracture", "weight": 0.10, "icd10": "S82.201A"},
+                {"name": "Finger fracture", "weight": 0.15, "icd10": "S62.600A"},
+                {"name": "Toe fracture", "weight": 0.08, "icd10": "S92.501A"},
+                {"name": "Ankle fracture", "weight": 0.10, "icd10": "S82.891A"},
+            ],
+        },
+        "laceration": {
+            "annual_rate": 0.025,  # 2.5% per year
+            "encounter_type": EncounterType.URGENT_CARE,
+            "sex_modifier": {"male": 1.3, "female": 0.8},
+            "age_modifier": {
+                (0, 24): 0.5, (24, 72): 1.2, (72, 144): 1.0, (144, 264): 0.8
+            },
+            "variants": [
+                {"name": "Forehead laceration", "weight": 0.25, "icd10": "S01.81XA"},
+                {"name": "Chin laceration", "weight": 0.20, "icd10": "S01.81XA"},
+                {"name": "Finger laceration", "weight": 0.20, "icd10": "S61.219A"},
+                {"name": "Knee laceration", "weight": 0.15, "icd10": "S81.01XA"},
+                {"name": "Scalp laceration", "weight": 0.10, "icd10": "S01.01XA"},
+                {"name": "Lip laceration", "weight": 0.10, "icd10": "S01.511A"},
+            ],
+        },
+        "concussion": {
+            "annual_rate": 0.01,  # 1% per year
+            "encounter_type": EncounterType.ED_VISIT,
+            "sex_modifier": {"male": 1.2, "female": 0.9},
+            "age_modifier": {  # Higher in sports ages
+                (0, 60): 0.4, (60, 120): 0.8, (120, 168): 1.5, (168, 264): 1.3
+            },
+            "variants": [
+                {"name": "Concussion without loss of consciousness", "weight": 0.70, "icd10": "S06.0X0A"},
+                {"name": "Concussion with brief loss of consciousness", "weight": 0.30, "icd10": "S06.0X1A"},
+            ],
+        },
+        "accidental_poisoning": {
+            "annual_rate": 0.007,  # 0.7% for young children
+            "encounter_type": EncounterType.ED_VISIT,
+            "age_modifier": {  # Mostly toddlers (1-4 years)
+                (0, 12): 0.5, (12, 48): 2.5, (48, 72): 0.5, (72, 264): 0.1
+            },
+            "variants": [
+                {"name": "Accidental ingestion of medication", "weight": 0.50, "icd10": "T50.901A"},
+                {"name": "Accidental ingestion of household product", "weight": 0.30, "icd10": "T65.91XA"},
+                {"name": "Accidental ingestion of plant material", "weight": 0.10, "icd10": "T62.2X1A"},
+                {"name": "Accidental ingestion of cosmetic", "weight": 0.10, "icd10": "T49.8X1A"},
+            ],
+        },
+        "minor_burn": {
+            "annual_rate": 0.005,  # 0.5% per year
+            "encounter_type": EncounterType.URGENT_CARE,
+            "age_modifier": {  # Higher in toddlers
+                (0, 12): 0.5, (12, 48): 2.0, (48, 120): 0.8, (120, 264): 0.5
+            },
+            "variants": [
+                {"name": "Scald burn to hand", "weight": 0.35, "icd10": "T23.001A"},
+                {"name": "Contact burn to hand", "weight": 0.25, "icd10": "T23.001A"},
+                {"name": "Scald burn to arm", "weight": 0.20, "icd10": "T22.001A"},
+                {"name": "Sunburn", "weight": 0.20, "icd10": "L55.9"},
+            ],
+        },
+        "foreign_body": {
+            "annual_rate": 0.008,  # 0.8% per year
+            "encounter_type": EncounterType.URGENT_CARE,
+            "age_modifier": {  # Toddlers and young children
+                (0, 12): 0.3, (12, 60): 2.0, (60, 120): 0.8, (120, 264): 0.3
+            },
+            "variants": [
+                {"name": "Foreign body in ear", "weight": 0.35, "icd10": "T16.9XXA"},
+                {"name": "Foreign body in nose", "weight": 0.35, "icd10": "T17.1XXA"},
+                {"name": "Foreign body in eye", "weight": 0.20, "icd10": "T15.90XA"},
+                {"name": "Splinter", "weight": 0.10, "icd10": "W45.8XXA"},
+            ],
+        },
+        "medication_allergy_discovery": {
+            "annual_rate": 0.015,  # 1.5% per year discover new allergy
+            "encounter_type": None,  # Creates allergy, not encounter
+            "variants": [
+                {"name": "Amoxicillin", "weight": 0.40, "rxnorm": "723"},
+                {"name": "Penicillin", "weight": 0.25, "rxnorm": "7984"},
+                {"name": "Sulfonamide", "weight": 0.15, "rxnorm": "10831"},
+                {"name": "Ibuprofen", "weight": 0.10, "rxnorm": "5640"},
+                {"name": "Cephalosporin", "weight": 0.10, "rxnorm": "2176"},
+            ],
+        },
+        "tympanostomy_tubes": {
+            "annual_rate": 0.015,  # 1.5% for ages 1-5
+            "encounter_type": EncounterType.PROCEDURE,
+            "age_modifier": {  # Only ages 1-5
+                (0, 12): 0.2, (12, 60): 3.0, (60, 264): 0.0
+            },
+            "is_surgery": True,
+            "icd10": "Z96.20",
+            "cpt": "69436",
+        },
+        "appendectomy": {
+            "annual_rate": 0.001,  # 0.1% per year
+            "encounter_type": EncounterType.HOSPITAL_ADMISSION,
+            "age_modifier": {  # Peak 10-18 years
+                (0, 60): 0.3, (60, 120): 0.8, (120, 216): 2.0, (216, 264): 1.0
+            },
+            "is_surgery": True,
+            "icd10": "K35.80",
+            "cpt": "44970",
+        },
+        "anaphylaxis": {
+            "annual_rate": 0.001,  # 0.1% per year (rare but important)
+            "encounter_type": EncounterType.ED_VISIT,
+            "variants": [
+                {"name": "Anaphylaxis due to food", "weight": 0.60, "icd10": "T78.00XA"},
+                {"name": "Anaphylaxis due to insect sting", "weight": 0.25, "icd10": "T63.441A"},
+                {"name": "Anaphylaxis due to medication", "weight": 0.15, "icd10": "T88.6XXA"},
+            ],
+        },
+    }
+
     def generate(self, seed: GenerationSeed) -> Patient:
         """Generate a complete pediatric patient."""
         # Set random seed for reproducibility
@@ -598,12 +732,39 @@ class PedsEngine(BaseEngine):
         resolved_conditions, past_medications = self._extract_resolved_history(encounters)
         problem_list.extend(resolved_conditions)
 
+        # Create Allergy objects from discovered medication allergies (life events)
+        allergy_list = []
+        discovered_allergies = getattr(self, '_discovered_allergies', [])
+        for allergy_info in discovered_allergies:
+            allergy = Allergy(
+                display_name=f"{allergy_info['substance']} allergy",
+                category=AllergyCategory.MEDICATION,
+                criticality=random.choice(["low", "high"]),
+                reactions=[
+                    AllergyReaction(
+                        manifestation=random.choice([
+                            "Rash", "Hives", "Itching", "Swelling",
+                            "Nausea", "Stomach upset"
+                        ]),
+                        severity=random.choice([AllergySeverity.MILD, AllergySeverity.MODERATE]),
+                    )
+                ],
+                onset_date=allergy_info["discovery_date"],
+                code=CodeableConcept(
+                    system="http://www.nlm.nih.gov/research/umls/rxnorm",
+                    code=allergy_info.get("rxnorm", ""),
+                    display=allergy_info["substance"],
+                ) if allergy_info.get("rxnorm") else None,
+            )
+            allergy_list.append(allergy)
+
         # Build the patient
         patient = Patient(
             demographics=demographics,
             social_history=social_history,
             problem_list=problem_list,
             medication_list=past_medications,
+            allergy_list=allergy_list,
             encounters=encounters,
             growth_data=growth_data,
             immunization_record=immunizations,
@@ -924,15 +1085,121 @@ class PedsEngine(BaseEngine):
                     ))
                 follow_up_age += random.randint(3, 6)
         
+        # Generate random life events (injuries, surgeries, etc.)
+        life_event_stubs, discovered_allergies = self._generate_life_events(
+            demographics=demographics,
+            current_age_months=current_age_months,
+        )
+        stubs.extend(life_event_stubs)
+
         # Sort by date
         stubs.sort(key=lambda s: s.date)
-        
+
         # Limit to requested count if specified
         if seed.encounter_count:
             stubs = stubs[:seed.encounter_count]
-        
+
+        # Store discovered allergies for later use in patient generation
+        self._discovered_allergies = discovered_allergies
+
         return stubs
-    
+
+    def _generate_life_events(
+        self,
+        demographics: Demographics,
+        current_age_months: int,
+    ) -> tuple[list[EncounterStub], list[dict]]:
+        """
+        Generate random life events based on evidence-based pediatric rates.
+
+        Returns tuple of (encounter_stubs, discovered_allergies).
+        """
+        stubs = []
+        discovered_allergies = []
+        dob = demographics.date_of_birth
+        today = date.today()
+        sex = "male" if demographics.sex_at_birth == Sex.MALE else "female"
+
+        # Track what events have occurred to avoid duplicates
+        had_tympanostomy = False
+        had_appendectomy = False
+
+        # For each year of life, roll dice for each event type
+        for age_year in range(current_age_months // 12 + 1):
+            age_months_start = age_year * 12
+            age_months_end = min((age_year + 1) * 12, current_age_months)
+
+            for event_type, event_def in self.LIFE_EVENT_DEFINITIONS.items():
+                # Skip one-time surgeries if already had
+                if event_type == "tympanostomy_tubes" and had_tympanostomy:
+                    continue
+                if event_type == "appendectomy" and had_appendectomy:
+                    continue
+
+                # Calculate adjusted probability
+                base_rate = event_def["annual_rate"]
+
+                # Apply sex modifier if exists
+                sex_mod = event_def.get("sex_modifier", {}).get(sex, 1.0)
+
+                # Apply age modifier if exists
+                age_mod = 1.0
+                age_modifiers = event_def.get("age_modifier", {})
+                for (min_m, max_m), modifier in age_modifiers.items():
+                    if min_m <= age_months_start < max_m:
+                        age_mod = modifier
+                        break
+
+                adjusted_rate = base_rate * sex_mod * age_mod
+
+                # Roll the dice
+                if random.random() < adjusted_rate:
+                    # Event occurred!
+                    event_age_months = random.randint(age_months_start, age_months_end)
+                    event_date = dob + timedelta(days=event_age_months * 30 + random.randint(0, 29))
+
+                    if event_date > today:
+                        continue
+
+                    # Select variant if applicable
+                    variants = event_def.get("variants", [])
+                    if variants:
+                        weights = [v["weight"] for v in variants]
+                        variant = random.choices(variants, weights=weights)[0]
+                        event_name = variant["name"]
+                        icd10_code = variant.get("icd10", "")
+                    else:
+                        event_name = event_type.replace("_", " ").title()
+                        icd10_code = event_def.get("icd10", "")
+
+                    # Handle different event types
+                    encounter_type = event_def.get("encounter_type")
+
+                    if event_type == "medication_allergy_discovery":
+                        # Create an allergy record instead of encounter
+                        discovered_allergies.append({
+                            "substance": event_name,
+                            "rxnorm": variant.get("rxnorm", ""),
+                            "discovery_date": event_date,
+                        })
+                    elif encounter_type:
+                        # Create encounter stub
+                        stub = EncounterStub(
+                            date=event_date,
+                            type=encounter_type,
+                            reason=event_name,
+                            conditions_to_address=[],
+                        )
+                        stubs.append(stub)
+
+                        # Mark one-time events
+                        if event_type == "tympanostomy_tubes":
+                            had_tympanostomy = True
+                        elif event_type == "appendectomy":
+                            had_appendectomy = True
+
+        return stubs, discovered_allergies
+
     def _generate_encounter(
         self,
         stub: EncounterStub,

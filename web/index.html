@@ -119,27 +119,109 @@
             border-color: var(--border);
         }
 
+        [data-theme="dark"] .patient-badges .complexity-0 { color: #81c784; }
+        [data-theme="dark"] .patient-badges .complexity-1 { color: #64b5f6; }
+        [data-theme="dark"] .patient-badges .complexity-2 { color: #ffd54f; }
+        [data-theme="dark"] .patient-badges .complexity-3 { color: #ffb74d; }
+        [data-theme="dark"] .patient-badges .complexity-4 { color: #e57373; }
+        [data-theme="dark"] .patient-badges .complexity-5 { color: #ef5350; }
+        [data-theme="dark"] .patient-badges .messiness-1 { color: #81c784; }
+        [data-theme="dark"] .patient-badges .messiness-2 { color: #ffd54f; }
+        [data-theme="dark"] .patient-badges .messiness-3 { color: #ffb74d; }
+        [data-theme="dark"] .patient-badges .messiness-4 { color: #e57373; }
+        [data-theme="dark"] .patient-badges .messiness-5 { color: #ef5350; }
+
+        [data-theme="dark"] code {
+            background: var(--bg-secondary);
+            color: var(--accent-primary);
+        }
+
+        [data-theme="dark"] .encounter-card {
+            background: var(--bg-card);
+        }
+
+        [data-theme="dark"] .section-card {
+            background: var(--bg-card);
+        }
+
+        [data-theme="dark"] .timeline-slider {
+            background: var(--bg-secondary);
+        }
+
+        [data-theme="dark"] .panel-card {
+            background: var(--bg-card);
+        }
+
+        [data-theme="dark"] .generate-option input[type="number"] {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-color: var(--border);
+        }
+
+        [data-theme="dark"] input[type="checkbox"] {
+            accent-color: var(--accent-primary);
+        }
+
+        [data-theme="dark"] .modal {
+            background: var(--bg-card);
+        }
+
+        [data-theme="dark"] .auth-tab {
+            color: var(--text-secondary);
+        }
+
+        [data-theme="dark"] .auth-tab.active {
+            color: var(--accent-primary);
+        }
+
+        [data-theme="dark"] .patient-card {
+            background: var(--bg-card);
+        }
+
+        [data-theme="dark"] .condition-badge {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .arc-timeline {
+            background: var(--bg-secondary);
+        }
+
         /* Theme toggle button */
         .theme-toggle {
-            background: transparent;
-            border: none;
-            color: var(--text-inverse);
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #faf9f7;
             cursor: pointer;
-            padding: 8px;
-            border-radius: var(--radius-sm);
+            padding: 8px 12px;
+            border-radius: var(--radius-md);
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: background 0.2s;
+            gap: 6px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            transition: all 0.2s;
         }
 
         .theme-toggle:hover {
-            background: rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.2);
+            border-color: rgba(255,255,255,0.3);
         }
 
         .theme-toggle i {
-            width: 20px;
-            height: 20px;
+            width: 16px;
+            height: 16px;
+        }
+
+        .theme-toggle-label {
+            display: none;
+        }
+
+        @media (min-width: 600px) {
+            .theme-toggle-label {
+                display: inline;
+            }
         }
         
         * {
@@ -1671,6 +1753,7 @@
                 <a href="#" id="nav-generate">Generate</a>
                 <button class="theme-toggle" id="theme-toggle-guest" title="Toggle dark mode">
                     <i data-lucide="moon"></i>
+                    <span class="theme-toggle-label">Dark</span>
                 </button>
                 <button class="btn-login" id="btn-show-login">Sign In</button>
             </nav>
@@ -1679,6 +1762,7 @@
                 <a href="#" id="nav-panels">My Panels</a>
                 <button class="theme-toggle" id="theme-toggle-user" title="Toggle dark mode">
                     <i data-lucide="moon"></i>
+                    <span class="theme-toggle-label">Dark</span>
                 </button>
                 <div class="user-info">
                     <div class="user-avatar" id="user-avatar">U</div>
@@ -2102,8 +2186,12 @@
 
         function updateThemeIcons(theme) {
             const icon = theme === 'dark' ? 'sun' : 'moon';
+            const label = theme === 'dark' ? 'Light' : 'Dark';
             document.querySelectorAll('.theme-toggle i').forEach(el => {
                 el.setAttribute('data-lucide', icon);
+            });
+            document.querySelectorAll('.theme-toggle-label').forEach(el => {
+                el.textContent = label;
             });
             lucide.createIcons();
         }

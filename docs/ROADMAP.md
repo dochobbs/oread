@@ -3,7 +3,7 @@
 **Last Updated:** December 2025
 **Full Plan:** `docs/LEARNING_PLATFORM_PLAN.md`
 
-## Current Status: Phase 2 In Progress
+## Current Status: Phase 1 Complete, Phase 2 In Progress
 
 ### Completed Features
 - [x] Parallel LLM generation (7.4x speedup)
@@ -13,6 +13,9 @@
 - [x] UI improvements (fonts, icons, wrapping)
 - [x] LLM Phases 1-3, 5-6 (narratives, HPI, assessment, guidance)
 - [x] **Time Travel** - Disease arc visualization with 6 arcs, timeline API, and interactive UI
+- [x] **Database + Auth** - Supabase integration with user auth, panels, patient persistence
+- [x] **Mass Generate** - Generate 1-50 patients into panels with one click
+- [x] **Single Case** - Generate new encounters with difficulty levels 1-5
 
 ---
 
@@ -21,9 +24,9 @@
 ### Phase 1: Foundation
 | # | Feature | Status | Priority |
 |---|---------|--------|----------|
-| 11 | Database + Auth (Supabase) | Not started | **Critical** |
-| 5 | Mass Generate (Panels) | Not started | High |
-| 6 | Single Case Generation | Not started | High |
+| 11 | Database + Auth (Supabase) | **Complete** | **Critical** |
+| 5 | Mass Generate (Panels) | **Complete** | High |
+| 6 | Single Case Generation | **Complete** | High |
 
 ### Phase 2: Clinical Depth
 | # | Feature | Status | Priority |

@@ -146,7 +146,202 @@
         nav a:hover {
             opacity: 1;
         }
-        
+
+        /* ============================================
+           AUTH MODAL
+           ============================================ */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background: var(--bg-card);
+            border-radius: var(--radius-xl);
+            width: 100%;
+            max-width: 420px;
+            margin: var(--space-lg);
+            box-shadow: var(--shadow-xl);
+            transform: translateY(20px);
+            transition: transform 0.3s ease;
+        }
+
+        .modal-overlay.active .modal {
+            transform: translateY(0);
+        }
+
+        .modal-header {
+            padding: var(--space-xl) var(--space-xl) 0;
+            text-align: center;
+        }
+
+        .modal-header h2 {
+            font-family: var(--font-display);
+            font-size: 1.75rem;
+            font-weight: 500;
+            margin-bottom: var(--space-xs);
+        }
+
+        .modal-header p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .auth-tabs {
+            display: flex;
+            margin: var(--space-lg) var(--space-xl) 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .auth-tab {
+            flex: 1;
+            padding: var(--space-md);
+            background: none;
+            border: none;
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .auth-tab:hover {
+            color: var(--text-primary);
+        }
+
+        .auth-tab.active {
+            color: var(--accent-primary);
+            border-bottom-color: var(--accent-primary);
+        }
+
+        .modal-body {
+            padding: var(--space-xl);
+        }
+
+        .auth-form {
+            display: none;
+        }
+
+        .auth-form.active {
+            display: block;
+        }
+
+        .auth-error {
+            background: rgba(155, 44, 44, 0.1);
+            color: var(--error);
+            padding: var(--space-md);
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            margin-bottom: var(--space-lg);
+            display: none;
+        }
+
+        .auth-error.show {
+            display: block;
+        }
+
+        .auth-success {
+            background: rgba(45, 106, 79, 0.1);
+            color: var(--success);
+            padding: var(--space-md);
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            margin-bottom: var(--space-lg);
+            display: none;
+        }
+
+        .auth-success.show {
+            display: block;
+        }
+
+        /* User Menu */
+        .user-menu {
+            display: flex;
+            align-items: center;
+            gap: var(--space-md);
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+            color: var(--text-inverse);
+            font-size: 0.9rem;
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            background: var(--accent-primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        .user-name {
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .user-level {
+            font-size: 0.75rem;
+            opacity: 0.7;
+            text-transform: uppercase;
+        }
+
+        .btn-logout {
+            padding: var(--space-sm) var(--space-md);
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: var(--text-inverse);
+            border-radius: var(--radius-md);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-logout:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .btn-login {
+            padding: var(--space-sm) var(--space-lg);
+            background: var(--accent-primary);
+            border: none;
+            color: white;
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-login:hover {
+            background: var(--accent-secondary);
+        }
+
         /* ============================================
            HERO SECTION
            ============================================ */
@@ -987,12 +1182,95 @@
                 <div class="logo-mark">O</div>
                 <div class="logo-text">Oread</div>
             </div>
-            <nav>
+            <nav id="nav-guest">
                 <a href="#" id="nav-generate">Generate</a>
+                <button class="btn-login" id="btn-show-login">Sign In</button>
+            </nav>
+            <nav id="nav-user" class="user-menu" style="display: none;">
+                <a href="#" id="nav-generate-auth">Generate</a>
+                <a href="#" id="nav-panels">My Panels</a>
+                <div class="user-info">
+                    <div class="user-avatar" id="user-avatar">U</div>
+                    <div>
+                        <div class="user-name" id="user-name">User</div>
+                        <div class="user-level" id="user-level">Learner</div>
+                    </div>
+                </div>
+                <button class="btn-logout" id="btn-logout">Sign Out</button>
             </nav>
         </div>
     </header>
-    
+
+    <!-- Auth Modal -->
+    <div id="auth-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Welcome to Oread</h2>
+                <p>Sign in to save and manage your patient panels</p>
+            </div>
+
+            <div class="auth-tabs">
+                <button class="auth-tab active" data-auth-tab="login">Sign In</button>
+                <button class="auth-tab" data-auth-tab="signup">Create Account</button>
+            </div>
+
+            <div class="modal-body">
+                <!-- Login Form -->
+                <form id="login-form" class="auth-form active">
+                    <div id="login-error" class="auth-error"></div>
+
+                    <div class="form-group">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-input" id="login-email" required placeholder="you@example.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-input" id="login-password" required placeholder="••••••••">
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: var(--space-md);">
+                        Sign In
+                    </button>
+                </form>
+
+                <!-- Signup Form -->
+                <form id="signup-form" class="auth-form">
+                    <div id="signup-error" class="auth-error"></div>
+                    <div id="signup-success" class="auth-success"></div>
+
+                    <div class="form-group">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-input" id="signup-email" required placeholder="you@example.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-input" id="signup-password" required placeholder="Min 6 characters" minlength="6">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Your Role</label>
+                        <select class="form-select has-value" id="signup-level">
+                            <option value="np_student">NP Student</option>
+                            <option value="ms3">Medical Student (MS3)</option>
+                            <option value="ms4">Medical Student (MS4)</option>
+                            <option value="intern" selected>Intern (PGY-1)</option>
+                            <option value="pgy2">Resident (PGY-2)</option>
+                            <option value="pgy3">Resident (PGY-3)</option>
+                            <option value="fellow">Fellow</option>
+                            <option value="attending">Attending</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: var(--space-md);">
+                        Create Account
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <section class="hero">
         <h1>Generate <em>clinically coherent</em><br>synthetic patients</h1>
         <p>Create realistic, longitudinal patient records for AI evaluation, EMR demos, and medical education.</p>
@@ -1206,6 +1484,187 @@
     </div>
     
     <script>
+        // ============================================
+        // AUTH STATE
+        // ============================================
+        let authToken = localStorage.getItem('oread_token');
+        let currentUser = JSON.parse(localStorage.getItem('oread_user') || 'null');
+
+        // Auth UI elements
+        const authModal = document.getElementById('auth-modal');
+        const navGuest = document.getElementById('nav-guest');
+        const navUser = document.getElementById('nav-user');
+
+        function updateAuthUI() {
+            if (currentUser && authToken) {
+                // Show user nav
+                navGuest.style.display = 'none';
+                navUser.style.display = 'flex';
+
+                // Update user info
+                document.getElementById('user-name').textContent = currentUser.email.split('@')[0];
+                document.getElementById('user-avatar').textContent = currentUser.email[0].toUpperCase();
+                document.getElementById('user-level').textContent = formatLearnerLevel(currentUser.learner_level);
+            } else {
+                // Show guest nav
+                navGuest.style.display = 'flex';
+                navUser.style.display = 'none';
+            }
+        }
+
+        function formatLearnerLevel(level) {
+            const levels = {
+                'np_student': 'NP Student',
+                'ms3': 'MS3',
+                'ms4': 'MS4',
+                'intern': 'Intern',
+                'pgy2': 'PGY-2',
+                'pgy3': 'PGY-3',
+                'fellow': 'Fellow',
+                'attending': 'Attending'
+            };
+            return levels[level] || level || 'Learner';
+        }
+
+        function showAuthModal(tab = 'login') {
+            authModal.classList.add('active');
+            switchAuthTab(tab);
+        }
+
+        function hideAuthModal() {
+            authModal.classList.remove('active');
+            // Clear forms
+            document.getElementById('login-form').reset();
+            document.getElementById('signup-form').reset();
+            document.getElementById('login-error').classList.remove('show');
+            document.getElementById('signup-error').classList.remove('show');
+            document.getElementById('signup-success').classList.remove('show');
+        }
+
+        function switchAuthTab(tab) {
+            document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+            document.querySelector(`[data-auth-tab="${tab}"]`).classList.add('active');
+            document.getElementById(`${tab}-form`).classList.add('active');
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            const errorEl = document.getElementById('login-error');
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+
+            errorEl.classList.remove('show');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i data-lucide="loader" class="icon animate-pulse"></i> Signing in...';
+            lucide.createIcons();
+
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Login failed');
+                }
+
+                // Store auth data
+                authToken = data.access_token;
+                currentUser = data.user;
+                localStorage.setItem('oread_token', authToken);
+                localStorage.setItem('oread_user', JSON.stringify(currentUser));
+
+                // Update UI
+                updateAuthUI();
+                hideAuthModal();
+
+            } catch (error) {
+                errorEl.textContent = error.message;
+                errorEl.classList.add('show');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Sign In';
+            }
+        }
+
+        async function handleSignup(e) {
+            e.preventDefault();
+            const email = document.getElementById('signup-email').value;
+            const password = document.getElementById('signup-password').value;
+            const learnerLevel = document.getElementById('signup-level').value;
+            const errorEl = document.getElementById('signup-error');
+            const successEl = document.getElementById('signup-success');
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+
+            errorEl.classList.remove('show');
+            successEl.classList.remove('show');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i data-lucide="loader" class="icon animate-pulse"></i> Creating account...';
+            lucide.createIcons();
+
+            try {
+                const response = await fetch('/api/auth/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, learner_level: learnerLevel })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Signup failed');
+                }
+
+                // Store auth data
+                authToken = data.access_token;
+                currentUser = data.user;
+                localStorage.setItem('oread_token', authToken);
+                localStorage.setItem('oread_user', JSON.stringify(currentUser));
+
+                // Update UI
+                updateAuthUI();
+                hideAuthModal();
+
+            } catch (error) {
+                errorEl.textContent = error.message;
+                errorEl.classList.add('show');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Create Account';
+            }
+        }
+
+        async function handleLogout() {
+            try {
+                await fetch('/api/auth/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+
+            // Clear local state
+            authToken = null;
+            currentUser = null;
+            localStorage.removeItem('oread_token');
+            localStorage.removeItem('oread_user');
+
+            updateAuthUI();
+        }
+
+        // Helper to add auth header to requests
+        function authHeaders() {
+            return authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+        }
+
         // State
         let patients = [];
         let selectedPatientId = null;
@@ -1255,10 +1714,43 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
+            updateAuthUI();
             loadPatients();
             setupEventListeners();
+            setupAuthListeners();
             lucide.createIcons();
         });
+
+        function setupAuthListeners() {
+            // Show login modal
+            document.getElementById('btn-show-login').addEventListener('click', () => showAuthModal('login'));
+
+            // Auth tabs
+            document.querySelectorAll('.auth-tab').forEach(tab => {
+                tab.addEventListener('click', () => switchAuthTab(tab.dataset.authTab));
+            });
+
+            // Login form
+            document.getElementById('login-form').addEventListener('submit', handleLogin);
+
+            // Signup form
+            document.getElementById('signup-form').addEventListener('submit', handleSignup);
+
+            // Logout
+            document.getElementById('btn-logout').addEventListener('click', handleLogout);
+
+            // Close modal on overlay click
+            authModal.addEventListener('click', (e) => {
+                if (e.target === authModal) hideAuthModal();
+            });
+
+            // Close modal on Escape key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && authModal.classList.contains('active')) {
+                    hideAuthModal();
+                }
+            });
+        }
 
         function setupEventListeners() {
             // Quick generate

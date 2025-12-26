@@ -3,7 +3,7 @@
 **Last Updated:** December 2025
 **Full Plan:** `docs/LEARNING_PLATFORM_PLAN.md`
 
-## Current Status: Patient Generator Complete
+## Current Status: Phase 2 In Progress
 
 ### Completed Features
 - [x] Parallel LLM generation (7.4x speedup)
@@ -12,6 +12,7 @@
 - [x] Developmental screening
 - [x] UI improvements (fonts, icons, wrapping)
 - [x] LLM Phases 1-3, 5-6 (narratives, HPI, assessment, guidance)
+- [x] **Time Travel** - Disease arc visualization with 6 arcs, timeline API, and interactive UI
 
 ---
 
@@ -27,7 +28,7 @@
 ### Phase 2: Clinical Depth
 | # | Feature | Status | Priority |
 |---|---------|--------|----------|
-| 3 | Time Travel (Disease Arcs) | Not started | **Critical** |
+| 3 | Time Travel (Disease Arcs) | **Complete** | **Critical** |
 | 9 | First-Class Vaccine Engine | Not started | High |
 | 8 | Growth/Development Variations | Not started | High |
 | 4 | Results Expansion (Labs/Imaging) | Not started | High |
@@ -72,11 +73,15 @@
 
 ### Phase 2: Clinical Depth
 
-**#3 Time Travel (Disease Arcs)** - KILLER FEATURE
+**#3 Time Travel (Disease Arcs)** - COMPLETE ✓
 - See patients evolve over years
 - Atopic march: eczema → food allergy → asthma
 - RSV → reactive airway → persistent asthma
 - Age slider UI with clinical decision points
+- 6 disease arcs implemented (Atopic March, RSV→Asthma, Obesity Cascade, ADHD+Comorbidities, Recurrent AOM, Functional GI)
+- Progression rules in conditions.yaml
+- Timeline API endpoints
+- Interactive web UI with "What Changed" panel
 
 **#9 Vaccine Engine**
 - Catch-up schedule calculator

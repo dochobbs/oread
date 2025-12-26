@@ -6,7 +6,16 @@ This file provides context for AI assistants (Claude Code, Cursor, etc.) working
 
 ## Project Overview
 
-**Oread** is a synthetic pediatric patient generator that creates clinically coherent, longitudinal medical records. It produces FHIR R4 bundles, C-CDA 2.1 documents, structured JSON, and human-readable Markdown.
+**Oread** is a synthetic pediatric patient generator and **learning platform** that creates clinically coherent, longitudinal medical records. It produces FHIR R4 bundles, C-CDA 2.1 documents, structured JSON, and human-readable Markdown.
+
+### Learning Platform Features (December 2025)
+
+Oread is evolving from a patient generator into a **pediatric learning platform** with:
+
+1. **User Authentication** - Supabase-based login with learner levels (NP student → Attending)
+2. **Patient Panels** - Mass-generate patient panels for continuity clinic simulation
+3. **Single Case Generation** - Generate new encounters for existing patients with difficulty scaling
+4. **Time Travel** - See how conditions evolve across a patient's lifespan (killer feature!)
 
 ### Quick Commands
 
@@ -49,19 +58,68 @@ oread/
 │
 ├── knowledge/
 │   ├── conditions/        # Condition definitions
-│   │   └── conditions.yaml # Main conditions file with SNOMED/RxNorm/LOINC
+│   │   ├── conditions.yaml # Main conditions with SNOMED/RxNorm/LOINC + progression rules
+│   │   └── disease_arcs.yaml # Disease arc definitions for Time Travel
 │   ├── growth/            # CDC 2000 growth charts
 │   └── immunizations/     # AAP vaccine schedule
+│
+├── src/db/                # Database layer (Supabase)
+│   ├── client.py          # Supabase connection
+│   └── repositories.py    # User, Panel, Patient repos
 │
 ├── docs/                  # Documentation
 │   ├── QUICKSTART.md      # Getting started guide
 │   ├── CONDITION_SCHEMA.md # Condition YAML schema reference
-│   └── ARCHITECTURE.md    # System architecture
+│   ├── ARCHITECTURE.md    # System architecture
+│   └── TIME_TRAVEL_DESIGN.md # Time Travel feature design
 │
 └── tests/                 # Test suite
 ```
 
 ## What's Built (Working)
+
+### Time Travel Feature (December 2025)
+
+The **killer feature** for medical education - learners can "scrub" through time to watch diseases progress.
+
+**Backend:**
+- `TimeSnapshot` model - Patient state at a point in time
+- `DiseaseArc` model - Progression of related conditions with stages
+- `generate_timeline()` method in PedsEngine
+- API endpoints: `GET /timeline`, `GET /timeline/at/{age}`
+
+**Frontend:**
+- Timeline slider in patient header (scrub from birth to current age)
+- Orange markers for key moments (new conditions, medication changes)
+- "What Changed" panel showing transitions
+- Timeline tab with disease arc visualization + clinical pearls
+
+**Disease Arcs Implemented:**
+| Arc | Stages |
+|-----|--------|
+| Atopic March | Eczema → Food allergy → Asthma → Allergic rhinitis |
+| RSV → Asthma | Bronchiolitis → Reactive Airway → Asthma |
+| Obesity Cascade | Overweight → Obesity → Prediabetes → T2DM |
+| ADHD + Internalizing | ADHD → Anxiety → Depression |
+| Recurrent AOM | First AOM → Recurrent AOM → Tubes |
+| Functional GI | Infant reflux → Constipation → Functional abdominal pain |
+
+**Key Files:**
+- `knowledge/conditions/disease_arcs.yaml` - Arc definitions
+- `src/engines/engine.py:3292` - `generate_timeline()` method
+- `server.py:1064` - Timeline API endpoints
+- `web/index.html` - Timeline UI components
+
+### Learning Platform (December 2025)
+
+- **Authentication**: Supabase login with JWT tokens, learner levels
+- **Patient Panels**: Mass-generate panels, associate with users
+- **Single Case Generation**: New encounters with 5 difficulty levels
+  - Level 1 (Routine): Straightforward presentations
+  - Level 2 (Standard): Common illness, clear diagnosis
+  - Level 3 (Complex): Multiple factors, decisions needed
+  - Level 4 (Challenging): Atypical presentations
+  - Level 5 (Zebra): Rare or unexpected diagnoses
 
 ### Condition-Aware Generation (v2.0 - December 2025)
 
@@ -233,28 +291,24 @@ curl http://localhost:8000/api/patients/{id}
 
 ## What Needs Building
 
-### Priority 1: More Conditions
-Add remaining pediatric conditions following the v2.0 schema:
-- `allergy/food_allergy.yaml`
-- `behavioral/anxiety.yaml`
-- `behavioral/autism.yaml`
-- `gi/constipation.yaml`
-- `ent/sinusitis.yaml`
-- More respiratory conditions
+See `docs/ROADMAP.md` for detailed phasing. Summary:
 
-### Priority 2: Chronic Condition Logic
-Currently acute illness is well-handled. Need:
-- Chronic condition follow-up visits
-- Medication refills
-- Lab monitoring
+### Phase 2 (In Progress): Clinical Depth
+- ✅ Time Travel - Disease arc visualization
+- ⬜ Vaccine Engine - Catch-up calculator, hesitancy scenarios
+- ⬜ Growth/Development - Normal variations, screening integration
+- ⬜ Results Expansion - Comprehensive lab panels, radiology
 
-### Priority 3: Adult Engine
-`AdultEngine` stub exists but needs implementation.
+### Phase 3: Learning Experience
+- ⬜ Echo (AI Attending) - Socratic questioning, clinical feedback
+- ⬜ Documentation Practice - Note writing with AI feedback
+- ⬜ Billing/Coding Practice - E&M levels, ICD-10 exercises
+- ⬜ Edge Cases - Expert-curated zebras
 
-### Priority 4: Enhanced Features
-- Provider style variation
-- Fragmented/incomplete records
-- Multi-provider care
+### Phase 4: Platform & Retention
+- ⬜ Competency Mapping - ACGME/AAP milestones
+- ⬜ Spaced Repetition - Case review scheduling
+- ⬜ Artifacts - School forms, 504 plans, prior auth
 
 ## Testing
 
@@ -286,13 +340,25 @@ After significant changes, update:
 
 ## Recent Changes (December 2025)
 
-1. Restructured conditions.yaml to v2.0 schema
-2. Added SNOMED, RxNorm, LOINC codes throughout
-3. Implemented illness-aware vitals
-4. Added probabilistic symptoms and PE findings
-5. Created weight-based medication dosing
-6. Updated all 4 exporters for code systems
-7. Created comprehensive documentation
+**Learning Platform (Phase 1 Complete):**
+1. Supabase integration with user authentication
+2. Patient panels with mass generation
+3. Single case generation with 5 difficulty levels
+4. Login/signup UI in web interface
+
+**Time Travel (Phase 2 Core Feature):**
+5. TimeSnapshot, DiseaseArc, DecisionPoint models
+6. Disease progression rules in conditions.yaml
+7. Six disease arcs (Atopic March, RSV→Asthma, Obesity, ADHD, AOM, GI)
+8. Timeline API endpoints
+9. Timeline slider UI with key moment markers
+10. Disease arc visualization with clinical pearls
+
+**Earlier (v2.0):**
+11. Restructured conditions.yaml to v2.0 schema
+12. Added SNOMED, RxNorm, LOINC codes throughout
+13. Implemented illness-aware vitals
+14. Created weight-based medication dosing
 
 ## Notes for Development
 

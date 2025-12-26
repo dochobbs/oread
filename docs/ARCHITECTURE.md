@@ -58,6 +58,8 @@ FastAPI REST API. Key endpoints:
 - `POST /api/generate` - Generate patient
 - `GET /api/patients/{id}` - Get patient data
 - `GET /api/patients/{id}/export/{format}` - Export patient
+- `GET /api/panels/{panel_id}/patients/{patient_id}/timeline` - Get full timeline
+- `GET /api/panels/{panel_id}/patients/{patient_id}/timeline/at/{age_months}` - Get snapshot at age
 
 ### 2. Generation Engine (`src/engines/engine.py`)
 
@@ -96,6 +98,19 @@ class PedsEngine:
 | `_generate_labs()` | Generate lab results with LOINC codes |
 | `_generate_acute_illness_plan()` | Create treatment plan with RxNorm meds |
 
+#### Time Travel Methods
+
+| Method | Purpose |
+|--------|---------|
+| `generate_timeline()` | Generate complete patient timeline with snapshots |
+| `get_snapshot_at_age()` | Get patient state at specific age |
+| `_load_disease_arcs()` | Load disease arc definitions from YAML |
+| `_infer_disease_arcs()` | Determine applicable arcs for patient |
+| `_simulate_arc_progressions()` | Simulate condition transitions over time |
+| `_get_conditions_at_age()` | Get active conditions at specific age |
+| `_get_medications_at_age()` | Get active medications at specific age |
+| `_interpolate_growth()` | Calculate growth measurements at any age |
+
 ### 3. Knowledge Base (`knowledge/`)
 
 #### Conditions (`knowledge/conditions/conditions.yaml`)
@@ -106,8 +121,28 @@ YAML-based condition definitions with:
 - Probabilistic symptoms and PE findings
 - LOINC-coded lab definitions
 - RxNorm-coded treatment protocols
+- Progression rules for disease evolution
 
 See [CONDITION_SCHEMA.md](CONDITION_SCHEMA.md) for complete schema.
+
+#### Disease Arcs (`knowledge/conditions/disease_arcs.yaml`)
+
+Longitudinal disease progressions for Time Travel:
+
+| Arc | Stages |
+|-----|--------|
+| Atopic March | Eczema → Food Allergy → Asthma → Allergic Rhinitis |
+| RSV → Asthma | Bronchiolitis → Reactive Airway Disease → Asthma |
+| Obesity Cascade | Overweight → Obesity → Prediabetes → Type 2 Diabetes |
+| ADHD + Comorbidities | ADHD → Anxiety → Depression |
+| Recurrent AOM | First AOM → Recurrent AOM → Tubes |
+| Functional GI | Reflux → Constipation → Functional Abdominal Pain |
+
+Each arc includes:
+- Typical age ranges for each stage
+- Symptoms and treatments per stage
+- Transition triggers
+- Clinical pearls and references
 
 #### Growth Charts (`knowledge/growth/`)
 
@@ -150,6 +185,16 @@ PhysicalExamFindingDef # PE finding with probability
 LabDefinition        # Lab test definition
 MedicationDefinition # Medication with dosing
 ConditionDefinition  # Complete condition schema
+
+# Time Travel models
+MedicationChangeType # Enum: started, stopped, dose_changed
+ArcStageStatus       # Enum: not_started, active, resolved
+MedicationChange     # Medication change event
+DecisionPoint        # Clinical decision moment
+TimeSnapshot         # Patient state at a point in time
+ArcStage             # Single stage in a disease arc
+DiseaseArc           # Complete disease progression
+PatientTimeline      # Full timeline with snapshots and arcs
 ```
 
 ### 5. Exporters (`src/exporters/`)
@@ -325,9 +370,89 @@ HR: 115 (1.1x normal)
 2. Add generation logic in `src/engines/engine.py`
 3. Add scheduling logic in `_build_encounter_timeline()`
 
+## Time Travel Architecture
+
+### Timeline Generation Flow
+
+```
+Patient (current snapshot)
+         │
+         ▼
+generate_timeline()
+         │
+    ┌────┴────────────────────┐
+    │                         │
+    ▼                         ▼
+_infer_disease_arcs()    Load disease_arcs.yaml
+         │                    │
+         └────────┬───────────┘
+                  ▼
+    _simulate_arc_progressions()
+         │
+    For each month 0 → 216 (18 years):
+    ┌────────────────────────────────────────┐
+    │ 1. Check progression rules             │
+    │ 2. Activate new conditions             │
+    │ 3. Update medication lists             │
+    │ 4. Interpolate growth measurements     │
+    │ 5. Mark key moments (new dx, med Δ)    │
+    └────────────────────────────────────────┘
+         │
+         ▼
+    list[TimeSnapshot]
+         │
+         ├─ Each snapshot contains:
+         │  - age_months, date
+         │  - active_conditions
+         │  - medications
+         │  - growth
+         │  - new_conditions, resolved_conditions
+         │  - medication_changes
+         │  - is_key_moment, event_description
+         │
+         ▼
+    list[DiseaseArc]
+         │
+         ├─ Each arc contains:
+         │  - name, description
+         │  - stages with status (not_started/active/resolved)
+         │  - current_stage_index
+         │  - clinical_pearls
+         │
+         ▼
+    API Response / Web UI
+```
+
+### Progression Rules (conditions.yaml)
+
+Conditions can define progression rules to other conditions:
+
+```yaml
+eczema:
+  progression:
+    - to: "food_allergy"
+      trigger:
+        type: "age_reached"
+        age_months: 12
+      probability: 0.35
+      decision_point:
+        description: "Consider early allergen introduction?"
+        options: ["Introduce allergens", "Delay introduction"]
+```
+
+### Web UI Components
+
+- **Timeline slider** - Drag to any age (0-216 months)
+- **Age display** - Shows current age in years/months
+- **Key moment markers** - Visual dots for significant events
+- **What changed panel** - Shows diff from previous snapshot
+- **Disease arc cards** - Displays active arcs with current stage
+
 ## Performance Considerations
 
 - Condition YAML loaded once at engine initialization
+- Disease arcs YAML loaded once at engine initialization
 - Display name to key mapping cached in `_display_to_key`
 - Growth chart calculations use vectorized numpy operations
 - Patient objects stored in memory during server session
+- Timeline snapshots generated on-demand (not persisted)

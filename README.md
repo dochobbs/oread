@@ -24,6 +24,7 @@ Oread creates longitudinal pediatric medical records for AI evaluation, EMR demo
 - **Patient messages** - Portal and phone messages with office replies (FHIR Communication)
 - **Medical history** - Resolved conditions and past medications from acute visits
 - **Chart messiness** - Realistic artifacts like abbreviations, copy-forward errors, and dictation mistakes
+- **Time Travel** - Visualize disease progression over a patient's lifespan with interactive timeline
 
 ## Quick Start
 
@@ -166,6 +167,37 @@ Oread generates realistic patient-provider communications:
 
 Messages are generated based on patient complexity and a random "messaging frequency" factor.
 
+## Time Travel (Disease Arc Visualization)
+
+See how patients evolve over their lifespan. Time Travel compresses years of disease progression into an interactive timeline slider.
+
+### Disease Arcs
+
+| Arc | Progression |
+|-----|-------------|
+| **Atopic March** | Eczema → Food Allergy → Asthma → Allergic Rhinitis |
+| **RSV → Asthma** | RSV Bronchiolitis → Reactive Airway Disease → Asthma |
+| **Obesity Cascade** | Overweight → Obesity → Prediabetes → Type 2 Diabetes |
+| **ADHD + Comorbidities** | ADHD → Anxiety Disorder → Depression |
+| **Recurrent AOM** | First AOM → Recurrent AOM → Tympanostomy Tubes |
+| **Functional GI** | Infant Reflux → Functional Constipation → Functional Abdominal Pain |
+
+### Features
+
+- **Interactive timeline slider** - Drag to any age to see the patient's clinical state
+- **Key moments** - Automatic markers for new diagnoses, medication changes
+- **What changed panel** - Side-by-side comparison of conditions and medications
+- **Disease arc visualization** - See current stage and progression in each arc
+- **Clinical pearls** - Teaching points for each disease progression
+
+```bash
+# API: Get full timeline
+GET /api/panels/{panel_id}/patients/{patient_id}/timeline
+
+# API: Get snapshot at specific age
+GET /api/panels/{panel_id}/patients/{patient_id}/timeline/at/{age_months}
+```
+
 ## Project Structure
 
 ```
@@ -180,6 +212,8 @@ oread/
 │   └── llm/            # Claude API client
 ├── knowledge/
 │   ├── conditions/     # Condition definitions (YAML)
+│   │   ├── conditions.yaml   # Conditions with progression rules
+│   │   └── disease_arcs.yaml # Disease arc definitions
 │   ├── growth/         # CDC 2000 growth charts
 │   └── immunizations/  # AAP vaccine schedule
 ├── docs/               # Documentation

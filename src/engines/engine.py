@@ -3268,6 +3268,439 @@ VITAL SIGNS:
 
         return encounter
 
+    # =========================================================================
+    # TIME TRAVEL: Timeline Generation Methods
+    # =========================================================================
+
+    _disease_arcs_cache: dict | None = None
+
+    @classmethod
+    def _load_disease_arcs(cls, knowledge_dir: Path) -> dict:
+        """Load disease arcs from YAML file, with caching."""
+        if cls._disease_arcs_cache is not None:
+            return cls._disease_arcs_cache
+
+        arcs_path = knowledge_dir / "conditions" / "disease_arcs.yaml"
+        if arcs_path.exists():
+            with open(arcs_path, 'r') as f:
+                cls._disease_arcs_cache = yaml.safe_load(f)
+        else:
+            cls._disease_arcs_cache = {}
+
+        return cls._disease_arcs_cache
+
+    def generate_timeline(
+        self,
+        patient: Patient,
+        arc_names: list[str] | None = None,
+        snapshot_interval_months: int = 6,
+    ) -> tuple[list["TimeSnapshot"], list["DiseaseArc"]]:
+        """
+        Generate timeline snapshots and disease arcs for a patient.
+
+        This is the core Time Travel feature - it creates a series of
+        snapshots showing the patient's clinical state at different ages,
+        tracking disease progression over time.
+
+        Args:
+            patient: The patient to generate timeline for
+            arc_names: Optional list of disease arcs to include (e.g., ['atopic_march'])
+            snapshot_interval_months: Months between regular snapshots (default: 6)
+
+        Returns:
+            Tuple of (snapshots, disease_arcs)
+        """
+        from src.models.patient import (
+            TimeSnapshot, DiseaseArc, ArcStage, ArcStageStatus,
+            DecisionPoint, MedicationChange, MedicationChangeType
+        )
+
+        # Load disease arc definitions
+        arc_defs = self._load_disease_arcs(self.knowledge_dir)
+
+        demographics = patient.demographics
+        current_age_months = demographics.age_months
+        dob = demographics.date_of_birth
+
+        # Determine which arcs to simulate
+        if arc_names:
+            active_arc_keys = [k for k in arc_names if k in arc_defs]
+        else:
+            # Infer arcs from patient's conditions
+            active_arc_keys = self._infer_disease_arcs(patient, arc_defs)
+
+        # Build DiseaseArc objects from definitions
+        disease_arcs = []
+        for arc_key in active_arc_keys:
+            arc_def = arc_defs.get(arc_key, {})
+            if not arc_def:
+                continue
+
+            stages = []
+            for stage_def in arc_def.get("stages", []):
+                age_range = stage_def.get("typical_age_range", [0, 264])
+                stage = ArcStage(
+                    condition_key=stage_def.get("condition_key", ""),
+                    display_name=stage_def.get("display_name", ""),
+                    typical_age_range=(age_range[0], age_range[1]),
+                    symptoms=stage_def.get("symptoms", []),
+                    treatments=stage_def.get("treatments", []),
+                    transition_triggers=stage_def.get("transition_triggers", []),
+                )
+                stages.append(stage)
+
+            arc = DiseaseArc(
+                name=arc_def.get("name", arc_key),
+                description=arc_def.get("description", ""),
+                stages=stages,
+                clinical_pearls=arc_def.get("clinical_pearls", []),
+                references=arc_def.get("references", []),
+            )
+            disease_arcs.append(arc)
+
+        # Generate snapshots at regular intervals
+        snapshots = []
+        prev_conditions = set()
+        prev_medications = set()
+        decision_points = []
+
+        # Calculate snapshot ages
+        snapshot_ages = list(range(0, current_age_months + 1, snapshot_interval_months))
+        if current_age_months not in snapshot_ages:
+            snapshot_ages.append(current_age_months)
+
+        # Track which arc stages are active at each age
+        arc_stage_activations = self._simulate_arc_progressions(
+            disease_arcs, current_age_months, patient
+        )
+
+        for age_months in snapshot_ages:
+            snapshot_date = dob + timedelta(days=age_months * 30)
+
+            # Determine active conditions at this age
+            active_conditions = self._get_conditions_at_age(
+                patient, age_months, arc_stage_activations
+            )
+            active_meds = self._get_medications_at_age(
+                patient, age_months, active_conditions, arc_stage_activations
+            )
+
+            # Calculate what changed
+            current_condition_names = {c.display_name for c in active_conditions}
+            current_med_names = {m.display_name for m in active_meds}
+
+            new_conditions = list(current_condition_names - prev_conditions)
+            resolved_conditions = list(prev_conditions - current_condition_names)
+
+            medication_changes = []
+            for med in current_med_names - prev_medications:
+                medication_changes.append(MedicationChange(
+                    type=MedicationChangeType.STARTED,
+                    medication=med,
+                ))
+            for med in prev_medications - current_med_names:
+                medication_changes.append(MedicationChange(
+                    type=MedicationChangeType.STOPPED,
+                    medication=med,
+                ))
+
+            # Get decision points for this age
+            age_decisions = [
+                dp for dp in decision_points
+                if age_months - 3 <= dp.age_months <= age_months
+            ]
+
+            # Determine if this is a key moment
+            is_key = bool(new_conditions or resolved_conditions or age_decisions)
+
+            # Generate event description
+            event_desc = None
+            if new_conditions:
+                event_desc = f"New: {', '.join(new_conditions)}"
+            elif resolved_conditions:
+                event_desc = f"Resolved: {', '.join(resolved_conditions)}"
+
+            # Get growth at this age (interpolate if needed)
+            growth = self._interpolate_growth(patient, age_months)
+
+            snapshot = TimeSnapshot(
+                age_months=age_months,
+                date=snapshot_date,
+                active_conditions=active_conditions,
+                medications=active_meds,
+                growth=growth,
+                new_conditions=new_conditions,
+                resolved_conditions=resolved_conditions,
+                medication_changes=medication_changes,
+                decision_points=age_decisions,
+                is_key_moment=is_key,
+                event_description=event_desc,
+            )
+            snapshots.append(snapshot)
+
+            prev_conditions = current_condition_names
+            prev_medications = current_med_names
+
+        return snapshots, disease_arcs
+
+    def _infer_disease_arcs(
+        self,
+        patient: Patient,
+        arc_defs: dict
+    ) -> list[str]:
+        """Infer which disease arcs apply to this patient based on their conditions."""
+        matching_arcs = []
+        patient_conditions = {c.display_name.lower() for c in patient.problem_list}
+
+        for arc_key, arc_def in arc_defs.items():
+            stages = arc_def.get("stages", [])
+            stage_conditions = {
+                s.get("display_name", "").lower()
+                for s in stages
+            }
+            # If patient has any of the arc's conditions, include it
+            if patient_conditions & stage_conditions:
+                matching_arcs.append(arc_key)
+
+        return matching_arcs
+
+    def _simulate_arc_progressions(
+        self,
+        disease_arcs: list["DiseaseArc"],
+        current_age_months: int,
+        patient: Patient
+    ) -> dict[str, list[tuple[int, int, str]]]:
+        """
+        Simulate when each arc stage becomes active.
+
+        Returns dict mapping arc name to list of (start_age, end_age, stage_name)
+        """
+        from src.models.patient import ArcStageStatus
+
+        activations = {}
+
+        for arc in disease_arcs:
+            arc_activations = []
+            cumulative_age = 0
+
+            for i, stage in enumerate(arc.stages):
+                # Determine when this stage activates
+                min_age, max_age = stage.typical_age_range
+
+                # Use middle of range as activation age
+                if cumulative_age < min_age:
+                    start_age = random.randint(min_age, min(max_age, current_age_months))
+                else:
+                    start_age = cumulative_age + random.randint(6, 18)
+
+                if start_age > current_age_months:
+                    # Haven't reached this stage yet
+                    break
+
+                # Determine end age (when next stage starts or current)
+                if i + 1 < len(arc.stages):
+                    next_min, _ = arc.stages[i + 1].typical_age_range
+                    end_age = min(current_age_months, next_min + random.randint(0, 12))
+                else:
+                    end_age = current_age_months
+
+                arc_activations.append((start_age, end_age, stage.display_name))
+                stage.actual_onset_age = start_age
+                stage.status = ArcStageStatus.ACTIVE if end_age >= current_age_months else ArcStageStatus.RESOLVED
+
+                cumulative_age = start_age
+
+            activations[arc.name] = arc_activations
+            arc.current_stage_index = len(arc_activations) - 1 if arc_activations else 0
+
+        return activations
+
+    def _get_conditions_at_age(
+        self,
+        patient: Patient,
+        age_months: int,
+        arc_activations: dict
+    ) -> list["Condition"]:
+        """Get the active conditions at a specific age."""
+        from src.models.patient import Condition, CodeableConcept, ConditionStatus
+
+        active_conditions = []
+
+        # Check arc-based conditions
+        for arc_name, activations in arc_activations.items():
+            for start_age, end_age, stage_name in activations:
+                if start_age <= age_months <= end_age:
+                    # This stage is active at this age
+                    # Look up condition details from database
+                    cond_key = stage_name.lower().replace(" ", "_")
+                    cond_data = self._conditions.get(cond_key, {})
+
+                    billing = cond_data.get("billing_codes", {})
+                    icd10 = billing.get("icd10", ["R69"])[0] if isinstance(billing.get("icd10"), list) else billing.get("icd10", "R69")
+                    snomed = billing.get("snomed", "")
+
+                    condition = Condition(
+                        display_name=stage_name,
+                        code=CodeableConcept(
+                            system="http://hl7.org/fhir/sid/icd-10-cm",
+                            code=icd10,
+                            display=stage_name,
+                        ),
+                        snomed_code=snomed,
+                        clinical_status=ConditionStatus.ACTIVE,
+                        onset_date=patient.demographics.date_of_birth + timedelta(days=start_age * 30),
+                    )
+                    active_conditions.append(condition)
+
+        # Also include any patient conditions that are from earlier
+        for cond in patient.problem_list:
+            if cond.onset_date:
+                onset_age = (cond.onset_date - patient.demographics.date_of_birth).days // 30
+                if onset_age <= age_months:
+                    # Check if it's not already in active_conditions
+                    if not any(c.display_name == cond.display_name for c in active_conditions):
+                        if cond.clinical_status == ConditionStatus.ACTIVE:
+                            active_conditions.append(cond)
+
+        return active_conditions
+
+    def _get_medications_at_age(
+        self,
+        patient: Patient,
+        age_months: int,
+        active_conditions: list["Condition"],
+        arc_activations: dict
+    ) -> list["Medication"]:
+        """Get medications that would be active at a specific age."""
+        from src.models.patient import Medication, MedicationStatus, CodeableConcept
+
+        active_meds = []
+        condition_names = {c.display_name.lower() for c in active_conditions}
+        dob = patient.demographics.date_of_birth
+        med_start_date = dob + timedelta(days=age_months * 30)
+
+        # Map conditions to typical medications with full details
+        # (name, rxnorm, dose_qty, dose_unit, frequency, route)
+        condition_meds = {
+            "eczema": [
+                ("Hydrocortisone 1% Cream", "310466", "Apply thin layer", "application", "BID", "topical")
+            ],
+            "asthma": [
+                ("Albuterol HFA Inhaler", "351137", "1-2", "puffs", "Q4-6H PRN", "inhaled"),
+                ("Fluticasone Propionate HFA", "315926", "1-2", "puffs", "BID", "inhaled"),
+            ],
+            "reactive airway disease": [
+                ("Albuterol HFA Inhaler", "351137", "1-2", "puffs", "Q4-6H PRN", "inhaled")
+            ],
+            "allergic rhinitis": [
+                ("Cetirizine", "203152", "5-10", "mg", "once daily", "oral"),
+                ("Fluticasone Nasal Spray", "1013996", "1-2", "sprays", "daily", "nasal"),
+            ],
+            "food allergy": [
+                ("Epinephrine Auto-Injector", "731370", "0.3", "mg", "PRN", "intramuscular")
+            ],
+            "adhd": [
+                ("Methylphenidate", "303947", "10-20", "mg", "once daily", "oral")
+            ],
+            "anxiety disorder": [
+                ("Sertraline", "311989", "25-50", "mg", "once daily", "oral")
+            ],
+            "obesity": [],  # Lifestyle modification, no meds typically
+            "prediabetes": [],
+            "type 2 diabetes": [
+                ("Metformin", "6809", "500", "mg", "BID", "oral")
+            ],
+        }
+
+        for cond_name in condition_names:
+            meds = condition_meds.get(cond_name.lower(), [])
+            for med_tuple in meds:
+                med_name, rxnorm, dose_qty, dose_unit, frequency, route = med_tuple
+                if not any(m.display_name == med_name for m in active_meds):
+                    med = Medication(
+                        display_name=med_name,
+                        code=CodeableConcept(
+                            system="http://www.nlm.nih.gov/research/umls/rxnorm",
+                            code=rxnorm,
+                            display=med_name,
+                        ),
+                        status=MedicationStatus.ACTIVE,
+                        dose_quantity=dose_qty,
+                        dose_unit=dose_unit,
+                        frequency=frequency,
+                        route=route,
+                        start_date=med_start_date,
+                    )
+                    active_meds.append(med)
+
+        return active_meds
+
+    def _interpolate_growth(
+        self,
+        patient: Patient,
+        age_months: int
+    ) -> "GrowthMeasurement | None":
+        """Get or interpolate growth measurement at a specific age."""
+        from knowledge.growth.cdc_2000 import GrowthTrajectory
+        from src.models.patient import GrowthMeasurement
+
+        if not patient.growth_data:
+            return None
+
+        # Find closest measurement
+        closest = min(
+            patient.growth_data,
+            key=lambda g: abs((g.date - patient.demographics.date_of_birth).days // 30 - age_months)
+        )
+
+        # If close enough, use it
+        closest_age = (closest.date - patient.demographics.date_of_birth).days // 30
+        if abs(closest_age - age_months) <= 3:
+            return closest
+
+        # Otherwise, interpolate using growth trajectory
+        sex = "male" if patient.demographics.sex_at_birth == Sex.MALE else "female"
+        growth = GrowthTrajectory(
+            sex=sex,
+            weight_percentile=50,  # Could be improved by inferring from existing data
+            height_percentile=50,
+            hc_percentile=50,
+        )
+        weight, height, hc, bmi = growth.generate_measurement(age_months)
+
+        return GrowthMeasurement(
+            date=patient.demographics.date_of_birth + timedelta(days=age_months * 30),
+            age_in_days=age_months * 30,
+            weight_kg=weight,
+            height_cm=height,
+            head_circumference_cm=hc if age_months <= 36 else None,
+            bmi=bmi,
+        )
+
+    def get_snapshot_at_age(
+        self,
+        patient: Patient,
+        age_months: int,
+        arc_names: list[str] | None = None,
+    ) -> tuple["TimeSnapshot", "TimeSnapshot | None"]:
+        """
+        Get the patient snapshot at a specific age.
+
+        Returns tuple of (snapshot_at_age, previous_snapshot)
+        """
+        snapshots, _ = self.generate_timeline(
+            patient,
+            arc_names=arc_names,
+            snapshot_interval_months=3,  # Higher resolution for specific lookup
+        )
+
+        # Find the closest snapshot
+        closest = min(snapshots, key=lambda s: abs(s.age_months - age_months))
+        closest_idx = snapshots.index(closest)
+
+        prev = snapshots[closest_idx - 1] if closest_idx > 0 else None
+        return closest, prev
+
 
 class AdultEngine(BaseEngine):
     """

@@ -1173,6 +1173,313 @@
         ::-webkit-scrollbar-thumb:hover {
             background: var(--text-tertiary);
         }
+
+        /* ============================================
+           TIME TRAVEL - Timeline Slider
+           ============================================ */
+        .timeline-slider-container {
+            background: rgba(255,255,255,0.05);
+            border-radius: var(--radius-md);
+            padding: var(--space-md);
+            margin-top: var(--space-md);
+            display: none; /* Hidden until timeline data loaded */
+        }
+
+        .timeline-slider-container.active {
+            display: block;
+        }
+
+        .timeline-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-sm);
+        }
+
+        .timeline-header .label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: rgba(255,255,255,0.6);
+        }
+
+        .timeline-age-display {
+            font-family: var(--font-display);
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #f5d76e;
+        }
+
+        .timeline-age-display.current {
+            color: rgba(255,255,255,0.8);
+        }
+
+        .timeline-slider-wrapper {
+            position: relative;
+            padding: var(--space-sm) 0;
+        }
+
+        .timeline-slider {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.2);
+            outline: none;
+            cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .timeline-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #f5d76e;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            transition: transform 0.15s ease;
+        }
+
+        .timeline-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+        }
+
+        .timeline-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #f5d76e;
+            cursor: pointer;
+            border: none;
+        }
+
+        .timeline-markers {
+            position: relative;
+            height: 12px;
+            margin-top: var(--space-xs);
+        }
+
+        .timeline-marker {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #f5a623;
+            transform: translateX(-50%);
+            cursor: pointer;
+            transition: transform 0.15s ease;
+        }
+
+        .timeline-marker:hover {
+            transform: translateX(-50%) scale(1.3);
+        }
+
+        .timeline-marker::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-dark);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease;
+        }
+
+        .timeline-marker:hover::after {
+            opacity: 1;
+        }
+
+        .timeline-ages {
+            display: flex;
+            justify-content: space-between;
+            margin-top: var(--space-xs);
+            font-size: 0.7rem;
+            color: rgba(255,255,255,0.5);
+            font-family: var(--font-mono);
+        }
+
+        /* What Changed Panel */
+        .what-changed-panel {
+            background: rgba(245, 167, 35, 0.15);
+            border-left: 3px solid #f5a623;
+            border-radius: 0 var(--radius-md) var(--radius-md) 0;
+            padding: var(--space-md);
+            margin-top: var(--space-md);
+            display: none;
+        }
+
+        .what-changed-panel.active {
+            display: block;
+        }
+
+        .what-changed-panel h4 {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #f5a623;
+            margin-bottom: var(--space-sm);
+        }
+
+        .what-changed-item {
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+            padding: var(--space-xs) 0;
+            font-size: 0.9rem;
+            color: rgba(255,255,255,0.9);
+        }
+
+        .what-changed-item .badge {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: var(--font-mono);
+            text-transform: uppercase;
+        }
+
+        .what-changed-item .badge.new {
+            background: rgba(45, 106, 79, 0.3);
+            color: #7dcea0;
+        }
+
+        .what-changed-item .badge.resolved {
+            background: rgba(155, 44, 44, 0.3);
+            color: #e57373;
+        }
+
+        .what-changed-item .badge.started {
+            background: rgba(45, 90, 180, 0.3);
+            color: #90caf9;
+        }
+
+        .what-changed-item .badge.stopped {
+            background: rgba(128, 128, 128, 0.3);
+            color: #bdbdbd;
+        }
+
+        /* Disease Arc Visualization */
+        .disease-arc-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: var(--space-lg);
+            margin-bottom: var(--space-lg);
+        }
+
+        .disease-arc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: var(--space-md);
+        }
+
+        .disease-arc-title {
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .disease-arc-description {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-top: var(--space-xs);
+        }
+
+        .arc-stages {
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+            margin: var(--space-lg) 0;
+            overflow-x: auto;
+            padding: var(--space-sm) 0;
+        }
+
+        .arc-stage {
+            flex-shrink: 0;
+            min-width: 140px;
+            padding: var(--space-md);
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            border: 2px solid var(--border);
+            text-align: center;
+        }
+
+        .arc-stage.active {
+            border-color: var(--accent-primary);
+            background: var(--accent-light);
+        }
+
+        .arc-stage.pending {
+            opacity: 0.5;
+        }
+
+        .arc-stage.resolved {
+            border-color: var(--text-tertiary);
+        }
+
+        .arc-stage-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: var(--space-xs);
+        }
+
+        .arc-stage-age {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+        }
+
+        .arc-connector {
+            width: 30px;
+            height: 2px;
+            background: var(--border);
+            flex-shrink: 0;
+        }
+
+        .arc-connector.active {
+            background: var(--accent-primary);
+        }
+
+        .clinical-pearls {
+            background: rgba(45, 90, 74, 0.08);
+            border-radius: var(--radius-md);
+            padding: var(--space-md);
+            margin-top: var(--space-md);
+        }
+
+        .clinical-pearls h4 {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--accent-primary);
+            margin-bottom: var(--space-sm);
+        }
+
+        .clinical-pearl {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            padding: var(--space-xs) 0;
+            padding-left: var(--space-md);
+            position: relative;
+        }
+
+        .clinical-pearl::before {
+            content: "💡";
+            position: absolute;
+            left: 0;
+        }
     </style>
 </head>
 <body>
@@ -1319,10 +1626,33 @@
                         <span id="detail-complexity" class="indicator-badge complexity-0">Healthy</span>
                         <span id="detail-messiness" class="indicator-badge messiness-0" style="display: none;">Pristine</span>
                     </div>
+
+                    <!-- Time Travel: Timeline Slider -->
+                    <div id="timeline-slider-container" class="timeline-slider-container">
+                        <div class="timeline-header">
+                            <span class="label">Time Travel</span>
+                            <span id="timeline-age-display" class="timeline-age-display current">Current age</span>
+                        </div>
+                        <div class="timeline-slider-wrapper">
+                            <input type="range" id="timeline-slider" class="timeline-slider" min="0" max="120" value="120">
+                            <div id="timeline-markers" class="timeline-markers"></div>
+                        </div>
+                        <div class="timeline-ages">
+                            <span>Birth</span>
+                            <span id="timeline-max-age">Current</span>
+                        </div>
+
+                        <!-- What Changed Panel -->
+                        <div id="what-changed-panel" class="what-changed-panel">
+                            <h4>What Changed</h4>
+                            <div id="what-changed-content"></div>
+                        </div>
+                    </div>
                 </div>
-                
+
                 <div class="detail-tabs">
                     <button class="detail-tab active" data-tab="overview">Overview</button>
+                    <button class="detail-tab" data-tab="timeline">Timeline</button>
                     <button class="detail-tab" data-tab="encounters">Encounters</button>
                     <button class="detail-tab" data-tab="messages">Messages</button>
                     <button class="detail-tab" data-tab="record">Full Record</button>
@@ -1356,7 +1686,22 @@
                             </button>
                         </div>
                     </div>
-                    
+
+                    <!-- Timeline tab (Time Travel) -->
+                    <div id="tab-timeline" class="tab-content" style="display: none;">
+                        <h3 class="section-title">Disease Progression Timeline</h3>
+                        <p style="color: var(--text-secondary); margin-bottom: var(--space-lg);">
+                            See how this patient's conditions evolved over time. Use the slider above to travel through their medical history.
+                        </p>
+                        <div id="disease-arcs-container">
+                            <!-- Populated dynamically -->
+                            <div class="empty-state" style="padding: var(--space-xl); text-align: center; color: var(--text-tertiary);">
+                                <i data-lucide="clock" style="width: 48px; height: 48px; margin-bottom: var(--space-md);"></i>
+                                <p>Loading timeline data...</p>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Encounters tab -->
                     <div id="tab-encounters" class="tab-content" style="display: none;">
                         <h3 class="section-title">Encounter Timeline</h3>
@@ -2134,6 +2479,9 @@
                 const mdData = await mdResponse.json();
                 document.getElementById('markdown-content').innerHTML = renderMarkdown(mdData.markdown);
 
+                // Initialize timeline slider
+                initializeTimeline(patient);
+
                 // Show detail view
                 patientsView.style.display = 'none';
                 patientDetail.classList.add('active');
@@ -2243,6 +2591,250 @@
                     const cells = match.split('|').filter(c => c.trim());
                     return '<tr>' + cells.map(c => `<td>${c.trim()}</td>`).join('') + '</tr>';
                 });
+        }
+
+        // ============================================
+        // TIME TRAVEL - Timeline Functions
+        // ============================================
+
+        let timelineData = null;
+        let currentSelectedAge = null;
+        let currentPanelId = null;
+
+        function initializeTimeline(patient) {
+            const ageMonths = patient.demographics.age_months || 0;
+            const slider = document.getElementById('timeline-slider');
+            const sliderContainer = document.getElementById('timeline-slider-container');
+            const ageDisplay = document.getElementById('timeline-age-display');
+            const maxAgeLabel = document.getElementById('timeline-max-age');
+
+            // Set slider max to patient's current age
+            slider.max = ageMonths;
+            slider.value = ageMonths;
+            currentSelectedAge = ageMonths;
+
+            // Update age display
+            ageDisplay.textContent = formatAgeDisplay(ageMonths);
+            ageDisplay.classList.add('current');
+            maxAgeLabel.textContent = formatAgeDisplay(ageMonths);
+
+            // Show the timeline slider
+            sliderContainer.classList.add('active');
+
+            // Add slider event listener
+            slider.addEventListener('input', (e) => {
+                const selectedAge = parseInt(e.target.value);
+                currentSelectedAge = selectedAge;
+                updateTimelineDisplay(selectedAge, ageMonths);
+            });
+
+            // Load timeline data if user is authenticated
+            if (authToken && selectedPatientId) {
+                loadTimelineData(selectedPatientId);
+            }
+        }
+
+        function formatAgeDisplay(ageMonths) {
+            const years = Math.floor(ageMonths / 12);
+            const months = ageMonths % 12;
+
+            if (years === 0) {
+                return `${months}mo`;
+            } else if (months === 0) {
+                return `${years}y`;
+            } else {
+                return `${years}y ${months}mo`;
+            }
+        }
+
+        function updateTimelineDisplay(selectedAge, currentAge) {
+            const ageDisplay = document.getElementById('timeline-age-display');
+
+            if (selectedAge === currentAge) {
+                ageDisplay.textContent = formatAgeDisplay(currentAge);
+                ageDisplay.classList.add('current');
+                ageDisplay.classList.remove('time-travel');
+                hideWhatChanged();
+            } else {
+                ageDisplay.textContent = `Viewing at ${formatAgeDisplay(selectedAge)}`;
+                ageDisplay.classList.remove('current');
+                ageDisplay.classList.add('time-travel');
+
+                // Find and show what changed at this age
+                if (timelineData) {
+                    const snapshot = findSnapshotAtAge(selectedAge);
+                    if (snapshot) {
+                        showWhatChanged(snapshot);
+                    }
+                }
+            }
+        }
+
+        function findSnapshotAtAge(ageMonths) {
+            if (!timelineData || !timelineData.snapshots) return null;
+
+            // Find the closest snapshot
+            let closest = null;
+            let minDiff = Infinity;
+
+            for (const snapshot of timelineData.snapshots) {
+                const diff = Math.abs(snapshot.age_months - ageMonths);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    closest = snapshot;
+                }
+            }
+
+            return closest;
+        }
+
+        function showWhatChanged(snapshot) {
+            const panel = document.getElementById('what-changed-panel');
+            const content = document.getElementById('what-changed-content');
+
+            const items = [];
+
+            // New conditions
+            for (const cond of snapshot.new_conditions || []) {
+                items.push(`<div class="what-changed-item"><span class="badge new">New</span>${cond}</div>`);
+            }
+
+            // Resolved conditions
+            for (const cond of snapshot.resolved_conditions || []) {
+                items.push(`<div class="what-changed-item"><span class="badge resolved">Resolved</span>${cond}</div>`);
+            }
+
+            // Medication changes
+            for (const change of snapshot.medication_changes || []) {
+                const badge = change.type === 'started' ? 'started' : 'stopped';
+                items.push(`<div class="what-changed-item"><span class="badge ${badge}">${change.type}</span>${change.medication}</div>`);
+            }
+
+            if (items.length > 0) {
+                content.innerHTML = items.join('');
+                panel.classList.add('active');
+            } else {
+                hideWhatChanged();
+            }
+        }
+
+        function hideWhatChanged() {
+            const panel = document.getElementById('what-changed-panel');
+            panel.classList.remove('active');
+        }
+
+        async function loadTimelineData(patientId) {
+            if (!authToken || !currentPanelId) {
+                console.log('Timeline: No auth token or panel ID, skipping load');
+                return;
+            }
+
+            try {
+                const response = await fetch(
+                    `/api/panels/${currentPanelId}/patients/${patientId}/timeline`,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                );
+
+                if (response.ok) {
+                    timelineData = await response.json();
+                    console.log('Timeline loaded:', timelineData);
+
+                    // Render markers for key moments
+                    renderTimelineMarkers(timelineData);
+
+                    // Render disease arcs in Timeline tab
+                    renderDiseaseArcs(timelineData.disease_arcs || []);
+                } else {
+                    console.log('Timeline: Failed to load -', response.status);
+                }
+            } catch (error) {
+                console.log('Timeline: Error loading -', error.message);
+            }
+        }
+
+        function renderTimelineMarkers(data) {
+            const markersContainer = document.getElementById('timeline-markers');
+            const currentAge = data.current_age_months || 0;
+
+            if (currentAge === 0) return;
+
+            markersContainer.innerHTML = '';
+
+            for (const snapshot of data.snapshots || []) {
+                if (snapshot.is_key_moment && snapshot.age_months > 0) {
+                    const position = (snapshot.age_months / currentAge) * 100;
+                    const marker = document.createElement('div');
+                    marker.className = 'timeline-marker';
+                    marker.style.left = `${position}%`;
+                    marker.dataset.tooltip = snapshot.event_description || formatAgeDisplay(snapshot.age_months);
+                    marker.addEventListener('click', () => {
+                        document.getElementById('timeline-slider').value = snapshot.age_months;
+                        updateTimelineDisplay(snapshot.age_months, currentAge);
+                    });
+                    markersContainer.appendChild(marker);
+                }
+            }
+        }
+
+        function renderDiseaseArcs(arcs) {
+            const container = document.getElementById('disease-arcs-container');
+
+            if (!arcs || arcs.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state" style="padding: var(--space-xl); text-align: center; color: var(--text-tertiary);">
+                        <i data-lucide="clock" style="width: 48px; height: 48px; margin-bottom: var(--space-md);"></i>
+                        <p>No disease progression detected for this patient.</p>
+                        <p style="font-size: 0.85rem; margin-top: var(--space-sm);">Patients with chronic conditions will show their disease arc timeline here.</p>
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
+            container.innerHTML = arcs.map(arc => `
+                <div class="disease-arc-card">
+                    <div class="disease-arc-header">
+                        <div>
+                            <div class="disease-arc-title">${arc.name}</div>
+                            <div class="disease-arc-description">${arc.description}</div>
+                        </div>
+                    </div>
+
+                    <div class="arc-stages">
+                        ${arc.stages.map((stage, i) => `
+                            ${i > 0 ? `<div class="arc-connector ${stage.status === 'active' || stage.status === 'resolved' ? 'active' : ''}"></div>` : ''}
+                            <div class="arc-stage ${stage.status}">
+                                <div class="arc-stage-name">${stage.display_name}</div>
+                                <div class="arc-stage-age">
+                                    ${stage.actual_onset_age != null
+                                        ? `Started at ${formatAgeDisplay(stage.actual_onset_age)}`
+                                        : `Typical: ${formatAgeDisplay(stage.typical_age_range[0])}-${formatAgeDisplay(stage.typical_age_range[1])}`
+                                    }
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    ${arc.clinical_pearls && arc.clinical_pearls.length > 0 ? `
+                        <div class="clinical-pearls">
+                            <h4>Clinical Pearls</h4>
+                            ${arc.clinical_pearls.map(pearl => `
+                                <div class="clinical-pearl">${pearl}</div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+        }
+
+        // Store panel ID when patient is selected (for timeline API calls)
+        function setCurrentPanelId(panelId) {
+            currentPanelId = panelId;
         }
     </script>
 </body>

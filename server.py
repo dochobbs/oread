@@ -1050,6 +1050,230 @@ async def get_encounter(
     raise HTTPException(status_code=404, detail="Encounter not found")
 
 
+# =============================================================================
+# TIME TRAVEL ENDPOINTS
+# =============================================================================
+
+
+class TimelineRequest(BaseModel):
+    """Request model for timeline generation."""
+    arc_names: list[str] | None = None
+    snapshot_interval_months: int = 6
+
+
+@app.get("/api/panels/{panel_id}/patients/{patient_id}/timeline")
+async def get_patient_timeline(
+    panel_id: str,
+    patient_id: str,
+    arc_names: str | None = None,
+    interval: int = 6,
+    user: AuthenticatedUser = Depends(get_current_user)
+):
+    """
+    Get the patient's timeline showing disease progression over time.
+
+    This is the core Time Travel API - it returns snapshots at different ages
+    showing how conditions, medications, and clinical state evolved.
+    """
+    panel_repo = PanelRepository()
+    patient_repo = PatientRepository()
+
+    # Verify panel access
+    panel = panel_repo.get_by_id(panel_id)
+    if not panel:
+        raise HTTPException(status_code=404, detail="Panel not found")
+
+    if panel["owner_id"] != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get patient
+    db_patient = patient_repo.get_by_id(patient_id)
+    if not db_patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    if db_patient["panel_id"] != panel_id:
+        raise HTTPException(status_code=403, detail="Patient does not belong to this panel")
+
+    # Reconstruct Patient object
+    full_record = db_patient.get("full_record", {})
+    try:
+        from src.models import Patient
+        patient = Patient(**full_record)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading patient: {str(e)}")
+
+    # Parse arc_names from query param
+    arc_list = arc_names.split(",") if arc_names else None
+
+    # Generate timeline
+    from src.engines import PedsEngine
+    engine = PedsEngine(use_llm=False)
+    snapshots, disease_arcs = engine.generate_timeline(
+        patient=patient,
+        arc_names=arc_list,
+        snapshot_interval_months=interval,
+    )
+
+    # Convert to serializable format
+    return {
+        "patient_id": patient_id,
+        "current_age_months": patient.demographics.age_months,
+        "snapshots": [
+            {
+                "age_months": s.age_months,
+                "date": s.date.isoformat(),
+                "active_conditions": [
+                    {"display_name": c.display_name, "code": c.code.code if c.code else None}
+                    for c in s.active_conditions
+                ],
+                "medications": [
+                    {"name": m.name, "dosage": m.dosage}
+                    for m in s.medications
+                ],
+                "new_conditions": s.new_conditions,
+                "resolved_conditions": s.resolved_conditions,
+                "medication_changes": [
+                    {"type": mc.type.value, "medication": mc.medication}
+                    for mc in s.medication_changes
+                ],
+                "is_key_moment": s.is_key_moment,
+                "event_description": s.event_description,
+                "growth": {
+                    "weight_kg": s.growth.weight_kg,
+                    "height_cm": s.growth.height_cm,
+                    "bmi": s.growth.bmi,
+                } if s.growth else None,
+            }
+            for s in snapshots
+        ],
+        "disease_arcs": [
+            {
+                "id": arc.id,
+                "name": arc.name,
+                "description": arc.description,
+                "current_stage_index": arc.current_stage_index,
+                "stages": [
+                    {
+                        "condition_key": stage.condition_key,
+                        "display_name": stage.display_name,
+                        "typical_age_range": list(stage.typical_age_range),
+                        "actual_onset_age": stage.actual_onset_age,
+                        "status": stage.status.value,
+                        "symptoms": stage.symptoms,
+                        "treatments": stage.treatments,
+                    }
+                    for stage in arc.stages
+                ],
+                "clinical_pearls": arc.clinical_pearls,
+            }
+            for arc in disease_arcs
+        ],
+    }
+
+
+@app.get("/api/panels/{panel_id}/patients/{patient_id}/timeline/at/{age_months}")
+async def get_snapshot_at_age(
+    panel_id: str,
+    patient_id: str,
+    age_months: int,
+    arc_names: str | None = None,
+    user: AuthenticatedUser = Depends(get_current_user)
+):
+    """
+    Get the patient's clinical state at a specific age.
+
+    Returns the snapshot at that age plus the previous snapshot for comparison.
+    """
+    panel_repo = PanelRepository()
+    patient_repo = PatientRepository()
+
+    # Verify panel access
+    panel = panel_repo.get_by_id(panel_id)
+    if not panel:
+        raise HTTPException(status_code=404, detail="Panel not found")
+
+    if panel["owner_id"] != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get patient
+    db_patient = patient_repo.get_by_id(patient_id)
+    if not db_patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    if db_patient["panel_id"] != panel_id:
+        raise HTTPException(status_code=403, detail="Patient does not belong to this panel")
+
+    # Reconstruct Patient object
+    full_record = db_patient.get("full_record", {})
+    try:
+        from src.models import Patient
+        patient = Patient(**full_record)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading patient: {str(e)}")
+
+    # Validate age
+    if age_months < 0 or age_months > patient.demographics.age_months:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Age must be between 0 and {patient.demographics.age_months} months"
+        )
+
+    # Parse arc_names from query param
+    arc_list = arc_names.split(",") if arc_names else None
+
+    # Get snapshot
+    from src.engines import PedsEngine
+    engine = PedsEngine(use_llm=False)
+    snapshot, prev_snapshot = engine.get_snapshot_at_age(
+        patient=patient,
+        age_months=age_months,
+        arc_names=arc_list,
+    )
+
+    def snapshot_to_dict(s):
+        if not s:
+            return None
+        return {
+            "age_months": s.age_months,
+            "date": s.date.isoformat(),
+            "active_conditions": [
+                {"display_name": c.display_name, "code": c.code.code if c.code else None}
+                for c in s.active_conditions
+            ],
+            "medications": [
+                {"name": m.name, "dosage": m.dosage}
+                for m in s.medications
+            ],
+            "new_conditions": s.new_conditions,
+            "resolved_conditions": s.resolved_conditions,
+            "medication_changes": [
+                {"type": mc.type.value, "medication": mc.medication}
+                for mc in s.medication_changes
+            ],
+            "is_key_moment": s.is_key_moment,
+            "event_description": s.event_description,
+            "growth": {
+                "weight_kg": s.growth.weight_kg,
+                "height_cm": s.growth.height_cm,
+                "bmi": s.growth.bmi,
+            } if s.growth else None,
+        }
+
+    return {
+        "age_months": age_months,
+        "snapshot": snapshot_to_dict(snapshot),
+        "previous_snapshot": snapshot_to_dict(prev_snapshot),
+        "changes": {
+            "new_conditions": snapshot.new_conditions,
+            "resolved_conditions": snapshot.resolved_conditions,
+            "medication_changes": [
+                {"type": mc.type.value, "medication": mc.medication}
+                for mc in snapshot.medication_changes
+            ],
+        }
+    }
+
+
 # Mount static files for web UI
 web_dir = project_root / "web"
 if web_dir.exists():

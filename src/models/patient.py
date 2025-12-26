@@ -1254,6 +1254,10 @@ class Patient(BaseModel):
     # Patient communications (portal messages, phone calls)
     patient_messages: list[PatientMessage] = Field(default_factory=list)
 
+    # Time Travel data (populated when generate_timeline=True)
+    timeline_snapshots: list["TimeSnapshot"] = Field(default_factory=list)
+    disease_arcs: list["DiseaseArc"] = Field(default_factory=list)
+
     # Generation metadata
     generation_seed: dict[str, Any] = Field(default_factory=dict)
     engine_version: str = "1.0.0"
@@ -1337,3 +1341,105 @@ class GenerationSeed(BaseModel):
 
     # Reproducibility
     random_seed: int | None = Field(default=None, description="Seed for random generation")
+
+    # Time Travel options
+    disease_arcs: list[str] | None = Field(default=None, description="Disease arcs to include (e.g., 'atopic_march')")
+    generate_timeline: bool = Field(default=False, description="Generate timeline snapshots")
+    snapshot_interval_months: int = Field(default=6, ge=1, le=12, description="Interval between snapshots")
+
+
+# =============================================================================
+# TIME TRAVEL MODELS
+# =============================================================================
+
+
+class MedicationChangeType(str, Enum):
+    """Type of medication change."""
+    STARTED = "started"
+    STOPPED = "stopped"
+    DOSE_CHANGED = "dose_changed"
+
+
+class ArcStageStatus(str, Enum):
+    """Status of a disease arc stage."""
+    PENDING = "pending"
+    ACTIVE = "active"
+    IMPROVING = "improving"
+    RESOLVED = "resolved"
+
+
+class MedicationChange(BaseModel):
+    """Record of a medication change at a point in time."""
+    type: MedicationChangeType
+    medication: str
+    details: str | None = None
+
+
+class DecisionPoint(BaseModel):
+    """A clinical decision point in the patient's history."""
+    id: str = Field(default_factory=generate_id)
+    age_months: int
+    description: str  # The clinical question
+    decision_made: str  # What was decided
+    alternatives: list[str] = Field(default_factory=list)  # Other options considered
+    rationale: str | None = None  # Why this choice
+    outcome: str | None = None  # What happened as a result
+
+
+class TimeSnapshot(BaseModel):
+    """Patient clinical state at a specific point in time."""
+    age_months: int
+    date: date
+
+    # Clinical state at this point
+    active_conditions: list[Condition] = Field(default_factory=list)
+    medications: list[Medication] = Field(default_factory=list)
+    growth: GrowthMeasurement | None = None
+
+    # What changed since previous snapshot
+    new_conditions: list[str] = Field(default_factory=list)  # Condition display names
+    resolved_conditions: list[str] = Field(default_factory=list)
+    medication_changes: list[MedicationChange] = Field(default_factory=list)
+
+    # Events at this time
+    encounters: list[Encounter] = Field(default_factory=list)
+    decision_points: list[DecisionPoint] = Field(default_factory=list)
+
+    # UI metadata
+    is_key_moment: bool = False
+    event_description: str | None = None
+
+
+class ArcStage(BaseModel):
+    """One stage in a disease arc progression."""
+    condition_key: str
+    display_name: str
+    typical_age_range: tuple[int, int]  # months (min, max)
+    actual_onset_age: int | None = None  # When it happened for this patient
+    status: ArcStageStatus = ArcStageStatus.PENDING
+
+    symptoms: list[str] = Field(default_factory=list)
+    treatments: list[str] = Field(default_factory=list)
+    transition_triggers: list[str] = Field(default_factory=list)  # What causes progression
+
+
+class DiseaseArc(BaseModel):
+    """A tracked progression of related conditions over time."""
+    id: str = Field(default_factory=generate_id)
+    name: str  # e.g., "Atopic March"
+    description: str
+    stages: list[ArcStage] = Field(default_factory=list)
+    current_stage_index: int = 0
+
+    # Teaching content
+    clinical_pearls: list[str] = Field(default_factory=list)
+    references: list[str] = Field(default_factory=list)
+
+
+class PatientTimeline(BaseModel):
+    """Complete timeline data for a patient."""
+    patient_id: str
+    current_age_months: int
+    snapshots: list[TimeSnapshot] = Field(default_factory=list)
+    disease_arcs: list[DiseaseArc] = Field(default_factory=list)
+    decision_points: list[DecisionPoint] = Field(default_factory=list)

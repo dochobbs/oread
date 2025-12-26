@@ -181,6 +181,33 @@ bronchiolitis:
     peak_months: [11, 12, 1, 2, 3]
     weight_multiplier: 3.0
 
+  # Time Travel: RSV → Asthma pathway
+  progression:
+    - to: "reactive_airway_disease"
+      trigger:
+        type: "age_reached"
+        age_months: 18
+      probability: 0.30
+      risk_factors:
+        - "hospitalized_for_rsv"     # increases to 0.45
+        - "family_history_asthma"    # increases to 0.50
+        - "eczema"                   # increases to 0.55
+      decision_point:
+        description: "Start albuterol PRN for recurrent wheeze?"
+        alternatives: ["Observation only", "Albuterol PRN", "Daily controller"]
+        typical_decision: "Prescribe albuterol PRN with asthma action plan"
+
+    - to: "asthma"
+      trigger:
+        type: "condition_duration"
+        from_condition: "reactive_airway_disease"
+        duration_months: 24
+      probability: 0.40
+      decision_point:
+        description: "Transition from RAD to asthma diagnosis?"
+        alternatives: ["Continue RAD label", "Diagnose asthma", "Spirometry testing"]
+        typical_decision: "Diagnose asthma and start inhaled corticosteroid"
+
   vitals_impact:
     temp_f: [99.5, 101.5]
     hr_multiplier: 1.20
@@ -998,6 +1025,78 @@ asthma:
       - "Identify and avoid known triggers"
       - "Return if: increased rescue inhaler use, nighttime symptoms, or poor control"
 
+reactive_airway_disease:
+  display_name: "Reactive Airway Disease"
+  aliases: ["RAD", "Recurrent wheeze", "Post-viral wheeze"]
+
+  billing_codes:
+    icd10: ["J45.20"]  # Often coded as mild intermittent asthma
+    snomed: "195967001"
+
+  category: chronic
+  system: respiratory
+
+  demographics:
+    age_months: { min: 6, peak: [12, 48], max: 60 }
+    gender_bias: { male: 0.55, female: 0.45 }
+    risk_factors: ["prior_bronchiolitis", "family_history_asthma", "eczema", "smoke_exposure"]
+
+  prevalence:
+    notes: "Transitional diagnosis before formal asthma diagnosis in young children"
+
+  vitals_impact:  # During exacerbation
+    temp_f: [98.6, 100.0]
+    hr_multiplier: 1.15
+    rr_multiplier: 1.20
+    spo2_min: 93
+
+  presentation:
+    symptoms:
+      - { name: "wheezing", probability: 0.85, description: "expiratory wheeze with viral illness" }
+      - { name: "cough", probability: 0.80, description: "worse at night, triggered by URI" }
+      - { name: "tachypnea", probability: 0.60, description: "during exacerbations" }
+    triggers: ["viral illness", "cold air"]
+    physical_exam:
+      - { system: "respiratory", finding: "Expiratory wheezes during exacerbation", probability: 0.80 }
+      - { system: "respiratory", finding: "Clear lungs between episodes", probability: 0.90 }
+
+  diagnostics:
+    labs: []  # Clinical diagnosis
+
+  treatment:
+    approach: "rescue_medication"
+    medications:
+      - agent: "Albuterol HFA Inhaler"
+        rxnorm: "351137"
+        frequency: "1-2 puffs Q4-6H PRN"
+        route: "inhaled"
+        indication: "rescue medication for wheeze episodes"
+        prn: true
+    patient_instructions:
+      - "Use albuterol when wheezing or with respiratory illness"
+      - "Use spacer with mask for young children"
+      - "Return if increased work of breathing or rescue inhaler use increases"
+
+  # Time Travel: progression to asthma
+  progression:
+    - to: "asthma"
+      trigger:
+        type: "episode_count"
+        episodes: 4
+        within_months: 12
+      probability: 0.60
+      decision_point:
+        description: "Multiple wheeze episodes - start daily controller?"
+        alternatives: ["Continue PRN only", "Start low-dose ICS", "Pulmonology referral"]
+        typical_decision: "Start low-dose inhaled corticosteroid"
+
+    - to: "resolution"
+      trigger:
+        type: "age_reached"
+        age_months: 60
+      probability: 0.40
+      notes: "Many children with post-viral wheeze don't develop persistent asthma"
+
 eczema:
   display_name: "Eczema"
   aliases: ["Atopic dermatitis", "AD"]
@@ -1022,6 +1121,52 @@ eczema:
   comorbidities:
     strong: ["asthma", "allergic_rhinitis", "food_allergy"]
     moderate: ["anxiety", "sleep_disorders"]
+
+  # Time Travel: Disease progression rules
+  progression:
+    - to: "food_allergy"
+      trigger:
+        type: "age_reached"
+        age_months: 12
+      probability: 0.35
+      risk_factors:
+        - "family_history_atopy"  # increases to 0.50
+        - "severe_eczema"         # increases to 0.55
+      decision_point:
+        description: "Consider early allergen introduction?"
+        alternatives: ["Early introduction", "Delayed introduction", "Allergen testing first"]
+        typical_decision: "Early introduction of peanut/egg per LEAP study findings"
+
+    - to: "asthma"
+      trigger:
+        type: "age_reached"
+        age_months: 36
+      probability: 0.30
+      risk_factors:
+        - "family_history_asthma"  # increases to 0.45
+        - "severe_eczema"          # increases to 0.50
+        - "food_allergy"           # increases to 0.55
+      decision_point:
+        description: "Start asthma controller therapy?"
+        alternatives: ["PRN albuterol only", "Low-dose ICS", "Montelukast"]
+        typical_decision: "Start low-dose ICS based on symptom frequency"
+
+    - to: "allergic_rhinitis"
+      trigger:
+        type: "age_reached"
+        age_months: 72
+      probability: 0.40
+      decision_point:
+        description: "Add intranasal steroid?"
+        alternatives: ["Oral antihistamine only", "Add nasal steroid", "Referral for immunotherapy"]
+        typical_decision: "Trial of intranasal corticosteroid"
+
+    - to: "resolution"
+      trigger:
+        type: "age_reached"
+        age_months: 72
+      probability: 0.50
+      notes: "50% of children outgrow eczema by school age"
 
   vitals_impact:
     temp_f: [98.6, 98.6]  # Normal unless superinfected
@@ -1199,6 +1344,36 @@ adhd:
   presentation:
     inattentive_symptoms: ["difficulty focusing", "easily distracted", "forgetful", "loses things"]
     hyperactive_symptoms: ["fidgety", "talks excessively", "difficulty waiting turn", "impulsive"]
+
+  # Time Travel: ADHD + Comorbidities pathway
+  progression:
+    - to: "anxiety_disorder"
+      trigger:
+        type: "age_reached"
+        age_months: 96
+      probability: 0.35
+      risk_factors:
+        - "academic_struggles"      # increases to 0.50
+        - "family_history_anxiety"  # increases to 0.50
+        - "social_difficulties"     # increases to 0.55
+      decision_point:
+        description: "ADHD with emerging anxiety - add anxiety treatment?"
+        alternatives: ["Behavioral therapy only", "Add SSRI", "Combined therapy + medication"]
+        typical_decision: "Start CBT for anxiety, continue ADHD medication"
+
+    - to: "depression"
+      trigger:
+        type: "age_reached"
+        age_months: 144  # Adolescence
+      probability: 0.25
+      risk_factors:
+        - "anxiety_disorder"       # increases to 0.40
+        - "chronic_adhd"           # increases to 0.35
+        - "social_isolation"       # increases to 0.45
+      decision_point:
+        description: "Depression developing in adolescent with ADHD - treatment approach?"
+        alternatives: ["Therapy only", "Add SSRI", "Psychiatry referral"]
+        typical_decision: "Add SSRI and therapy referral"
 
   treatment:
     approach: "behavioral_plus_medication"
@@ -1435,6 +1610,33 @@ obesity:
     overweight: "85th-95th percentile"
     obese: ">95th percentile"
     severe_obese: ">120% of 95th percentile"
+
+  # Time Travel: Obesity → Metabolic Syndrome pathway
+  progression:
+    - to: "prediabetes"
+      trigger:
+        type: "age_reached"
+        age_months: 120  # Start screening at 10 or puberty
+      probability: 0.25
+      risk_factors:
+        - "family_history_t2dm"   # increases to 0.40
+        - "acanthosis_nigricans"  # increases to 0.50
+        - "severe_obesity"        # increases to 0.45
+      decision_point:
+        description: "Prediabetes identified - intensify intervention?"
+        alternatives: ["Lifestyle modification only", "Add metformin", "Diabetes prevention program"]
+        typical_decision: "Intensive lifestyle modification with dietitian"
+
+    - to: "type_2_diabetes"
+      trigger:
+        type: "condition_duration"
+        from_condition: "prediabetes"
+        duration_months: 24
+      probability: 0.30
+      decision_point:
+        description: "Progression to Type 2 DM - start metformin?"
+        alternatives: ["Metformin only", "Metformin + lifestyle", "Endocrinology referral"]
+        typical_decision: "Start metformin and refer to pediatric endocrinology"
 
   treatment:
     approach: "lifestyle_modification"

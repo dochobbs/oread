@@ -73,6 +73,15 @@ from .patient import (
     # Root
     Patient,
     GenerationSeed,
+    # Time Travel
+    MedicationChangeType,
+    ArcStageStatus,
+    MedicationChange,
+    DecisionPoint,
+    TimeSnapshot,
+    ArcStage,
+    DiseaseArc,
+    PatientTimeline,
     # Utilities
     generate_id,
 )
@@ -148,6 +157,15 @@ __all__ = [
     # Root
     "Patient",
     "GenerationSeed",
+    # Time Travel
+    "MedicationChangeType",
+    "ArcStageStatus",
+    "MedicationChange",
+    "DecisionPoint",
+    "TimeSnapshot",
+    "ArcStage",
+    "DiseaseArc",
+    "PatientTimeline",
     # Utilities
     "generate_id",
 ]

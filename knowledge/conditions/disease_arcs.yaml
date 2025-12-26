@@ -1,0 +1,233 @@
+# Disease Arc Definitions
+# These define longitudinal disease progressions for Time Travel feature
+# Last Updated: 2025-12-26
+
+atopic_march:
+  name: "Atopic March"
+  description: "Classic allergic disease progression from eczema through food allergy, asthma, and allergic rhinitis."
+
+  stages:
+    - condition_key: "eczema"
+      display_name: "Eczema"
+      typical_age_range: [1, 12]  # months
+      symptoms: ["dry skin", "pruritus", "erythematous patches"]
+      treatments: ["emollients", "topical steroids"]
+      transition_triggers: ["persistent atopy", "IgE sensitization"]
+
+    - condition_key: "food_allergy"
+      display_name: "Food Allergy"
+      typical_age_range: [6, 24]
+      symptoms: ["urticaria", "angioedema", "GI symptoms"]
+      treatments: ["allergen avoidance", "epinephrine auto-injector"]
+      transition_triggers: ["allergen exposure", "IgE-mediated sensitization"]
+
+    - condition_key: "asthma"
+      display_name: "Asthma"
+      typical_age_range: [24, 84]
+      symptoms: ["wheezing", "cough", "shortness of breath"]
+      treatments: ["rescue inhaler", "controller medications"]
+      transition_triggers: ["viral illness", "allergen exposure", "exercise"]
+
+    - condition_key: "allergic_rhinitis"
+      display_name: "Allergic Rhinitis"
+      typical_age_range: [48, 120]
+      symptoms: ["sneezing", "rhinorrhea", "nasal congestion", "itchy eyes"]
+      treatments: ["antihistamines", "nasal steroids"]
+      transition_triggers: ["pollen seasons", "environmental allergens"]
+
+  clinical_pearls:
+    - "60% of infants with moderate-severe eczema develop asthma"
+    - "Early aggressive eczema treatment may reduce atopic march progression"
+    - "Food allergy often resolves (milk, egg) but peanut/tree nut usually persist"
+    - "Allergen immunotherapy may modify disease course"
+
+  references:
+    - "AAAAI Practice Parameter: Atopic Dermatitis 2024"
+    - "GINA Guidelines 2023"
+
+rsv_to_asthma:
+  name: "RSV → Reactive Airway → Asthma"
+  description: "Progression from severe RSV bronchiolitis to recurrent wheeze and eventual asthma diagnosis."
+
+  stages:
+    - condition_key: "bronchiolitis"
+      display_name: "RSV Bronchiolitis"
+      typical_age_range: [1, 12]
+      symptoms: ["wheeze", "tachypnea", "hypoxia", "poor feeding"]
+      treatments: ["supportive care", "supplemental oxygen"]
+      transition_triggers: ["severe illness", "hospitalization"]
+
+    - condition_key: "reactive_airway_disease"
+      display_name: "Reactive Airway Disease"
+      typical_age_range: [12, 48]
+      symptoms: ["recurrent wheeze with viral illness"]
+      treatments: ["albuterol PRN"]
+      transition_triggers: ["repeated viral-induced wheeze", "3+ episodes"]
+
+    - condition_key: "asthma"
+      display_name: "Asthma"
+      typical_age_range: [36, 96]
+      symptoms: ["persistent wheeze", "nocturnal cough", "exercise intolerance"]
+      treatments: ["rescue inhaler", "inhaled corticosteroids"]
+      transition_triggers: ["symptoms between infections", "spirometry abnormal"]
+
+  clinical_pearls:
+    - "30-40% of infants hospitalized with RSV develop recurrent wheeze"
+    - "Risk factors: severe bronchiolitis, family history, atopy"
+    - "RAD diagnosis is provisional - asthma diagnosis made after age 4-5"
+    - "Palivizumab for high-risk infants reduces RSV severity"
+
+  references:
+    - "AAP Clinical Practice Guideline: Bronchiolitis 2014"
+    - "NAEPP Guidelines for Asthma 2020"
+
+obesity_cascade:
+  name: "Obesity → Metabolic Syndrome"
+  description: "Progression from overweight through obesity to metabolic complications."
+
+  stages:
+    - condition_key: "overweight"
+      display_name: "Overweight"
+      typical_age_range: [48, 120]
+      symptoms: ["BMI 85-95th percentile"]
+      treatments: ["lifestyle counseling"]
+      transition_triggers: ["continued weight gain", "sedentary lifestyle"]
+
+    - condition_key: "obesity"
+      display_name: "Obesity"
+      typical_age_range: [72, 168]
+      symptoms: ["BMI >95th percentile", "acanthosis nigricans"]
+      treatments: ["intensive lifestyle modification", "dietitian referral"]
+      transition_triggers: ["insulin resistance", "metabolic changes"]
+
+    - condition_key: "prediabetes"
+      display_name: "Prediabetes"
+      typical_age_range: [120, 192]
+      symptoms: ["impaired fasting glucose", "impaired glucose tolerance"]
+      treatments: ["lifestyle modification", "metformin consideration"]
+      transition_triggers: ["progressive insulin resistance"]
+
+    - condition_key: "type_2_diabetes"
+      display_name: "Type 2 Diabetes"
+      typical_age_range: [144, 216]
+      symptoms: ["hyperglycemia", "polyuria", "polydipsia"]
+      treatments: ["metformin", "lifestyle modification"]
+      transition_triggers: ["beta cell failure"]
+
+  clinical_pearls:
+    - "Screen overweight children 10+ with risk factors"
+    - "Acanthosis nigricans indicates insulin resistance"
+    - "7% weight loss can prevent progression from prediabetes"
+    - "Comorbidities: NAFLD, hypertension, dyslipidemia, sleep apnea"
+
+  references:
+    - "AAP Clinical Practice Guideline: Obesity 2023"
+    - "ADA Standards of Care in Diabetes 2024"
+
+adhd_with_comorbidities:
+  name: "ADHD + Internalizing Disorders"
+  description: "Evolution of ADHD with development of anxiety and/or depression over time."
+
+  stages:
+    - condition_key: "adhd"
+      display_name: "ADHD"
+      typical_age_range: [48, 96]
+      symptoms: ["inattention", "hyperactivity", "impulsivity"]
+      treatments: ["behavioral therapy", "stimulant medication"]
+      transition_triggers: ["academic stress", "social challenges"]
+
+    - condition_key: "anxiety_disorder"
+      display_name: "Anxiety Disorder"
+      typical_age_range: [72, 144]
+      symptoms: ["excessive worry", "somatic complaints", "avoidance"]
+      treatments: ["CBT", "SSRI if needed"]
+      transition_triggers: ["chronic stress", "academic pressure"]
+
+    - condition_key: "depression"
+      display_name: "Depression"
+      typical_age_range: [120, 192]
+      symptoms: ["persistent sadness", "anhedonia", "sleep changes"]
+      treatments: ["therapy", "SSRI"]
+      transition_triggers: ["adolescent transition", "social isolation"]
+
+  clinical_pearls:
+    - "50-60% of children with ADHD have a comorbid condition"
+    - "Anxiety is the most common ADHD comorbidity"
+    - "Screen for depression annually in adolescents with ADHD"
+    - "Treat most impairing condition first"
+
+  references:
+    - "AAP ADHD Clinical Practice Guideline 2019"
+    - "AACAP Practice Parameter: ADHD 2007"
+
+recurrent_aom:
+  name: "Recurrent AOM → Tubes"
+  description: "Pattern of recurrent ear infections leading to tympanostomy tube placement."
+
+  stages:
+    - condition_key: "otitis_media"
+      display_name: "First AOM Episode"
+      typical_age_range: [6, 18]
+      symptoms: ["ear pain", "fever", "irritability"]
+      treatments: ["antibiotics", "pain management"]
+      transition_triggers: ["resolved episode"]
+
+    - condition_key: "recurrent_otitis_media"
+      display_name: "Recurrent AOM"
+      typical_age_range: [12, 36]
+      symptoms: ["3+ episodes in 6 months", "OME between episodes"]
+      treatments: ["prophylactic antibiotics consideration", "ENT referral"]
+      transition_triggers: ["persistent OME", "hearing concerns"]
+
+    - condition_key: "tympanostomy_tubes"
+      display_name: "Tympanostomy Tubes"
+      typical_age_range: [12, 48]
+      symptoms: ["post-tube status", "improved hearing"]
+      treatments: ["water precautions", "follow-up audiometry"]
+      transition_triggers: ["tube extrusion", "resolution"]
+
+  clinical_pearls:
+    - "Recurrent AOM: 3+ in 6 months or 4+ in 12 months"
+    - "Risk factors: daycare, bottle propping, pacifier, smoke exposure"
+    - "Tubes reduce frequency of AOM and improve hearing"
+    - "Most children outgrow susceptibility by age 3-4"
+
+  references:
+    - "AAP Clinical Practice Guideline: Otitis Media with Effusion 2016"
+    - "AAO-HNS Clinical Practice Guideline: Tympanostomy Tubes 2022"
+
+functional_gi:
+  name: "Functional GI Disorders"
+  description: "Evolution of functional gastrointestinal disorders in childhood."
+
+  stages:
+    - condition_key: "gerd"
+      display_name: "Infant Reflux"
+      typical_age_range: [0, 12]
+      symptoms: ["regurgitation", "irritability with feeds"]
+      treatments: ["positioning", "thickened feeds"]
+      transition_triggers: ["resolution or persistence"]
+
+    - condition_key: "functional_constipation"
+      display_name: "Functional Constipation"
+      typical_age_range: [24, 72]
+      symptoms: ["withholding", "hard stools", "abdominal pain"]
+      treatments: ["osmotic laxatives", "behavioral modification"]
+      transition_triggers: ["toilet training stress", "dietary factors"]
+
+    - condition_key: "functional_abdominal_pain"
+      display_name: "Functional Abdominal Pain"
+      typical_age_range: [48, 144]
+      symptoms: ["periumbilical pain", "no organic cause"]
+      treatments: ["reassurance", "CBT", "dietary modification"]
+      transition_triggers: ["school stress", "anxiety"]
+
+  clinical_pearls:
+    - "Rome IV criteria define functional GI disorders"
+    - "Constipation is the most common cause of abdominal pain in children"
+    - "Red flags: weight loss, bloody stool, nighttime symptoms, growth failure"
+    - "Gut-brain axis plays key role in functional pain"
+
+  references:
+    - "NASPGHAN Guidelines: Constipation 2014"
+    - "Rome IV Criteria for Pediatric Functional GI Disorders"

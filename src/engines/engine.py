@@ -729,9 +729,9 @@ Examples:
             # Collect immunizations
             immunizations.extend(encounter.immunizations_given)
 
-        # Generate narrative notes in parallel if LLM is enabled
+        # Generate all LLM content in parallel if enabled
         if self.use_llm and seed.include_narrative_notes:
-            self._generate_narratives_parallel(encounters, demographics)
+            self._generate_narratives_parallel(encounters, demographics, life_arc)
 
         # Determine complexity tier
         if len(life_arc.major_conditions) == 0:
@@ -1593,10 +1593,17 @@ Examples:
         self,
         encounters: list[Encounter],
         demographics: Demographics,
+        life_arc: LifeArc | None = None,
         max_workers: int = 8
     ) -> None:
         """
-        Generate narrative notes for all encounters in parallel.
+        Generate all LLM content for encounters in parallel.
+
+        Generates:
+        - Narrative notes for all encounters
+        - Family narratives (HPI) for acute illness visits
+        - Assessment reasoning for acute illness visits
+        - Anticipatory guidance for well-child visits
 
         Uses ThreadPoolExecutor to make concurrent LLM calls, dramatically
         reducing generation time from O(n * latency) to O(n/workers * latency).
@@ -1604,26 +1611,75 @@ Examples:
         if not self.use_llm or not encounters:
             return
 
-        def generate_one(enc: Encounter) -> tuple[str, str]:
-            """Generate narrative for a single encounter, returns (encounter_id, note)."""
+        # Get conditions list for anticipatory guidance
+        conditions = life_arc.major_conditions if life_arc else []
+
+        def generate_all_for_encounter(enc: Encounter) -> dict:
+            """Generate all LLM content for a single encounter."""
             days_old = (enc.date.date() - demographics.date_of_birth).days
             age_months = days_old // 30
+
+            result = {"id": enc.id}
+
+            # Generate narrative note
             try:
-                note = self._generate_llm_narrative(enc, demographics, age_months)
+                result["narrative"] = self._generate_llm_narrative(enc, demographics, age_months)
             except Exception:
-                note = self._generate_templated_note(enc, demographics, age_months)
-            return (enc.id, note)
+                result["narrative"] = self._generate_templated_note(enc, demographics, age_months)
+
+            # Generate family narrative (HPI) for acute illness visits
+            if enc.type == EncounterType.ACUTE_ILLNESS:
+                try:
+                    result["hpi"] = self._generate_llm_family_narrative(enc, demographics, age_months)
+                except Exception:
+                    result["hpi"] = None
+
+                # Generate assessment reasoning
+                try:
+                    result["reasoning"] = self._generate_llm_assessment_reasoning(enc, demographics, age_months)
+                except Exception:
+                    result["reasoning"] = None
+
+            # Generate anticipatory guidance for well-child visits
+            if enc.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN):
+                try:
+                    result["guidance"] = self._generate_llm_anticipatory_guidance(
+                        age_months, demographics, conditions
+                    )
+                except Exception:
+                    result["guidance"] = None
+
+            return result
 
         # Run LLM calls in parallel
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(generate_one, enc): enc for enc in encounters}
+            futures = {executor.submit(generate_all_for_encounter, enc): enc for enc in encounters}
 
             for future in as_completed(futures):
-                enc_id, note = future.result()
-                # Find encounter and set narrative
+                result = future.result()
+                enc_id = result["id"]
+
+                # Find encounter and apply generated content
                 for enc in encounters:
                     if enc.id == enc_id:
-                        enc.narrative_note = note
+                        # Always set narrative note
+                        enc.narrative_note = result.get("narrative")
+
+                        # Set HPI if generated
+                        if "hpi" in result and result["hpi"]:
+                            enc.hpi = result["hpi"]
+
+                        # Set assessment reasoning if generated
+                        if "reasoning" in result and result["reasoning"]:
+                            for assessment in enc.assessment:
+                                if assessment.is_primary:
+                                    assessment.clinical_notes = result["reasoning"]
+                                    break
+
+                        # Set anticipatory guidance if generated
+                        if "guidance" in result and result["guidance"]:
+                            enc.anticipatory_guidance = result["guidance"]
+
                         break
 
     def _generate_narrative_note(self, encounter: Encounter, demographics: Demographics, age_months: int) -> str:
@@ -1721,6 +1777,236 @@ Keep it concise but complete. Sign as the provider."""
             note += f"\n\nSigned: {encounter.provider.name}, {encounter.provider.credentials}"
 
         return note
+
+    def _generate_llm_family_narrative(
+        self,
+        encounter: Encounter,
+        demographics: Demographics,
+        age_months: int
+    ) -> str:
+        """
+        Generate a family narrative (HPI) using Claude.
+
+        Phase 5: Creates a realistic narrative of how symptoms developed
+        from the parent's perspective - when they started, what they observed,
+        what they tried, and their concerns.
+        """
+        age_str = self._age_to_description(age_months)
+        pronoun = "he" if demographics.sex_at_birth == Sex.MALE else "she"
+        possessive = "his" if demographics.sex_at_birth == Sex.MALE else "her"
+
+        # Build context about the encounter
+        vitals_context = ""
+        if encounter.vital_signs:
+            vs = encounter.vital_signs
+            if vs.temperature_f and vs.temperature_f > 100.4:
+                vitals_context += f"Child has fever of {vs.temperature_f}°F. "
+            if vs.oxygen_saturation and vs.oxygen_saturation < 95:
+                vitals_context += f"Oxygen saturation is {vs.oxygen_saturation}%. "
+
+        # Get symptoms from physical exam
+        symptoms_context = ""
+        if encounter.physical_exam:
+            pe = encounter.physical_exam
+            abnormal_findings = []
+            if pe.heent and "normal" not in pe.heent.lower():
+                abnormal_findings.append(pe.heent)
+            if pe.respiratory and "clear" not in pe.respiratory.lower():
+                abnormal_findings.append(pe.respiratory)
+            if pe.skin and "normal" not in pe.skin.lower():
+                abnormal_findings.append(pe.skin)
+            if abnormal_findings:
+                symptoms_context = "Clinical findings suggest: " + "; ".join(abnormal_findings)
+
+        prompt = f"""Write a realistic parent narrative (HPI) for a pediatric visit.
+
+Patient: {age_str} {demographics.sex_at_birth.value} named {demographics.given_names[0]}
+Chief Complaint: {encounter.chief_complaint}
+Visit Type: {encounter.type.value.replace('-', ' ').title()}
+{vitals_context}
+{symptoms_context}
+
+Write 2-4 sentences from the parent's perspective describing:
+- When symptoms started (hours/days ago)
+- What they noticed and how it progressed
+- What home remedies they tried (if applicable)
+- Their main concern
+
+Use natural parent language like "started yesterday", "won't eat", "seems fussy".
+Use {pronoun}/{possessive} pronouns. Be concise but realistic."""
+
+        system = """You are helping document a pediatric visit. Write natural, realistic
+parent descriptions of childhood illness. Keep it brief and clinical-appropriate."""
+
+        try:
+            result = self.llm.generate(prompt, system=system, max_tokens=250, temperature=0.7)
+            # Clean up markdown formatting
+            lines = result.split('\n')
+            cleaned = []
+            for line in lines:
+                line = line.strip()
+                # Skip markdown headers
+                if line.startswith('#'):
+                    continue
+                # Remove bold markers
+                line = line.replace('**', '')
+                if line:
+                    cleaned.append(line)
+            return ' '.join(cleaned)
+        except Exception:
+            # Fallback to simple template
+            return f"{age_str} {demographics.sex_at_birth.value} presenting with {encounter.chief_complaint.lower()}."
+
+    def _generate_llm_assessment_reasoning(
+        self,
+        encounter: Encounter,
+        demographics: Demographics,
+        age_months: int
+    ) -> str:
+        """
+        Generate clinical reasoning for the assessment using Claude.
+
+        Phase 3: Creates the "why" behind the diagnosis - explains how
+        the clinical findings support the assessment.
+        """
+        age_str = self._age_to_description(age_months)
+
+        # Get the primary diagnosis
+        primary_dx = None
+        for a in encounter.assessment:
+            if a.is_primary:
+                primary_dx = a.diagnosis
+                break
+
+        if not primary_dx:
+            return ""
+
+        # Skip reasoning for well-child visits
+        if "well-child" in primary_dx.lower() or "healthy" in primary_dx.lower():
+            return ""
+
+        # Build clinical evidence
+        evidence = []
+
+        if encounter.vital_signs:
+            vs = encounter.vital_signs
+            if vs.temperature_f and vs.temperature_f > 100.4:
+                evidence.append(f"fever {vs.temperature_f}°F")
+            if vs.heart_rate:
+                evidence.append(f"HR {vs.heart_rate}")
+            if vs.respiratory_rate and vs.respiratory_rate > 24:
+                evidence.append(f"tachypnea RR {vs.respiratory_rate}")
+            if vs.oxygen_saturation and vs.oxygen_saturation < 95:
+                evidence.append(f"hypoxia SpO2 {vs.oxygen_saturation}%")
+
+        if encounter.physical_exam:
+            pe = encounter.physical_exam
+            if pe.heent:
+                evidence.append(f"HEENT: {pe.heent}")
+            if pe.respiratory:
+                evidence.append(f"Lungs: {pe.respiratory}")
+            if pe.skin:
+                evidence.append(f"Skin: {pe.skin}")
+
+        if encounter.lab_results:
+            for lab in encounter.lab_results:
+                if hasattr(lab, 'display_name') and hasattr(lab, 'interpretation'):
+                    if lab.interpretation:
+                        evidence.append(f"{lab.display_name}: {lab.interpretation.value}")
+
+        evidence_str = "; ".join(evidence) if evidence else "clinical presentation"
+
+        prompt = f"""Write brief clinical reasoning for this pediatric assessment.
+
+Patient: {age_str} {demographics.sex_at_birth.value}
+Chief Complaint: {encounter.chief_complaint}
+Diagnosis: {primary_dx}
+Clinical Evidence: {evidence_str}
+
+Write 1-2 sentences explaining how the findings support the diagnosis.
+Use medical shorthand and be concise. Start with "Clinical presentation..." or "History and exam..."."""
+
+        system = """You are a pediatrician documenting clinical reasoning.
+Be concise and use standard medical abbreviations."""
+
+        try:
+            return self.llm.generate(prompt, system=system, max_tokens=150, temperature=0.5)
+        except Exception:
+            return ""
+
+    def _generate_llm_anticipatory_guidance(
+        self,
+        age_months: int,
+        demographics: Demographics,
+        conditions: list[str] | None = None
+    ) -> list[str]:
+        """
+        Generate personalized anticipatory guidance using Claude.
+
+        Phase 6: Creates age-appropriate guidance that is more specific
+        and personalized than template-based lists.
+        """
+        age_str = self._age_to_description(age_months)
+
+        # Determine developmental stage
+        if age_months < 2:
+            stage = "newborn"
+        elif age_months < 6:
+            stage = "young infant"
+        elif age_months < 12:
+            stage = "older infant"
+        elif age_months < 24:
+            stage = "toddler"
+        elif age_months < 48:
+            stage = "preschooler"
+        elif age_months < 72:
+            stage = "school-age child"
+        elif age_months < 132:
+            stage = "pre-teen"
+        else:
+            stage = "adolescent"
+
+        conditions_str = ""
+        if conditions:
+            conditions_str = f"\nChronic conditions: {', '.join(conditions)}"
+
+        prompt = f"""Generate 4-5 anticipatory guidance points for a well-child visit.
+
+Patient: {age_str} {demographics.sex_at_birth.value}
+Developmental stage: {stage}{conditions_str}
+
+Provide specific, actionable guidance covering:
+- Safety appropriate for this age
+- Nutrition and feeding
+- Sleep recommendations
+- Developmental activities
+- Screen time/social considerations
+
+Be specific (e.g., "introduce finger foods" not "nutrition guidance").
+Format as a simple list, one topic per line. No bullets or numbers."""
+
+        system = """You are a pediatrician giving anticipatory guidance.
+Be specific and practical. Reference AAP recommendations where relevant."""
+
+        try:
+            response = self.llm.generate(prompt, system=system, max_tokens=300, temperature=0.6)
+            # Parse into list
+            lines = [line.strip() for line in response.split('\n') if line.strip()]
+            # Remove markdown formatting and bullet points
+            cleaned = []
+            for line in lines:
+                # Skip markdown headers and empty formatting
+                if line.startswith('#') or line.startswith('**') and line.endswith('**'):
+                    continue
+                # Remove bullet points, numbers, and markdown bold markers
+                line = line.lstrip('•-*0123456789. ')
+                line = line.replace('**', '')
+                if line and len(line) > 10:  # Skip very short lines
+                    cleaned.append(line)
+            return cleaned[:5]  # Cap at 5 items
+        except Exception:
+            # Fallback to template
+            return self._generate_anticipatory_guidance_list(age_months)
 
     def _generate_templated_note(self, encounter: Encounter, demographics: Demographics, age_months: int) -> str:
         """Generate a templated clinical note (fallback when LLM unavailable)."""

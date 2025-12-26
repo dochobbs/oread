@@ -28,7 +28,7 @@ from src.models import GenerationSeed, Sex, ComplexityTier, Patient
 from src.engines import PedsEngine
 from src.exporters import export_json, export_json_summary, export_markdown, export_fhir, export_ccda
 from src.auth import get_current_user, get_current_user_optional, AuthenticatedUser
-from src.db.client import get_client, is_configured as db_configured
+from src.db.client import get_client, get_admin_client, is_configured as db_configured
 from src.db.repositories import UserRepository, PanelRepository, PatientRepository
 
 
@@ -521,8 +521,8 @@ async def signup(request: SignUpRequest):
         if not auth_response.user:
             raise HTTPException(status_code=400, detail="Signup failed")
 
-        # Create user profile in our table
-        user_repo = UserRepository()
+        # Create user profile in our table (use admin client to bypass RLS)
+        user_repo = UserRepository(use_admin=True)
         profile = user_repo.create(
             user_id=auth_response.user.id,
             email=request.email,

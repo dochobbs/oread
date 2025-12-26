@@ -864,6 +864,50 @@ async def generate_panel_patients(
 
 
 # =============================================================================
+# PANEL PATIENT DATA ENDPOINTS
+# =============================================================================
+
+@app.get("/api/panels/{panel_id}/patients/{patient_id}")
+async def get_panel_patient(
+    panel_id: str,
+    patient_id: str,
+    user: AuthenticatedUser = Depends(get_current_user)
+):
+    """
+    Get full patient data from a panel.
+
+    Returns the complete patient record including demographics, encounters,
+    problem list, medications, immunizations, and messages.
+    """
+    panel_repo = PanelRepository()
+    patient_repo = PatientRepository()
+
+    # Verify panel access
+    panel = panel_repo.get_by_id(panel_id)
+    if not panel:
+        raise HTTPException(status_code=404, detail="Panel not found")
+
+    if panel["owner_id"] != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get patient from database
+    db_patient = patient_repo.get_by_id(patient_id)
+    if not db_patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    if db_patient["panel_id"] != panel_id:
+        raise HTTPException(status_code=403, detail="Patient does not belong to this panel")
+
+    # Return the full patient record
+    full_record = db_patient.get("full_record", {})
+
+    # Add the patient ID to the record
+    full_record["id"] = patient_id
+
+    return full_record
+
+
+# =============================================================================
 # SINGLE CASE GENERATION ENDPOINTS
 # =============================================================================
 

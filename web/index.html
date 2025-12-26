@@ -3543,18 +3543,22 @@
         }
 
         async function showPanelPatientDetail(patientId) {
-            // Load full patient data and show detail view
+            // Load full patient data from panel and show detail view
             try {
-                const response = await fetch(`/api/patients/${patientId}`, {
+                const response = await fetch(`/api/panels/${currentPanel.id}/patients/${patientId}`, {
                     headers: authHeaders()
                 });
                 if (response.ok) {
                     const patient = await response.json();
                     await displayPatientDetail(patient);
                     showView('patient-detail');
+                } else {
+                    const error = await response.json();
+                    alert('Failed to load patient: ' + (error.detail || 'Unknown error'));
                 }
             } catch (error) {
                 console.error('Failed to load patient:', error);
+                alert('Failed to load patient. Please try again.');
             }
         }
 
@@ -3789,11 +3793,14 @@
 
                 if (response.ok) {
                     const encounter = await response.json();
-                    alert(`New ${encounter.type} encounter generated!\n\nChief complaint: ${encounter.chief_complaint}`);
-                    // Reload patient detail if viewing
-                    if (selectedPatientId === patientId) {
-                        await showPanelPatientDetail(patientId);
-                    }
+
+                    // Show the patient detail view with the new encounter
+                    await showPanelPatientDetail(patientId);
+
+                    // Show success message after view is loaded
+                    setTimeout(() => {
+                        alert(`New ${encounter.type} encounter generated!\n\nChief complaint: ${encounter.chief_complaint}\n\nThe encounter has been added to the patient's chart. Check the Encounters section to see it.`);
+                    }, 100);
                 } else {
                     const error = await response.json();
                     alert('Failed to generate encounter: ' + (error.detail || 'Unknown error'));

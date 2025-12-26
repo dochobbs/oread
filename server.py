@@ -1171,7 +1171,7 @@ async def get_patient_timeline(
                     for c in s.active_conditions
                 ],
                 "medications": [
-                    {"name": m.name, "dosage": m.dosage}
+                    {"name": m.display_name, "dosage": f"{m.dose_quantity} {m.dose_unit}"}
                     for m in s.medications
                 ],
                 "new_conditions": s.new_conditions,

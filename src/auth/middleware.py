@@ -101,7 +101,16 @@ async def get_current_user(
     )
   else:
     # User exists in auth but not in profiles table
-    # This can happen if profile creation failed
+    # Auto-create the profile using admin client to bypass RLS
+    try:
+      admin_repo = UserRepository(use_admin=True)
+      admin_repo.create(
+        user_id=token_data["sub"],
+        email=token_data["email"],
+      )
+    except Exception:
+      pass  # Profile creation failed, continue anyway
+
     return AuthenticatedUser(
       id=token_data["sub"],
       email=token_data["email"],

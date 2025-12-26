@@ -678,6 +678,107 @@
             font-size: 0.65rem;
         }
 
+        /* ============================================
+           PANELS LIST
+           ============================================ */
+        .panels-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-md);
+        }
+
+        .panel-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: var(--space-lg);
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-card:hover {
+            border-color: var(--accent-tertiary);
+            box-shadow: var(--shadow-md);
+            transform: translateY(-2px);
+        }
+
+        .panel-info {
+            flex: 1;
+        }
+
+        .panel-name {
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            font-weight: 500;
+            margin-bottom: var(--space-xs);
+        }
+
+        .panel-meta {
+            display: flex;
+            gap: var(--space-md);
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .panel-patient-count {
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+            color: var(--accent-primary);
+            font-weight: 500;
+            font-size: 1.1rem;
+        }
+
+        .panel-patient-count i {
+            width: 20px;
+            height: 20px;
+        }
+
+        /* Generate patients modal */
+        .generate-modal {
+            background: var(--bg-card);
+            border-radius: var(--radius-lg);
+            padding: var(--space-xl);
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .generate-modal h3 {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            margin-bottom: var(--space-lg);
+        }
+
+        .generate-options {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-md);
+            margin-bottom: var(--space-lg);
+        }
+
+        .generate-option {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .generate-option label {
+            color: var(--text-secondary);
+        }
+
+        .generate-option input[type="number"] {
+            width: 80px;
+            padding: var(--space-sm);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-family: var(--font-body);
+            font-size: 1rem;
+            text-align: center;
+        }
+
         .patient-badges .complexity-0 { color: #2e7d32; }
         .patient-badges .complexity-1 { color: #1976d2; }
         .patient-badges .complexity-2 { color: #f9a825; }
@@ -1586,6 +1687,61 @@
     <div class="main-container">
         <!-- Main content area -->
         <main>
+            <!-- Panels view (My Panels) -->
+            <div id="panels-view" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">My Patient Panels</h2>
+                        <button id="create-panel-btn" class="btn btn-primary">
+                            <i data-lucide="plus" class="icon"></i> New Panel
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="panels-list" class="panels-list">
+                            <div class="empty-state">
+                                <div class="empty-state-icon"><i data-lucide="folder" style="width: 64px; height: 64px;"></i></div>
+                                <h3>No panels yet</h3>
+                                <p>Create a panel to organize and manage your patient cases.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel detail view -->
+            <div id="panel-detail-view" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <div style="display: flex; align-items: center; gap: var(--space-md);">
+                            <button id="back-to-panels-btn" class="btn btn-secondary" style="padding: 8px 12px;">
+                                <i data-lucide="arrow-left" class="icon"></i> Back
+                            </button>
+                            <div>
+                                <h2 class="card-title" id="panel-detail-name">Panel Name</h2>
+                                <span id="panel-patient-count" style="color: var(--text-tertiary);">0 patients</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: var(--space-sm);">
+                            <button id="generate-panel-patients-btn" class="btn btn-primary">
+                                <i data-lucide="users" class="icon"></i> Generate Patients
+                            </button>
+                            <button id="delete-panel-btn" class="btn" style="background: rgba(220,53,69,0.1); color: var(--error);">
+                                <i data-lucide="trash-2" class="icon"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="panel-patients-list" class="patients-list">
+                            <div class="empty-state">
+                                <div class="empty-state-icon"><i data-lucide="user-plus" style="width: 64px; height: 64px;"></i></div>
+                                <h3>No patients in this panel</h3>
+                                <p>Click "Generate Patients" to create patients for your panel.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Patient list view -->
             <div id="patients-view">
                 <div class="card">
@@ -2104,11 +2260,7 @@
             // Configured generate
             generateBtn.addEventListener('click', generateConfigured);
 
-            // Back button
-            backBtn.addEventListener('click', () => {
-                patientDetail.classList.remove('active');
-                patientsView.style.display = 'block';
-            });
+            // Back button - handled in setupPanelListeners for proper context
 
             // Complexity slider
             complexitySlider.addEventListener('input', () => {
@@ -2889,6 +3041,510 @@
         function setCurrentPanelId(panelId) {
             currentPanelId = panelId;
         }
+
+        // ============================================
+        // PANELS FUNCTIONALITY
+        // ============================================
+
+        let panels = [];
+        let currentPanel = null;
+        let panelPatients = [];
+
+        // View management
+        const panelsView = document.getElementById('panels-view');
+        const panelDetailView = document.getElementById('panel-detail-view');
+
+        function showView(viewName) {
+            // Hide all views
+            patientsView.style.display = 'none';
+            panelsView.style.display = 'none';
+            panelDetailView.style.display = 'none';
+            patientDetail.classList.remove('active');
+
+            // Show requested view
+            switch(viewName) {
+                case 'patients':
+                    patientsView.style.display = 'block';
+                    break;
+                case 'panels':
+                    panelsView.style.display = 'block';
+                    loadPanels();
+                    break;
+                case 'panel-detail':
+                    panelDetailView.style.display = 'block';
+                    break;
+                case 'patient-detail':
+                    patientDetail.classList.add('active');
+                    break;
+            }
+        }
+
+        async function loadPanels() {
+            if (!authToken) {
+                renderPanelsList([]);
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/panels', {
+                    headers: authHeaders()
+                });
+                const data = await response.json();
+                panels = data.panels || [];
+                renderPanelsList(panels);
+            } catch (error) {
+                console.error('Failed to load panels:', error);
+                renderPanelsList([]);
+            }
+        }
+
+        function renderPanelsList(panelsList) {
+            const container = document.getElementById('panels-list');
+
+            if (panelsList.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon"><i data-lucide="folder" style="width: 64px; height: 64px;"></i></div>
+                        <h3>No panels yet</h3>
+                        <p>Create a panel to organize and manage your patient cases.</p>
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
+            container.innerHTML = panelsList.map(panel => `
+                <div class="panel-card animate-fade-in" onclick="viewPanel('${panel.id}')">
+                    <div class="panel-info">
+                        <div class="panel-name">${panel.name}</div>
+                        <div class="panel-meta">
+                            <span>Created ${formatDate(panel.created_at)}</span>
+                        </div>
+                    </div>
+                    <div class="panel-patient-count">
+                        <i data-lucide="users"></i>
+                        <span>${panel.patient_count || 0}</span>
+                    </div>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        async function createPanel() {
+            const name = prompt('Enter a name for your new panel:', 'My Panel');
+            if (!name) return;
+
+            try {
+                const response = await fetch('/api/panels', {
+                    method: 'POST',
+                    headers: {
+                        ...authHeaders(),
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ name })
+                });
+
+                if (response.ok) {
+                    const panel = await response.json();
+                    panels.unshift(panel);
+                    renderPanelsList(panels);
+                    // Auto-open the new panel
+                    viewPanel(panel.id);
+                } else {
+                    const error = await response.json();
+                    alert('Failed to create panel: ' + (error.detail || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Failed to create panel:', error);
+                alert('Failed to create panel. Please try again.');
+            }
+        }
+
+        async function viewPanel(panelId) {
+            try {
+                const response = await fetch(`/api/panels/${panelId}`, {
+                    headers: authHeaders()
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load panel');
+                }
+
+                const data = await response.json();
+                currentPanel = data.panel;
+                panelPatients = data.patients || [];
+                setCurrentPanelId(panelId);
+
+                // Update UI
+                document.getElementById('panel-detail-name').textContent = currentPanel.name;
+                document.getElementById('panel-patient-count').textContent =
+                    `${panelPatients.length} patient${panelPatients.length !== 1 ? 's' : ''}`;
+
+                renderPanelPatientsList(panelPatients);
+                showView('panel-detail');
+            } catch (error) {
+                console.error('Failed to load panel:', error);
+                alert('Failed to load panel. Please try again.');
+            }
+        }
+
+        function renderPanelPatientsList(patientsList) {
+            const container = document.getElementById('panel-patients-list');
+
+            if (patientsList.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon"><i data-lucide="user-plus" style="width: 64px; height: 64px;"></i></div>
+                        <h3>No patients in this panel</h3>
+                        <p>Click "Generate Patients" to create patients for your panel.</p>
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
+            container.innerHTML = patientsList.map(patient => `
+                <div class="patient-card animate-fade-in" onclick="showPanelPatientDetail('${patient.id}')">
+                    <div>
+                        <div class="patient-name">${patient.name}</div>
+                        <div class="patient-meta">
+                            <span>${formatAge(patient.age_months)}</span>
+                            <span class="indicator-badge ${getComplexityClass(patient.complexity_tier)}">${formatComplexity(patient.complexity_tier)}</span>
+                        </div>
+                        ${patient.conditions && patient.conditions.length > 0 ? `
+                            <div class="patient-conditions">
+                                ${patient.conditions.slice(0, 3).map(c => `<span class="condition-tag">${c}</span>`).join('')}
+                                ${patient.conditions.length > 3 ? `<span class="condition-tag">+${patient.conditions.length - 3} more</span>` : ''}
+                            </div>
+                        ` : ''}
+                    </div>
+                    <div style="display: flex; gap: var(--space-sm);">
+                        <button class="btn btn-secondary" style="padding: 6px 10px; font-size: 0.8rem;" onclick="event.stopPropagation(); generateNewEncounter('${patient.id}')">
+                            <i data-lucide="plus-circle" class="icon" style="width: 14px; height: 14px;"></i> New Visit
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function formatAge(ageMonths) {
+            if (!ageMonths && ageMonths !== 0) return 'Unknown age';
+            const years = Math.floor(ageMonths / 12);
+            const months = ageMonths % 12;
+            if (years === 0) return `${months} mo`;
+            if (months === 0) return `${years} yr`;
+            return `${years} yr ${months} mo`;
+        }
+
+        async function showPanelPatientDetail(patientId) {
+            // Load full patient data and show detail view
+            try {
+                const response = await fetch(`/api/patients/${patientId}`, {
+                    headers: authHeaders()
+                });
+                if (response.ok) {
+                    const patient = await response.json();
+                    await displayPatientDetail(patient);
+                    showView('patient-detail');
+                }
+            } catch (error) {
+                console.error('Failed to load patient:', error);
+            }
+        }
+
+        async function displayPatientDetail(patient) {
+            selectedPatientId = patient.id;
+
+            // Update header
+            document.getElementById('detail-name').textContent = patient.demographics.full_name;
+            document.getElementById('detail-age').textContent = `${patient.demographics.age_years} years old`;
+            document.getElementById('detail-sex').textContent = capitalize(patient.demographics.sex_at_birth);
+            document.getElementById('detail-dob').textContent = `DOB: ${patient.demographics.date_of_birth}`;
+
+            // Update complexity badge
+            const complexityBadge = document.getElementById('detail-complexity');
+            complexityBadge.textContent = formatComplexity(patient.complexity_tier);
+            complexityBadge.className = `indicator-badge ${getComplexityClass(patient.complexity_tier)}`;
+
+            // Update messiness badge
+            const messinessBadge = document.getElementById('detail-messiness');
+            const messinessLevel = patient.messiness_level || 0;
+            if (messinessLevel > 0) {
+                messinessBadge.textContent = formatMessiness(messinessLevel);
+                messinessBadge.className = `indicator-badge ${getMessinessClass(messinessLevel)}`;
+                messinessBadge.style.display = 'inline-block';
+            } else {
+                messinessBadge.style.display = 'none';
+            }
+
+            // Update overview
+            const overviewGrid = document.getElementById('overview-grid');
+            const messageCount = patient.patient_messages ? patient.patient_messages.length : 0;
+            const activeConditions = patient.problem_list.filter(c => c.clinical_status === 'active').length;
+            const pastConditions = patient.problem_list.filter(c => ['resolved', 'inactive', 'remission'].includes(c.clinical_status)).length;
+            const activeMeds = patient.medication_list.filter(m => m.status === 'active').length;
+            const pastMeds = patient.medication_list.filter(m => ['completed', 'stopped'].includes(m.status)).length;
+
+            overviewGrid.innerHTML = `
+                <div class="data-item">
+                    <div class="data-label">Encounters</div>
+                    <div class="data-value">${patient.encounters.length}</div>
+                </div>
+                <div class="data-item">
+                    <div class="data-label">Active Conditions</div>
+                    <div class="data-value">${activeConditions}</div>
+                </div>
+                <div class="data-item">
+                    <div class="data-label">Past Conditions</div>
+                    <div class="data-value">${pastConditions}</div>
+                </div>
+                <div class="data-item">
+                    <div class="data-label">Active Medications</div>
+                    <div class="data-value">${activeMeds}</div>
+                </div>
+                <div class="data-item">
+                    <div class="data-label">Past Medications</div>
+                    <div class="data-value">${pastMeds}</div>
+                </div>
+                <div class="data-item">
+                    <div class="data-label">Immunizations</div>
+                    <div class="data-value">${patient.immunization_record.length}</div>
+                </div>
+                <div class="data-item">
+                    <div class="data-label">Messages</div>
+                    <div class="data-value">${messageCount}</div>
+                </div>
+            `;
+
+            // Update conditions
+            const conditionsList = document.getElementById('conditions-list');
+            const activeConditionsList = patient.problem_list.filter(c => c.clinical_status === 'active');
+            if (activeConditionsList.length > 0) {
+                conditionsList.innerHTML = activeConditionsList.map(c =>
+                    `<span class="condition-tag">${c.display_name}</span>`
+                ).join('');
+            } else {
+                conditionsList.innerHTML = '<span style="color: var(--text-tertiary)">No active conditions</span>';
+            }
+
+            // Update encounters
+            const encountersTimeline = document.getElementById('encounters-timeline');
+            const sortedEncounters = patient.encounters.sort((a, b) => new Date(b.date) - new Date(a.date));
+            encountersTimeline.innerHTML = sortedEncounters.map(enc => `
+                <div class="encounter-item">
+                    <div class="encounter-date">${formatDate(enc.date)}</div>
+                    <div class="encounter-type">${formatEncounterType(enc.type)}</div>
+                    <div class="encounter-complaint">${enc.chief_complaint}</div>
+                </div>
+            `).join('');
+
+            // Update messages
+            const messagesList = document.getElementById('messages-list');
+            const messages = patient.patient_messages || [];
+            if (messages.length > 0) {
+                const sortedMessages = messages.sort((a, b) => new Date(b.sent_datetime) - new Date(a.sent_datetime));
+                messagesList.innerHTML = sortedMessages.map(msg => `
+                    <div class="message-item animate-fade-in">
+                        <div class="message-header">
+                            <div>
+                                <span class="message-subject">${msg.subject}</span>
+                            </div>
+                            <div class="message-meta">
+                                <span class="message-category">${formatMessageCategory(msg.category)}</span>
+                                <span class="message-medium">${msg.medium}</span>
+                                <span>${formatDate(msg.sent_datetime)}</span>
+                            </div>
+                        </div>
+                        <div class="message-body">
+                            <div class="message-from">From: ${msg.sender_name}</div>
+                            <div class="message-content">${msg.message_body}</div>
+                            ${msg.reply_body ? `
+                                <div class="message-reply">
+                                    <div class="message-from">Reply from: ${msg.replier_name || 'Office Staff'} (${msg.replier_role || 'Staff'}) - ${formatDate(msg.reply_datetime)}</div>
+                                    <div class="message-content">${msg.reply_body}</div>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                messagesList.innerHTML = `
+                    <div class="message-empty">
+                        <p>No patient messages in this chart.</p>
+                    </div>
+                `;
+            }
+
+            // Load markdown for full record
+            try {
+                const mdResponse = await fetch(`/api/patients/${patient.id}?format=markdown`);
+                const mdData = await mdResponse.json();
+                document.getElementById('markdown-content').innerHTML = renderMarkdown(mdData.markdown);
+            } catch (e) {
+                console.error('Failed to load markdown:', e);
+            }
+
+            // Initialize timeline slider
+            initializeTimeline(patient);
+
+            // Reset to overview tab
+            document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+            document.querySelector('.detail-tab[data-tab="overview"]').classList.add('active');
+            document.getElementById('tab-overview').style.display = 'block';
+        }
+
+        async function generatePanelPatients() {
+            if (!currentPanel) return;
+
+            const countStr = prompt('How many patients to generate?', '20');
+            if (!countStr) return;
+
+            const count = parseInt(countStr);
+            if (isNaN(count) || count < 1 || count > 50) {
+                alert('Please enter a number between 1 and 50');
+                return;
+            }
+
+            const btn = document.getElementById('generate-panel-patients-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader" class="icon animate-pulse"></i> Generating...';
+            lucide.createIcons();
+
+            try {
+                const response = await fetch(`/api/panels/${currentPanel.id}/generate?count=${count}`, {
+                    method: 'POST',
+                    headers: authHeaders()
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    alert(`Generated ${data.generated_count} patients!`);
+                    // Reload the panel to show new patients
+                    await viewPanel(currentPanel.id);
+                } else {
+                    const error = await response.json();
+                    alert('Failed to generate patients: ' + (error.detail || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Failed to generate patients:', error);
+                alert('Failed to generate patients. Please try again.');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="users" class="icon"></i> Generate Patients';
+                lucide.createIcons();
+            }
+        }
+
+        async function deletePanel() {
+            if (!currentPanel) return;
+
+            const confirmed = confirm(`Are you sure you want to delete "${currentPanel.name}"?\n\nThis will delete all patients in this panel. This action cannot be undone.`);
+            if (!confirmed) return;
+
+            try {
+                const response = await fetch(`/api/panels/${currentPanel.id}`, {
+                    method: 'DELETE',
+                    headers: authHeaders()
+                });
+
+                if (response.ok) {
+                    currentPanel = null;
+                    panelPatients = [];
+                    showView('panels');
+                } else {
+                    alert('Failed to delete panel. Please try again.');
+                }
+            } catch (error) {
+                console.error('Failed to delete panel:', error);
+                alert('Failed to delete panel. Please try again.');
+            }
+        }
+
+        async function generateNewEncounter(patientId) {
+            const difficultyStr = prompt('Difficulty level (1=Routine, 2=Standard, 3=Complex, 4=Challenging, 5=Zebra):', '2');
+            if (!difficultyStr) return;
+
+            const difficulty = parseInt(difficultyStr);
+            if (isNaN(difficulty) || difficulty < 1 || difficulty > 5) {
+                alert('Please enter a number between 1 and 5');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/panels/${currentPanel.id}/patients/${patientId}/encounters`, {
+                    method: 'POST',
+                    headers: {
+                        ...authHeaders(),
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ difficulty_level: difficulty })
+                });
+
+                if (response.ok) {
+                    const encounter = await response.json();
+                    alert(`New ${encounter.type} encounter generated!\n\nChief complaint: ${encounter.chief_complaint}`);
+                    // Reload patient detail if viewing
+                    if (selectedPatientId === patientId) {
+                        await showPanelPatientDetail(patientId);
+                    }
+                } else {
+                    const error = await response.json();
+                    alert('Failed to generate encounter: ' + (error.detail || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Failed to generate encounter:', error);
+                alert('Failed to generate encounter. Please try again.');
+            }
+        }
+
+        // Setup panel event listeners
+        function setupPanelListeners() {
+            // My Panels nav link
+            document.getElementById('nav-panels').addEventListener('click', (e) => {
+                e.preventDefault();
+                showView('panels');
+            });
+
+            // Generate nav links
+            document.getElementById('nav-generate').addEventListener('click', (e) => {
+                e.preventDefault();
+                showView('patients');
+            });
+            document.getElementById('nav-generate-auth').addEventListener('click', (e) => {
+                e.preventDefault();
+                showView('patients');
+            });
+
+            // Create panel button
+            document.getElementById('create-panel-btn').addEventListener('click', createPanel);
+
+            // Back to panels button
+            document.getElementById('back-to-panels-btn').addEventListener('click', () => {
+                showView('panels');
+            });
+
+            // Generate panel patients button
+            document.getElementById('generate-panel-patients-btn').addEventListener('click', generatePanelPatients);
+
+            // Delete panel button
+            document.getElementById('delete-panel-btn').addEventListener('click', deletePanel);
+
+            // Update back button to handle panel context
+            document.getElementById('back-btn').addEventListener('click', () => {
+                if (currentPanel) {
+                    showView('panel-detail');
+                } else {
+                    showView('patients');
+                }
+            });
+        }
+
+        // Initialize panel listeners on DOM load
+        document.addEventListener('DOMContentLoaded', () => {
+            setupPanelListeners();
+        });
     </script>
 </body>
 </html>

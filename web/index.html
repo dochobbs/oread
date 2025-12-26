@@ -5,10 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Oread | Synthetic Patient Generator</title>
     
-    <!-- Fonts: Distinctive choices -->
+    <!-- Fonts: Editorial style - Crimson Pro + Work Sans + JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,700;1,9..144,400&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Work+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Icons: Lucide -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     
     <style>
         :root {
@@ -35,9 +38,9 @@
             --border: #e5e3df;
             --border-light: #f0eeeb;
             
-            /* Typography */
-            --font-display: 'Fraunces', Georgia, serif;
-            --font-body: 'DM Sans', -apple-system, sans-serif;
+            /* Typography - Editorial style */
+            --font-display: 'Crimson Pro', Georgia, serif;
+            --font-body: 'Work Sans', -apple-system, sans-serif;
             --font-mono: 'JetBrains Mono', monospace;
             
             /* Spacing */
@@ -909,6 +912,25 @@
         .animate-pulse {
             animation: pulse 1.5s ease-in-out infinite;
         }
+
+        /* ============================================
+           LUCIDE ICONS
+           ============================================ */
+        .icon {
+            width: 16px;
+            height: 16px;
+            vertical-align: middle;
+            display: inline-block;
+        }
+
+        .btn .icon {
+            margin-right: 2px;
+        }
+
+        .quick-generate .icon {
+            width: 20px;
+            height: 20px;
+        }
         
         /* ============================================
            RESPONSIVE
@@ -989,7 +1011,7 @@
                     <div class="card-body">
                         <div id="patients-list" class="patients-list">
                             <div class="empty-state">
-                                <div class="empty-state-icon">👤</div>
+                                <div class="empty-state-icon"><i data-lucide="user" style="width: 64px; height: 64px;"></i></div>
                                 <h3>No patients yet</h3>
                                 <p>Click "Quick Generate" to create your first synthetic patient.</p>
                             </div>
@@ -1043,16 +1065,16 @@
                         
                         <div class="export-buttons">
                             <button class="btn btn-primary" id="export-json">
-                                <span>📄</span> JSON
+                                <i data-lucide="file-json" class="icon"></i> JSON
                             </button>
                             <button class="btn btn-secondary" id="export-fhir">
-                                <span>🏥</span> FHIR
+                                <i data-lucide="heart-pulse" class="icon"></i> FHIR
                             </button>
                             <button class="btn btn-secondary" id="export-ccda">
-                                <span>📋</span> C-CDA
+                                <i data-lucide="clipboard-list" class="icon"></i> C-CDA
                             </button>
                             <button class="btn btn-secondary" id="export-markdown">
-                                <span>📝</span> Markdown
+                                <i data-lucide="file-text" class="icon"></i> Markdown
                             </button>
                         </div>
                     </div>
@@ -1087,7 +1109,7 @@
         <!-- Generator sidebar -->
         <aside class="generator-panel">
             <button id="quick-generate" class="quick-generate">
-                <span>⚡</span> Quick Generate
+                <i data-lucide="zap" class="icon"></i> Quick Generate
             </button>
             
             <div class="card">
@@ -1235,6 +1257,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             loadPatients();
             setupEventListeners();
+            lucide.createIcons();
         });
 
         function setupEventListeners() {
@@ -1330,7 +1353,8 @@
         async function quickGenerate() {
             quickGenerateBtn.classList.add('loading');
             quickGenerateBtn.disabled = true;
-            quickGenerateBtn.innerHTML = '<span class="animate-pulse">⏳</span> Starting...';
+            quickGenerateBtn.innerHTML = '<i data-lucide="loader" class="icon animate-pulse"></i> Starting...';
+            lucide.createIcons();
 
             try {
                 // Start the async generation job
@@ -1350,7 +1374,8 @@
 
                         if (status.status === 'completed') {
                             // Success! Load the patient
-                            quickGenerateBtn.innerHTML = '<span>✓</span> Done!';
+                            quickGenerateBtn.innerHTML = '<i data-lucide="check" class="icon"></i> Done!';
+                            lucide.createIcons();
                             const patientResp = await fetch(`/api/patients/${status.patient_id}`);
                             const patientSummary = {
                                 id: status.patient_id,
@@ -1363,7 +1388,8 @@
                             setTimeout(() => {
                                 quickGenerateBtn.classList.remove('loading');
                                 quickGenerateBtn.disabled = false;
-                                quickGenerateBtn.innerHTML = '<span>⚡</span> Quick Generate';
+                                quickGenerateBtn.innerHTML = '<i data-lucide="zap" class="icon"></i> Quick Generate';
+                                lucide.createIcons();
                             }, 1000);
                         } else if (status.status === 'failed') {
                             throw new Error(status.error || 'Generation failed');
@@ -1373,7 +1399,8 @@
                             const mins = Math.floor(elapsed / 60000);
                             const secs = Math.floor((elapsed % 60000) / 1000);
                             const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-                            quickGenerateBtn.innerHTML = `<span class="animate-pulse">⏳</span> Generating... ${timeStr}`;
+                            quickGenerateBtn.innerHTML = `<i data-lucide="loader" class="icon animate-pulse"></i> Generating... ${timeStr}`;
+                            lucide.createIcons();
 
                             if (elapsed < maxWait) {
                                 setTimeout(poll, pollInterval);
@@ -1394,7 +1421,8 @@
                 alert('Failed to generate patient: ' + error.message);
                 quickGenerateBtn.classList.remove('loading');
                 quickGenerateBtn.disabled = false;
-                quickGenerateBtn.innerHTML = '<span>⚡</span> Quick Generate';
+                quickGenerateBtn.innerHTML = '<i data-lucide="zap" class="icon"></i> Quick Generate';
+                lucide.createIcons();
             }
         }
         
@@ -1418,7 +1446,8 @@
 
             generateBtn.disabled = true;
             const modeLabel = useLlm ? 'Generating with AI...' : 'Generating...';
-            generateBtn.innerHTML = `<span class="animate-pulse">⏳</span> ${modeLabel}`;
+            generateBtn.innerHTML = `<i data-lucide="loader" class="icon animate-pulse"></i> ${modeLabel}`;
+            lucide.createIcons();
 
             try {
                 const response = await fetch('/api/generate', {
@@ -1447,11 +1476,12 @@
             if (patients.length === 0) {
                 patientsList.innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-state-icon">👤</div>
+                        <div class="empty-state-icon"><i data-lucide="user" style="width: 64px; height: 64px;"></i></div>
                         <h3>No patients yet</h3>
                         <p>Click "Quick Generate" to create your first synthetic patient.</p>
                     </div>
                 `;
+                lucide.createIcons();
                 return;
             }
             

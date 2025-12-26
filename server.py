@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 
 # Setup paths
 project_root = Path(__file__).parent
@@ -27,6 +27,9 @@ if str(project_root) not in sys.path:
 from src.models import GenerationSeed, Sex, ComplexityTier, Patient
 from src.engines import PedsEngine
 from src.exporters import export_json, export_json_summary, export_markdown, export_fhir, export_ccda
+from src.auth import get_current_user, get_current_user_optional, AuthenticatedUser
+from src.db.client import get_client, is_configured as db_configured
+from src.db.repositories import UserRepository, PanelRepository, PatientRepository
 
 
 # Create FastAPI app
@@ -460,6 +463,370 @@ async def get_stats():
         "tier_distribution": tier_dist,
         "age_distribution": age_dist,
         "sex_distribution": sex_dist,
+    }
+
+
+# =============================================================================
+# AUTH ENDPOINTS
+# =============================================================================
+
+class SignUpRequest(BaseModel):
+    """Request model for user signup."""
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    display_name: Optional[str] = None
+    learner_level: Optional[str] = None
+    institution: Optional[str] = None
+
+
+class LoginRequest(BaseModel):
+    """Request model for user login."""
+    email: EmailStr
+    password: str
+
+
+class AuthResponse(BaseModel):
+    """Response model for auth endpoints."""
+    access_token: str
+    refresh_token: str
+    user: dict
+
+
+class UserProfile(BaseModel):
+    """Response model for user profile."""
+    id: str
+    email: str
+    display_name: Optional[str] = None
+    role: str = "learner"
+    learner_level: Optional[str] = None
+    institution: Optional[str] = None
+
+
+@app.post("/api/auth/signup", response_model=AuthResponse)
+async def signup(request: SignUpRequest):
+    """
+    Create a new user account.
+
+    Returns access token and user profile on success.
+    """
+    if not db_configured():
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        client = get_client()
+
+        # Sign up with Supabase Auth
+        auth_response = client.sign_up(request.email, request.password)
+
+        if not auth_response.user:
+            raise HTTPException(status_code=400, detail="Signup failed")
+
+        # Create user profile in our table
+        user_repo = UserRepository()
+        profile = user_repo.create(
+            user_id=auth_response.user.id,
+            email=request.email,
+            display_name=request.display_name,
+            learner_level=request.learner_level,
+            institution=request.institution,
+        )
+
+        return AuthResponse(
+            access_token=auth_response.session.access_token,
+            refresh_token=auth_response.session.refresh_token,
+            user={
+                "id": str(auth_response.user.id),
+                "email": request.email,
+                "display_name": request.display_name,
+                "role": "learner",
+                "learner_level": request.learner_level,
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/auth/login", response_model=AuthResponse)
+async def login(request: LoginRequest):
+    """
+    Log in an existing user.
+
+    Returns access token and user profile on success.
+    """
+    if not db_configured():
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    try:
+        client = get_client()
+
+        # Sign in with Supabase Auth
+        auth_response = client.sign_in(request.email, request.password)
+
+        if not auth_response.user or not auth_response.session:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        # Get user profile
+        user_repo = UserRepository()
+        profile = user_repo.get_by_id(auth_response.user.id)
+
+        return AuthResponse(
+            access_token=auth_response.session.access_token,
+            refresh_token=auth_response.session.refresh_token,
+            user={
+                "id": str(auth_response.user.id),
+                "email": request.email,
+                "display_name": profile.get("display_name") if profile else None,
+                "role": profile.get("role", "learner") if profile else "learner",
+                "learner_level": profile.get("learner_level") if profile else None,
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+@app.post("/api/auth/logout")
+async def logout(user: AuthenticatedUser = Depends(get_current_user)):
+    """Log out the current user."""
+    try:
+        client = get_client()
+        client.sign_out()
+        return {"status": "logged_out"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/auth/me", response_model=UserProfile)
+async def get_me(user: AuthenticatedUser = Depends(get_current_user)):
+    """Get the current user's profile."""
+    user_repo = UserRepository()
+    profile = user_repo.get_by_id(user.id)
+
+    return UserProfile(
+        id=user.id,
+        email=user.email,
+        display_name=profile.get("display_name") if profile else None,
+        role=profile.get("role", "learner") if profile else "learner",
+        learner_level=profile.get("learner_level") if profile else None,
+        institution=profile.get("institution") if profile else None,
+    )
+
+
+@app.patch("/api/auth/me")
+async def update_me(
+    display_name: Optional[str] = None,
+    learner_level: Optional[str] = None,
+    institution: Optional[str] = None,
+    user: AuthenticatedUser = Depends(get_current_user)
+):
+    """Update the current user's profile."""
+    user_repo = UserRepository()
+
+    updates = {}
+    if display_name is not None:
+        updates["display_name"] = display_name
+    if learner_level is not None:
+        updates["learner_level"] = learner_level
+    if institution is not None:
+        updates["institution"] = institution
+
+    if updates:
+        user_repo.update(user.id, **updates)
+
+    return {"status": "updated"}
+
+
+# =============================================================================
+# PANEL ENDPOINTS
+# =============================================================================
+
+class CreatePanelRequest(BaseModel):
+    """Request model for creating a panel."""
+    name: str
+    description: Optional[str] = None
+    config: Optional[dict] = None
+
+
+class PanelResponse(BaseModel):
+    """Response model for a panel."""
+    id: str
+    name: str
+    description: Optional[str] = None
+    patient_count: int = 0
+    config: dict = {}
+    created_at: str
+
+
+@app.get("/api/panels")
+async def list_panels(user: AuthenticatedUser = Depends(get_current_user)):
+    """List all panels for the current user."""
+    panel_repo = PanelRepository()
+    panels = panel_repo.get_by_owner(user.id)
+
+    return {
+        "panels": [
+            {
+                "id": p["id"],
+                "name": p["name"],
+                "description": p.get("description"),
+                "patient_count": p.get("patient_count", 0),
+                "created_at": p.get("created_at"),
+            }
+            for p in panels
+        ]
+    }
+
+
+@app.post("/api/panels", response_model=PanelResponse)
+async def create_panel(
+    request: CreatePanelRequest,
+    user: AuthenticatedUser = Depends(get_current_user)
+):
+    """Create a new patient panel."""
+    panel_repo = PanelRepository()
+
+    panel = panel_repo.create(
+        owner_id=user.id,
+        name=request.name,
+        config=request.config or {},
+    )
+
+    if not panel:
+        raise HTTPException(status_code=500, detail="Failed to create panel")
+
+    return PanelResponse(
+        id=panel["id"],
+        name=panel["name"],
+        description=panel.get("description"),
+        patient_count=0,
+        config=panel.get("config", {}),
+        created_at=panel.get("created_at", datetime.now().isoformat()),
+    )
+
+
+@app.get("/api/panels/{panel_id}")
+async def get_panel(
+    panel_id: str,
+    user: AuthenticatedUser = Depends(get_current_user)
+):
+    """Get a panel with its patients."""
+    panel_repo = PanelRepository()
+    patient_repo = PatientRepository()
+
+    panel = panel_repo.get_by_id(panel_id)
+    if not panel:
+        raise HTTPException(status_code=404, detail="Panel not found")
+
+    # Verify ownership
+    if panel["owner_id"] != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get patients
+    patients = patient_repo.get_by_panel(panel_id)
+
+    return {
+        "panel": {
+            "id": panel["id"],
+            "name": panel["name"],
+            "description": panel.get("description"),
+            "patient_count": panel.get("patient_count", 0),
+            "config": panel.get("config", {}),
+            "created_at": panel.get("created_at"),
+        },
+        "patients": [
+            {
+                "id": p["id"],
+                "name": p["demographics"].get("full_name", "Unknown"),
+                "age_months": p.get("age_months"),
+                "complexity_tier": p.get("complexity_tier"),
+                "conditions": p.get("conditions", []),
+            }
+            for p in patients
+        ]
+    }
+
+
+@app.delete("/api/panels/{panel_id}")
+async def delete_panel(
+    panel_id: str,
+    user: AuthenticatedUser = Depends(get_current_user)
+):
+    """Delete a panel and all its patients."""
+    panel_repo = PanelRepository()
+
+    panel = panel_repo.get_by_id(panel_id)
+    if not panel:
+        raise HTTPException(status_code=404, detail="Panel not found")
+
+    if panel["owner_id"] != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    panel_repo.delete(panel_id)
+    return {"status": "deleted", "panel_id": panel_id}
+
+
+@app.post("/api/panels/{panel_id}/generate")
+async def generate_panel_patients(
+    panel_id: str,
+    count: int = Query(20, ge=1, le=50),
+    user: AuthenticatedUser = Depends(get_current_user)
+):
+    """Generate patients for a panel."""
+    panel_repo = PanelRepository()
+    patient_repo = PatientRepository()
+
+    panel = panel_repo.get_by_id(panel_id)
+    if not panel:
+        raise HTTPException(status_code=404, detail="Panel not found")
+
+    if panel["owner_id"] != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get panel config
+    config = panel.get("config", {})
+    min_age = config.get("min_age_months", 0)
+    max_age = config.get("max_age_months", 216)
+
+    # Generate patients
+    engine = PedsEngine(use_llm=False)  # No LLM for batch generation
+    generated = []
+
+    for _ in range(count):
+        age_months = random.randint(min_age, max_age)
+        seed = GenerationSeed(age_months=age_months)
+
+        try:
+            patient = engine.generate(seed)
+
+            # Save to database
+            db_patient = patient_repo.create(
+                panel_id=panel_id,
+                demographics=patient.demographics.model_dump(mode="json"),
+                full_record=json.loads(export_json(patient)),
+                complexity_tier=patient.complexity_tier.value,
+                conditions=[c.display_name for c in patient.active_conditions],
+                age_months=age_months,
+            )
+
+            generated.append({
+                "id": db_patient["id"],
+                "name": patient.demographics.full_name,
+                "age_months": age_months,
+            })
+
+        except Exception as e:
+            # Log error but continue
+            print(f"Failed to generate patient: {e}")
+
+    return {
+        "panel_id": panel_id,
+        "generated_count": len(generated),
+        "patients": generated,
     }
 
 

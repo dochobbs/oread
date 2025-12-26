@@ -2987,6 +2987,287 @@ VITAL SIGNS:
 
         return resolved_conditions, past_medications
 
+    # =========================================================================
+    # SINGLE CASE GENERATION (for learning platform)
+    # =========================================================================
+
+    # Difficulty level configurations
+    DIFFICULTY_CONFIGS = {
+        1: {  # Routine
+            "name": "Routine",
+            "description": "Well-child or straightforward visit",
+            "visit_types": [EncounterType.WELL_CHILD],
+            "condition_pool": [],  # No acute illness
+            "atypical_probability": 0.0,
+            "complicating_factors": [],
+        },
+        2: {  # Standard
+            "name": "Standard",
+            "description": "Common illness, classic presentation",
+            "visit_types": [EncounterType.ACUTE_ILLNESS],
+            "condition_pool": [
+                "otitis_media", "pharyngitis", "viral_gastroenteritis",
+                "bronchiolitis", "conjunctivitis", "viral_uri"
+            ],
+            "atypical_probability": 0.0,
+            "complicating_factors": [],
+        },
+        3: {  # Complex
+            "name": "Complex",
+            "description": "Multiple factors, management decisions needed",
+            "visit_types": [EncounterType.ACUTE_ILLNESS, EncounterType.CHRONIC_FOLLOWUP],
+            "condition_pool": [
+                "asthma", "pneumonia", "urinary_tract_infection",
+                "croup", "eczema", "allergic_rhinitis"
+            ],
+            "atypical_probability": 0.1,
+            "complicating_factors": ["concurrent_chronic", "medication_failure"],
+        },
+        4: {  # Challenging
+            "name": "Challenging",
+            "description": "Atypical presentation, competing diagnoses",
+            "visit_types": [EncounterType.ACUTE_ILLNESS, EncounterType.URGENT_CARE],
+            "condition_pool": [
+                "pneumonia", "urinary_tract_infection", "appendicitis",
+                "meningitis", "sepsis", "intussusception"
+            ],
+            "atypical_probability": 0.5,
+            "complicating_factors": [
+                "atypical_vitals", "conflicting_history", "red_herrings"
+            ],
+        },
+        5: {  # Zebra
+            "name": "Zebra",
+            "description": "Rare or unexpected diagnosis",
+            "visit_types": [EncounterType.ACUTE_ILLNESS, EncounterType.ED_VISIT],
+            "condition_pool": [
+                "kawasaki_disease", "henoch_schonlein_purpura",
+                "juvenile_idiopathic_arthritis", "type_1_diabetes",
+                "leukemia", "child_abuse"
+            ],
+            "atypical_probability": 0.8,
+            "complicating_factors": [
+                "atypical_vitals", "conflicting_history", "red_herrings",
+                "social_complexity", "communication_barrier"
+            ],
+        },
+    }
+
+    def generate_encounter_for_patient(
+        self,
+        patient: Patient,
+        difficulty_level: int = 2,
+        visit_type: EncounterType | None = None,
+        condition: str | None = None,
+    ) -> Encounter:
+        """
+        Generate a new encounter for an existing patient.
+
+        This is the core method for the learning platform's "Single Case"
+        feature, creating realistic follow-up visits with configurable
+        difficulty.
+
+        Args:
+            patient: Existing patient to generate encounter for
+            difficulty_level: 1-5 (Routine, Standard, Complex, Challenging, Zebra)
+            visit_type: Optional override for encounter type
+            condition: Optional specific condition to use
+
+        Returns:
+            A new Encounter object
+        """
+        from src.models import GrowthMeasurement
+        from knowledge.growth.cdc_2000 import GrowthTrajectory
+
+        # Validate difficulty level
+        difficulty_level = max(1, min(5, difficulty_level))
+        config = self.DIFFICULTY_CONFIGS[difficulty_level]
+
+        # Get patient demographics
+        demographics = patient.demographics
+        age_months = demographics.age_months
+        sex = "male" if demographics.sex_at_birth == Sex.MALE else "female"
+
+        # Determine visit type
+        if visit_type is None:
+            visit_type = random.choice(config["visit_types"])
+
+        # Determine condition for acute/urgent visits
+        encounter_condition = None
+        if visit_type in (EncounterType.ACUTE_ILLNESS, EncounterType.URGENT_CARE, EncounterType.ED_VISIT):
+            if condition:
+                encounter_condition = condition
+            elif config["condition_pool"]:
+                # Filter conditions by age appropriateness
+                valid_conditions = []
+                for cond_key in config["condition_pool"]:
+                    cond_data = self._conditions.get(cond_key, {})
+                    demo = cond_data.get("demographics", {})
+                    age_range = demo.get("age_months", {})
+                    min_age = age_range.get("min", 0)
+                    max_age = age_range.get("max", 264)
+                    if min_age <= age_months <= max_age:
+                        valid_conditions.append(cond_key)
+
+                if valid_conditions:
+                    encounter_condition = random.choice(valid_conditions)
+                else:
+                    # Fall back to common conditions
+                    encounter_condition = random.choice(["otitis_media", "viral_uri", "pharyngitis"])
+
+        # Build the encounter stub
+        today = date.today()
+        encounter_reason = self._get_encounter_reason(visit_type, encounter_condition, age_months)
+
+        stub = EncounterStub(
+            date=today,
+            type=visit_type,
+            reason=encounter_reason,
+            conditions_to_address=[c.display_name for c in patient.active_conditions] if visit_type == EncounterType.CHRONIC_FOLLOWUP else [],
+            is_new_condition_diagnosis=(encounter_condition is not None),
+            new_condition=encounter_condition,
+        )
+
+        # Get or generate growth data
+        latest_growth = patient.growth_data[-1] if patient.growth_data else None
+        if not latest_growth:
+            # Generate plausible growth measurement
+            growth_trajectory = GrowthTrajectory(
+                sex=sex,
+                weight_percentile=50,
+                height_percentile=50,
+                hc_percentile=50,
+            )
+            weight, height, hc, bmi = growth_trajectory.generate_measurement(age_months)
+            latest_growth = GrowthMeasurement(
+                date=today,
+                age_in_days=(today - demographics.date_of_birth).days,
+                weight_kg=weight,
+                height_cm=height,
+                head_circumference_cm=hc if age_months <= 36 else None,
+                bmi=bmi,
+            )
+
+        # Create life arc from existing conditions
+        life_arc = LifeArc(
+            health_trajectory="complex" if len(patient.active_conditions) > 2 else "healthy",
+            major_conditions=[c.display_name for c in patient.active_conditions],
+            condition_onset_ages={},
+            hospitalizations=[],
+            surgeries=[],
+            key_events=[],
+        )
+
+        # Get or create provider/location
+        provider = patient.care_team[0] if patient.care_team else Provider(
+            name=self._generate_provider_name(),
+            credentials="MD",
+            specialty="Pediatrics",
+        )
+        if isinstance(provider, dict):
+            provider = Provider(**provider)
+        elif hasattr(provider, 'name'):
+            provider = Provider(
+                name=provider.name,
+                credentials=getattr(provider, 'credentials', 'MD'),
+                specialty=getattr(provider, 'specialty', 'Pediatrics'),
+            )
+
+        location = Location(
+            name="Main Street Pediatrics",
+            type="Outpatient clinic",
+        )
+
+        # Apply difficulty modifiers
+        encounter = self._generate_encounter(
+            stub=stub,
+            demographics=demographics,
+            age_months=age_months,
+            growth_data=[latest_growth] if latest_growth else [],
+            life_arc=life_arc,
+            provider=provider,
+            location=location,
+            seed=GenerationSeed(),
+        )
+
+        # Apply difficulty-specific modifications
+        encounter = self._apply_difficulty_modifiers(encounter, difficulty_level, config)
+
+        # Generate LLM content if enabled
+        if self.use_llm:
+            self._generate_narratives_parallel([encounter], demographics, life_arc)
+
+        return encounter
+
+    def _get_encounter_reason(
+        self,
+        visit_type: EncounterType,
+        condition_key: str | None,
+        age_months: int
+    ) -> str:
+        """Generate appropriate reason for visit based on type and condition."""
+        if visit_type == EncounterType.WELL_CHILD:
+            return f"Well-child examination - {self._age_to_description(age_months)}"
+        elif visit_type == EncounterType.NEWBORN:
+            return "Healthy newborn visit"
+        elif visit_type == EncounterType.CHRONIC_FOLLOWUP:
+            return "Chronic condition follow-up"
+        elif condition_key:
+            # Get display name from conditions database
+            cond_data = self._conditions.get(condition_key, {})
+            return cond_data.get("display_name", condition_key.replace("_", " ").title())
+        else:
+            return "Acute illness"
+
+    def _apply_difficulty_modifiers(
+        self,
+        encounter: Encounter,
+        difficulty_level: int,
+        config: dict
+    ) -> Encounter:
+        """Apply difficulty-specific modifications to the encounter."""
+        if difficulty_level <= 2:
+            # Levels 1-2: No modifications, classic presentation
+            return encounter
+
+        # Levels 3-5: Apply complicating factors
+        complicating_factors = config.get("complicating_factors", [])
+        atypical_prob = config.get("atypical_probability", 0.0)
+
+        # Atypical vitals
+        if "atypical_vitals" in complicating_factors and random.random() < atypical_prob:
+            if encounter.vital_signs:
+                # Make vitals less obviously abnormal
+                # e.g., afebrile UTI, hypothermic sepsis
+                if encounter.vital_signs.temperature_f and encounter.vital_signs.temperature_f > 100.4:
+                    # 30% chance of being afebrile despite infection
+                    if random.random() < 0.3:
+                        encounter.vital_signs.temperature_f = random.uniform(98.0, 99.5)
+
+        # Red herrings in physical exam
+        if "red_herrings" in complicating_factors and random.random() < atypical_prob:
+            if encounter.physical_exam:
+                # Add an incidental finding
+                red_herrings = [
+                    ("skin", "Small bruise noted on anterior shin"),
+                    ("heent", "Mild nasal congestion"),
+                    ("respiratory", "Occasional cough during exam"),
+                ]
+                system, finding = random.choice(red_herrings)
+                current = getattr(encounter.physical_exam, system, None)
+                if current:
+                    setattr(encounter.physical_exam, system, f"{current}. {finding}")
+                else:
+                    setattr(encounter.physical_exam, system, finding)
+
+        # Social complexity
+        if "social_complexity" in complicating_factors and random.random() < 0.3:
+            # Add a note about social factors
+            if encounter.assessment and encounter.assessment[0].clinical_notes:
+                encounter.assessment[0].clinical_notes += " Consider social factors in disposition."
+
+        return encounter
+
 
 class AdultEngine(BaseEngine):
     """

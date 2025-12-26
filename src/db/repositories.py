@@ -151,6 +151,11 @@ class PatientRepository(BaseRepository):
     response = self.table.insert(patients).execute()
     return response.data or []
 
+  def update(self, patient_id: str | UUID, **kwargs) -> dict:
+    """Update patient record."""
+    response = self.table.update(kwargs).eq("id", str(patient_id)).execute()
+    return response.data[0] if response.data else None
+
   def delete(self, patient_id: str | UUID) -> bool:
     """Delete a patient."""
     response = self.table.delete().eq("id", str(patient_id)).execute()

@@ -96,6 +96,39 @@ class GenerationStatus(BaseModel):
     completed_at: Optional[str] = None
 
 
+class GenerateEncounterRequest(BaseModel):
+    """Request model for single encounter generation."""
+    difficulty_level: int = Field(
+        2,
+        ge=1,
+        le=5,
+        description="Difficulty level: 1=Routine, 2=Standard, 3=Complex, 4=Challenging, 5=Zebra"
+    )
+    visit_type: Optional[str] = Field(
+        None,
+        description="Visit type override (well-child, acute-illness, chronic-followup)"
+    )
+    condition: Optional[str] = Field(
+        None,
+        description="Specific condition to generate (e.g., 'otitis_media')"
+    )
+    use_llm: bool = Field(
+        False,
+        description="Use LLM for narrative generation (slower but richer)"
+    )
+
+
+class EncounterSummary(BaseModel):
+    """Summary of a generated encounter."""
+    id: str
+    date: str
+    type: str
+    chief_complaint: str
+    difficulty_level: int
+    difficulty_name: str
+    assessments: list[str]
+
+
 def _run_generation_job(job_id: str, age: int, use_llm: bool):
     """Background task to generate a patient."""
     try:
@@ -828,6 +861,193 @@ async def generate_panel_patients(
         "generated_count": len(generated),
         "patients": generated,
     }
+
+
+# =============================================================================
+# SINGLE CASE GENERATION ENDPOINTS
+# =============================================================================
+
+@app.post("/api/panels/{panel_id}/patients/{patient_id}/encounters", response_model=EncounterSummary)
+async def generate_encounter(
+    panel_id: str,
+    patient_id: str,
+    request: GenerateEncounterRequest,
+    user: AuthenticatedUser = Depends(get_current_user)
+):
+    """
+    Generate a new encounter for an existing patient.
+
+    This is the "Single Case" feature for the learning platform.
+
+    Difficulty levels:
+    - 1: Routine (well-child, normal development)
+    - 2: Standard (common illness, classic presentation)
+    - 3: Complex (multiple factors, decisions needed)
+    - 4: Challenging (atypical presentation, competing diagnoses)
+    - 5: Zebra (rare or unexpected diagnosis)
+    """
+    from src.models import EncounterType
+
+    panel_repo = PanelRepository()
+    patient_repo = PatientRepository()
+
+    # Verify panel access
+    panel = panel_repo.get_by_id(panel_id)
+    if not panel:
+        raise HTTPException(status_code=404, detail="Panel not found")
+
+    if panel["owner_id"] != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get patient from database
+    db_patient = patient_repo.get_by_id(patient_id)
+    if not db_patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    if db_patient["panel_id"] != panel_id:
+        raise HTTPException(status_code=403, detail="Patient does not belong to this panel")
+
+    # Reconstruct Patient object from stored record
+    try:
+        patient = Patient(**db_patient["full_record"])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load patient record: {e}")
+
+    # Parse visit type if provided
+    visit_type = None
+    if request.visit_type:
+        try:
+            visit_type = EncounterType(request.visit_type)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid visit type: {request.visit_type}. Valid types: well-child, acute-illness, chronic-followup"
+            )
+
+    # Generate encounter
+    engine = PedsEngine(use_llm=request.use_llm)
+    difficulty_configs = engine.DIFFICULTY_CONFIGS
+
+    try:
+        encounter = engine.generate_encounter_for_patient(
+            patient=patient,
+            difficulty_level=request.difficulty_level,
+            visit_type=visit_type,
+            condition=request.condition,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate encounter: {e}")
+
+    # Add encounter to patient record
+    patient.encounters.append(encounter)
+
+    # Update patient in database (use admin client to bypass RLS)
+    try:
+        admin_patient_repo = PatientRepository(use_admin=True)
+        result = admin_patient_repo.update(
+            patient_id=patient_id,
+            full_record=json.loads(export_json(patient)),
+        )
+        if not result:
+            print(f"Warning: Patient update returned None for {patient_id}")
+    except Exception as e:
+        # Log but don't fail - encounter was generated successfully
+        print(f"Warning: Failed to persist encounter to database: {e}")
+
+    # Build response
+    difficulty_config = difficulty_configs.get(request.difficulty_level, {})
+    return EncounterSummary(
+        id=encounter.id,
+        date=encounter.date.isoformat(),
+        type=encounter.type.value,
+        chief_complaint=encounter.chief_complaint,
+        difficulty_level=request.difficulty_level,
+        difficulty_name=difficulty_config.get("name", "Unknown"),
+        assessments=[a.diagnosis for a in encounter.assessment],
+    )
+
+
+@app.get("/api/panels/{panel_id}/patients/{patient_id}/encounters")
+async def list_patient_encounters(
+    panel_id: str,
+    patient_id: str,
+    user: AuthenticatedUser = Depends(get_current_user)
+):
+    """List all encounters for a patient."""
+    panel_repo = PanelRepository()
+    patient_repo = PatientRepository()
+
+    # Verify panel access
+    panel = panel_repo.get_by_id(panel_id)
+    if not panel:
+        raise HTTPException(status_code=404, detail="Panel not found")
+
+    if panel["owner_id"] != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get patient
+    db_patient = patient_repo.get_by_id(patient_id)
+    if not db_patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    if db_patient["panel_id"] != panel_id:
+        raise HTTPException(status_code=403, detail="Patient does not belong to this panel")
+
+    # Extract encounters from full record
+    full_record = db_patient.get("full_record", {})
+    encounters = full_record.get("encounters", [])
+
+    return {
+        "patient_id": patient_id,
+        "encounter_count": len(encounters),
+        "encounters": [
+            {
+                "id": enc.get("id"),
+                "date": enc.get("date"),
+                "type": enc.get("type"),
+                "chief_complaint": enc.get("chief_complaint"),
+            }
+            for enc in encounters
+        ]
+    }
+
+
+@app.get("/api/panels/{panel_id}/patients/{patient_id}/encounters/{encounter_id}")
+async def get_encounter(
+    panel_id: str,
+    patient_id: str,
+    encounter_id: str,
+    user: AuthenticatedUser = Depends(get_current_user)
+):
+    """Get a specific encounter by ID."""
+    panel_repo = PanelRepository()
+    patient_repo = PatientRepository()
+
+    # Verify panel access
+    panel = panel_repo.get_by_id(panel_id)
+    if not panel:
+        raise HTTPException(status_code=404, detail="Panel not found")
+
+    if panel["owner_id"] != user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get patient
+    db_patient = patient_repo.get_by_id(patient_id)
+    if not db_patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    if db_patient["panel_id"] != panel_id:
+        raise HTTPException(status_code=403, detail="Patient does not belong to this panel")
+
+    # Find encounter
+    full_record = db_patient.get("full_record", {})
+    encounters = full_record.get("encounters", [])
+
+    for enc in encounters:
+        if enc.get("id") == encounter_id:
+            return enc
+
+    raise HTTPException(status_code=404, detail="Encounter not found")
 
 
 # Mount static files for web UI

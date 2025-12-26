@@ -56,13 +56,19 @@ class UserRepository(BaseRepository):
 
   def get_by_id(self, user_id: str | UUID) -> Optional[dict]:
     """Get user by ID."""
-    response = self.table.select("*").eq("id", str(user_id)).single().execute()
-    return response.data if response.data else None
+    try:
+      response = self.table.select("*").eq("id", str(user_id)).maybe_single().execute()
+      return response.data if response.data else None
+    except Exception:
+      return None
 
   def get_by_email(self, email: str) -> Optional[dict]:
     """Get user by email."""
-    response = self.table.select("*").eq("email", email).single().execute()
-    return response.data if response.data else None
+    try:
+      response = self.table.select("*").eq("email", email).maybe_single().execute()
+      return response.data if response.data else None
+    except Exception:
+      return None
 
   def create(self, user_id: str | UUID, email: str, **kwargs) -> dict:
     """Create a new user profile."""
@@ -91,8 +97,11 @@ class PanelRepository(BaseRepository):
 
   def get_by_id(self, panel_id: str | UUID) -> Optional[dict]:
     """Get panel by ID."""
-    response = self.table.select("*").eq("id", str(panel_id)).single().execute()
-    return response.data if response.data else None
+    try:
+      response = self.table.select("*").eq("id", str(panel_id)).maybe_single().execute()
+      return response.data if response.data else None
+    except Exception:
+      return None
 
   def get_by_owner(self, owner_id: str | UUID) -> list[dict]:
     """Get all panels for a user."""
@@ -127,8 +136,11 @@ class PatientRepository(BaseRepository):
 
   def get_by_id(self, patient_id: str | UUID) -> Optional[dict]:
     """Get patient by ID."""
-    response = self.table.select("*").eq("id", str(patient_id)).single().execute()
-    return response.data if response.data else None
+    try:
+      response = self.table.select("*").eq("id", str(patient_id)).maybe_single().execute()
+      return response.data if response.data else None
+    except Exception:
+      return None
 
   def get_by_panel(self, panel_id: str | UUID) -> list[dict]:
     """Get all patients in a panel."""
@@ -169,8 +181,11 @@ class EncounterRepository(BaseRepository):
 
   def get_by_id(self, encounter_id: str | UUID) -> Optional[dict]:
     """Get encounter by ID."""
-    response = self.table.select("*").eq("id", str(encounter_id)).single().execute()
-    return response.data if response.data else None
+    try:
+      response = self.table.select("*").eq("id", str(encounter_id)).maybe_single().execute()
+      return response.data if response.data else None
+    except Exception:
+      return None
 
   def get_by_patient(self, patient_id: str | UUID) -> list[dict]:
     """Get all encounters for a patient."""
@@ -201,8 +216,11 @@ class SessionRepository(BaseRepository):
 
   def get_by_id(self, session_id: str | UUID) -> Optional[dict]:
     """Get session by ID."""
-    response = self.table.select("*").eq("id", str(session_id)).single().execute()
-    return response.data if response.data else None
+    try:
+      response = self.table.select("*").eq("id", str(session_id)).maybe_single().execute()
+      return response.data if response.data else None
+    except Exception:
+      return None
 
   def get_by_user(self, user_id: str | UUID, limit: int = 50) -> list[dict]:
     """Get recent sessions for a user."""

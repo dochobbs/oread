@@ -2601,12 +2601,65 @@
         let currentSelectedAge = null;
         let currentPanelId = null;
 
+        // Conditions that have disease progression (Time Travel)
+        const TIME_TRAVEL_CONDITIONS = new Set([
+            // Atopic March
+            'eczema', 'atopic dermatitis', 'food allergy', 'asthma', 'allergic rhinitis',
+            // RSV to Asthma
+            'bronchiolitis', 'rsv bronchiolitis', 'reactive airway disease',
+            // Obesity Cascade
+            'overweight', 'obesity', 'prediabetes', 'type 2 diabetes',
+            // ADHD with Comorbidities
+            'adhd', 'attention deficit hyperactivity disorder', 'anxiety', 'anxiety disorder', 'depression',
+            // Recurrent AOM
+            'otitis media', 'acute otitis media', 'recurrent otitis media', 'tympanostomy tubes',
+            // Functional GI
+            'gerd', 'gastroesophageal reflux', 'infant reflux', 'functional constipation', 'constipation', 'functional abdominal pain'
+        ]);
+
+        function hasTimeTravelConditions(patient) {
+            // Check problem list for conditions with disease progression
+            const conditions = patient.problem_list || [];
+            for (const cond of conditions) {
+                const name = (cond.display_name || cond.name || '').toLowerCase();
+                if (TIME_TRAVEL_CONDITIONS.has(name)) {
+                    return true;
+                }
+                // Also check partial matches for flexibility
+                for (const ttCond of TIME_TRAVEL_CONDITIONS) {
+                    if (name.includes(ttCond) || ttCond.includes(name)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
         function initializeTimeline(patient) {
             const ageMonths = patient.demographics.age_months || 0;
             const slider = document.getElementById('timeline-slider');
             const sliderContainer = document.getElementById('timeline-slider-container');
             const ageDisplay = document.getElementById('timeline-age-display');
             const maxAgeLabel = document.getElementById('timeline-max-age');
+            const timelineTab = document.querySelector('[data-tab="timeline"]');
+
+            // Check if patient has time-traveling conditions
+            const hasTimeTravel = hasTimeTravelConditions(patient);
+
+            if (!hasTimeTravel) {
+                // Hide timeline UI for patients without progression conditions
+                sliderContainer.classList.remove('active');
+                if (timelineTab) {
+                    timelineTab.style.display = 'none';
+                }
+                timelineData = null;
+                return;
+            }
+
+            // Show timeline UI
+            if (timelineTab) {
+                timelineTab.style.display = '';
+            }
 
             // Set slider max to patient's current age
             slider.max = ageMonths;

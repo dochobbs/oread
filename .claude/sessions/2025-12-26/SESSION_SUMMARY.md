@@ -2,7 +2,7 @@
 
 ## Project
 Oread Learning Platform - Synthetic Pediatric Patient Generator
-`/Users/dochobbs/Downloads/Consult/MedEd/synthetic patients`
+`/Users/dochobbs/Downloads/Consult/MedEd/synpat`
 
 ## Branch
 main

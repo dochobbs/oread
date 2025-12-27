@@ -16,8 +16,9 @@ class SupabaseConfig:
 
   def __init__(self):
     self.url = os.environ.get("SUPABASE_URL")
-    self.anon_key = os.environ.get("SUPABASE_ANON_KEY")
-    self.service_key = os.environ.get("SUPABASE_SERVICE_KEY")
+    # Support both naming conventions
+    self.anon_key = os.environ.get("SUPABASE_KEY") or os.environ.get("SUPABASE_ANON_KEY")
+    self.service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY")
 
   @property
   def is_configured(self) -> bool:

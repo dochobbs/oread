@@ -4,6 +4,10 @@ Oread Web Server
 FastAPI-based web server for the Oread synthetic patient generator.
 """
 
+# Load environment variables from .env file FIRST
+from dotenv import load_dotenv
+load_dotenv()
+
 import json
 import sys
 import threading
@@ -685,6 +689,20 @@ class CreatePanelRequest(BaseModel):
     config: Optional[dict] = None
 
 
+class GeneratePanelPatientsRequest(BaseModel):
+    """Request model for generating patients in a panel."""
+    count: int = Field(20, ge=1, le=50, description="Number of patients to generate")
+    description: Optional[str] = Field(
+        None,
+        description="Natural language description for patient generation (e.g., 'toddlers with asthma and eczema')"
+    )
+    conditions: Optional[list[str]] = Field(None, description="Specific conditions to include")
+    min_age_months: Optional[int] = Field(None, ge=0, description="Minimum age in months")
+    max_age_months: Optional[int] = Field(None, le=216, description="Maximum age in months (max 18 years)")
+    complexity_tier: Optional[str] = Field(None, description="Complexity tier (tier-0 to tier-3)")
+    use_llm: bool = Field(True, description="Use LLM for rich narrative content (default: True)")
+
+
 class PanelResponse(BaseModel):
     """Response model for a panel."""
     id: str
@@ -806,10 +824,18 @@ async def delete_panel(
 @app.post("/api/panels/{panel_id}/generate")
 async def generate_panel_patients(
     panel_id: str,
-    count: int = Query(20, ge=1, le=50),
+    request: GeneratePanelPatientsRequest,
     user: AuthenticatedUser = Depends(get_current_user)
 ):
-    """Generate patients for a panel."""
+    """
+    Generate patients for a panel with optional natural language configuration.
+
+    Examples:
+    - {"count": 10} - Generate 10 random patients with LLM
+    - {"count": 5, "description": "toddlers with asthma"} - 5 toddlers with asthma
+    - {"count": 15, "conditions": ["eczema", "food allergy"], "max_age_months": 36}
+    - {"count": 20, "description": "complex adolescents with ADHD and anxiety"}
+    """
     panel_repo = PanelRepository()
     patient_repo = PatientRepository()
 
@@ -820,18 +846,29 @@ async def generate_panel_patients(
     if panel["owner_id"] != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Get panel config
+    # Get panel config as defaults, request params override
     config = panel.get("config", {})
-    min_age = config.get("min_age_months", 0)
-    max_age = config.get("max_age_months", 216)
+    min_age = request.min_age_months if request.min_age_months is not None else config.get("min_age_months", 0)
+    max_age = request.max_age_months if request.max_age_months is not None else config.get("max_age_months", 216)
 
-    # Generate patients
-    engine = PedsEngine(use_llm=False)  # No LLM for batch generation
+    # Generate patients with LLM by default
+    engine = PedsEngine(use_llm=request.use_llm)
     generated = []
 
-    for _ in range(count):
+    for i in range(request.count):
         age_months = random.randint(min_age, max_age)
-        seed = GenerationSeed(age_months=age_months)
+
+        # Build generation seed
+        seed_params = {"age_months": age_months}
+
+        if request.description:
+            seed_params["description"] = request.description
+        if request.conditions:
+            seed_params["conditions"] = request.conditions
+        if request.complexity_tier:
+            seed_params["complexity_tier"] = ComplexityTier(request.complexity_tier)
+
+        seed = GenerationSeed(**seed_params)
 
         try:
             patient = engine.generate(seed)
@@ -850,11 +887,16 @@ async def generate_panel_patients(
                 "id": db_patient["id"],
                 "name": patient.demographics.full_name,
                 "age_months": age_months,
+                "conditions": [c.display_name for c in patient.active_conditions],
             })
+
+            # Log progress for longer batches
+            if (i + 1) % 5 == 0:
+                print(f"Generated {i + 1}/{request.count} patients for panel {panel_id}")
 
         except Exception as e:
             # Log error but continue
-            print(f"Failed to generate patient: {e}")
+            print(f"Failed to generate patient {i + 1}: {e}")
 
     return {
         "panel_id": panel_id,

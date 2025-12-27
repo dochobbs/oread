@@ -1863,6 +1863,62 @@
         </div>
     </div>
 
+    <!-- Panel Generation Modal -->
+    <div id="panel-generate-modal" class="modal-overlay">
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2>Generate Panel Patients</h2>
+                <p>Configure patients for your panel</p>
+            </div>
+
+            <div class="modal-body">
+                <form id="panel-generate-form">
+                    <div class="form-group">
+                        <label class="form-label">Description (optional)</label>
+                        <textarea class="form-input" id="panel-gen-description" rows="2"
+                            placeholder="e.g., 'toddlers with asthma and eczema' or 'complex adolescents with ADHD'"></textarea>
+                        <div style="font-size: 0.75rem; color: var(--text-tertiary); margin-top: 4px;">
+                            Natural language description for patient characteristics
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Number of Patients</label>
+                        <input type="number" class="form-input" id="panel-gen-count" value="10" min="1" max="50">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Age Range</label>
+                        <div style="display: flex; gap: var(--space-sm); align-items: center;">
+                            <input type="number" class="form-input" id="panel-gen-min-age" placeholder="0" min="0" max="216" style="width: 80px;">
+                            <span style="color: var(--text-tertiary);">to</span>
+                            <input type="number" class="form-input" id="panel-gen-max-age" placeholder="216" min="0" max="216" style="width: 80px;">
+                            <span style="color: var(--text-tertiary);">months</span>
+                        </div>
+                        <div style="font-size: 0.75rem; color: var(--text-tertiary); margin-top: 4px;">
+                            Leave blank for random ages (0-18 years)
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Specific Conditions (optional)</label>
+                        <input type="text" class="form-input" id="panel-gen-conditions" placeholder="e.g., asthma, eczema, adhd">
+                        <div style="font-size: 0.75rem; color: var(--text-tertiary); margin-top: 4px;">
+                            Comma-separated list of conditions to include
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: var(--space-sm); justify-content: flex-end; margin-top: var(--space-lg);">
+                        <button type="button" class="btn btn-secondary" id="panel-gen-cancel">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="panel-gen-submit">
+                            <i data-lucide="users" class="icon"></i> Generate
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <section class="hero">
         <h1>Generate <em>clinically coherent</em><br>synthetic patients</h1>
         <p>Create realistic, longitudinal patient records for AI evaluation, EMR demos, and medical education.</p>
@@ -3058,26 +3114,34 @@
         let currentSelectedAge = null;
         let currentPanelId = null;
 
-        // Conditions that have disease progression (Time Travel)
+        // CHRONIC conditions that have disease progression (Time Travel)
+        // Note: Only conditions with longitudinal progression patterns are included
+        // Acute conditions like single episodes of otitis media or bronchiolitis are excluded
         const TIME_TRAVEL_CONDITIONS = new Set([
-            // Atopic March
+            // Atopic March - classic pediatric progression
             'eczema', 'atopic dermatitis', 'food allergy', 'asthma', 'allergic rhinitis',
-            // RSV to Asthma
-            'bronchiolitis', 'rsv bronchiolitis', 'reactive airway disease',
+            // Reactive Airway to Asthma progression
+            'reactive airway disease',
             // Obesity Cascade
             'overweight', 'obesity', 'prediabetes', 'type 2 diabetes',
             // ADHD with Comorbidities
             'adhd', 'attention deficit hyperactivity disorder', 'anxiety', 'anxiety disorder', 'depression',
-            // Recurrent AOM
-            'otitis media', 'acute otitis media', 'recurrent otitis media', 'tympanostomy tubes',
-            // Functional GI
+            // Recurrent conditions (not single episodes)
+            'recurrent otitis media', 'tympanostomy tubes',
+            // Chronic GI
             'gerd', 'gastroesophageal reflux', 'infant reflux', 'functional constipation', 'constipation', 'functional abdominal pain'
         ]);
 
         function hasTimeTravelConditions(patient) {
-            // Check problem list for conditions with disease progression
+            // Check problem list for ACTIVE chronic conditions with disease progression
             const conditions = patient.problem_list || [];
             for (const cond of conditions) {
+                // Skip resolved/inactive conditions - they don't have ongoing progression
+                const status = (cond.clinical_status || '').toLowerCase();
+                if (status === 'resolved' || status === 'inactive') {
+                    continue;
+                }
+
                 const name = (cond.display_name || cond.name || '').toLowerCase();
                 if (TIME_TRAVEL_CONDITIONS.has(name)) {
                     return true;
@@ -3704,31 +3768,50 @@
             document.getElementById('tab-overview').style.display = 'block';
         }
 
-        async function generatePanelPatients() {
-            if (!currentPanel) return;
-
-            const countStr = prompt('How many patients to generate?', '20');
-            if (!countStr) return;
-
-            const count = parseInt(countStr);
-            if (isNaN(count) || count < 1 || count > 50) {
-                alert('Please enter a number between 1 and 50');
+        function showPanelGenerateModal() {
+            if (!currentPanel) {
+                alert('Error: No panel selected');
                 return;
             }
 
-            const btn = document.getElementById('generate-panel-patients-btn');
-            btn.disabled = true;
-            btn.innerHTML = '<i data-lucide="loader" class="icon animate-pulse"></i> Generating...';
+            // Reset form
+            document.getElementById('panel-gen-description').value = '';
+            document.getElementById('panel-gen-count').value = '10';
+            document.getElementById('panel-gen-min-age').value = '';
+            document.getElementById('panel-gen-max-age').value = '';
+            document.getElementById('panel-gen-conditions').value = '';
+
+            // Show modal (same pattern as auth modal)
+            document.getElementById('panel-generate-modal').classList.add('active');
+            lucide.createIcons();
+        }
+
+        function hidePanelGenerateModal() {
+            document.getElementById('panel-generate-modal').classList.remove('active');
+        }
+
+        async function generatePanelPatients(formData) {
+            if (!currentPanel) return;
+
+            const modal = document.getElementById('panel-generate-modal');
+            const submitBtn = document.getElementById('panel-gen-submit');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i data-lucide="loader" class="icon animate-pulse"></i> Generating...';
             lucide.createIcons();
 
             try {
-                const response = await fetch(`/api/panels/${currentPanel.id}/generate?count=${count}`, {
+                const response = await fetch(`/api/panels/${currentPanel.id}/generate`, {
                     method: 'POST',
-                    headers: authHeaders()
+                    headers: {
+                        ...authHeaders(),
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
                 });
 
                 if (response.ok) {
                     const data = await response.json();
+                    hidePanelGenerateModal();
                     alert(`Generated ${data.generated_count} patients!`);
                     // Reload the panel to show new patients
                     await viewPanel(currentPanel.id);
@@ -3740,8 +3823,8 @@
                 console.error('Failed to generate patients:', error);
                 alert('Failed to generate patients. Please try again.');
             } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<i data-lucide="users" class="icon"></i> Generate Patients';
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i data-lucide="users" class="icon"></i> Generate';
                 lucide.createIcons();
             }
         }
@@ -3837,8 +3920,50 @@
                 showView('panels');
             });
 
-            // Generate panel patients button
-            document.getElementById('generate-panel-patients-btn').addEventListener('click', generatePanelPatients);
+            // Generate panel patients button - show modal
+            document.getElementById('generate-panel-patients-btn').addEventListener('click', showPanelGenerateModal);
+
+            // Panel generate modal - cancel button
+            document.getElementById('panel-gen-cancel').addEventListener('click', hidePanelGenerateModal);
+
+            // Panel generate modal - click outside to close
+            document.getElementById('panel-generate-modal').addEventListener('click', (e) => {
+                if (e.target.id === 'panel-generate-modal') {
+                    hidePanelGenerateModal();
+                }
+            });
+
+            // Panel generate form submission
+            document.getElementById('panel-generate-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                // Gather form data
+                const formData = {
+                    count: parseInt(document.getElementById('panel-gen-count').value) || 10
+                };
+
+                const description = document.getElementById('panel-gen-description').value.trim();
+                if (description) {
+                    formData.description = description;
+                }
+
+                const minAge = document.getElementById('panel-gen-min-age').value;
+                if (minAge) {
+                    formData.min_age_months = parseInt(minAge);
+                }
+
+                const maxAge = document.getElementById('panel-gen-max-age').value;
+                if (maxAge) {
+                    formData.max_age_months = parseInt(maxAge);
+                }
+
+                const conditions = document.getElementById('panel-gen-conditions').value.trim();
+                if (conditions) {
+                    formData.conditions = conditions.split(',').map(c => c.trim()).filter(c => c);
+                }
+
+                await generatePanelPatients(formData);
+            });
 
             // Delete panel button
             document.getElementById('delete-panel-btn').addEventListener('click', deletePanel);

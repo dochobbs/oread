@@ -696,11 +696,22 @@ Examples:
             type="Outpatient clinic",
         )
         
-        for stub in encounter_stubs:
+        total_encounters = len(encounter_stubs)
+        for idx, stub in enumerate(encounter_stubs):
             # Calculate age at encounter
             days_old = (stub.date - demographics.date_of_birth).days
             months_old = days_old // 30
-            
+
+            # Determine timeline position for messiness injection
+            # Early = first 20% of encounters, Middle = 20-70%, Recent = last 30%
+            position_ratio = idx / max(total_encounters - 1, 1)
+            if position_ratio <= 0.2:
+                timeline_position = "early"
+            elif position_ratio <= 0.7:
+                timeline_position = "middle"
+            else:
+                timeline_position = "recent"
+
             # Generate growth measurement if well-child or appropriate
             if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN):
                 weight, height, hc, bmi = growth.generate_measurement(months_old)
@@ -712,7 +723,7 @@ Examples:
                     head_circumference_cm=hc,
                     bmi=bmi,
                 ))
-            
+
             # Generate the full encounter
             encounter = self._generate_encounter(
                 stub=stub,
@@ -723,6 +734,8 @@ Examples:
                 provider=provider,
                 location=location,
                 seed=seed,
+                encounter_index=idx,
+                timeline_position=timeline_position,
             )
             encounters.append(encounter)
             
@@ -1285,6 +1298,8 @@ Examples:
         provider: Provider,
         location: Location,
         seed: GenerationSeed,
+        encounter_index: int = 0,
+        timeline_position: str = "middle",
     ) -> Encounter:
         """Generate a full encounter from a stub."""
         from src.models import (
@@ -1444,6 +1459,31 @@ Examples:
 
         # Generate lab results for acute illness encounters
         lab_results = self._generate_labs(condition_key, stub.date, stub.type)
+
+        # Apply timeline-aware messiness errors
+        vitals_contradiction_text = ""
+        threading_content = None
+        if self.messiness_level > 0:
+            # Get timeline-appropriate errors
+            timeline_errors = self.messiness.get_errors_for_timeline_position(
+                timeline_position, age_months
+            )
+
+            # Apply vitals contradictions (level 3+) - only if BP is available
+            if vitals.blood_pressure_systolic is not None:
+                vitals_dict_copy = {
+                    "temperature_f": vitals.temperature_f,
+                    "blood_pressure_systolic": vitals.blood_pressure_systolic,
+                }
+                _, vitals_contradiction_text = self.messiness.inject_vitals_contradiction(vitals_dict_copy)
+
+            # Store timeline errors for potential use in note generation
+            # These can be used by the narrative generator to plant specific errors
+            self._current_timeline_errors = timeline_errors
+
+            # For level 5, get threading error content for this visit
+            if self.messiness_level >= 5:
+                threading_content = self.messiness.get_threading_stage_content(encounter_index)
 
         # Build the encounter
         encounter = Encounter(
@@ -1614,7 +1654,7 @@ Examples:
         # Get conditions list for anticipatory guidance
         conditions = life_arc.major_conditions if life_arc else []
 
-        def generate_all_for_encounter(enc: Encounter) -> dict:
+        def generate_all_for_encounter(enc: Encounter, enc_idx: int) -> dict:
             """Generate all LLM content for a single encounter."""
             days_old = (enc.date.date() - demographics.date_of_birth).days
             age_months = days_old // 30
@@ -1623,9 +1663,33 @@ Examples:
 
             # Generate narrative note
             try:
-                result["narrative"] = self._generate_llm_narrative(enc, demographics, age_months)
+                note = self._generate_llm_narrative(enc, demographics, age_months)
             except Exception:
-                result["narrative"] = self._generate_templated_note(enc, demographics, age_months)
+                note = self._generate_templated_note(enc, demographics, age_months)
+
+            # Apply chart messiness if configured
+            if self.messiness_level > 0:
+                context = {
+                    "sex": demographics.sex_at_birth.value,
+                    "age_months": age_months,
+                }
+                note = self.messiness.inject_text(note, context)
+                note = self.messiness.add_redundant_text(note)
+                note = self.messiness.inject_incomplete_sentence(note)
+
+                # Level 4+: potentially add wrong-sex exam finding
+                wrong_finding = self.messiness.get_wrong_sex_finding(demographics.sex_at_birth.value)
+                if wrong_finding:
+                    note = note.rstrip() + f"\n\n{wrong_finding}"
+
+                # Level 5: inject threading error content
+                if self.messiness_level >= 5:
+                    threading_content = self.messiness.get_threading_stage_content(enc_idx)
+                    if threading_content:
+                        # Inject threading error into the note
+                        note = note.rstrip() + f"\n\n{threading_content}"
+
+            result["narrative"] = note
 
             # Generate family narrative (HPI) for acute illness visits
             if enc.type == EncounterType.ACUTE_ILLNESS:
@@ -1653,7 +1717,10 @@ Examples:
 
         # Run LLM calls in parallel
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(generate_all_for_encounter, enc): enc for enc in encounters}
+            futures = {
+                executor.submit(generate_all_for_encounter, enc, idx): enc
+                for idx, enc in enumerate(encounters)
+            }
 
             for future in as_completed(futures):
                 result = future.result()

@@ -282,6 +282,175 @@ Examples:
 
         return seed
 
+    def _round_dose(self, dose_mg: float) -> int:
+        """Round dose to clinically practical value.
+
+        Doses are rounded to values that match typical pharmaceutical preparations:
+        - <10mg: nearest 1mg
+        - 10-100mg: nearest 5mg
+        - 100-500mg: nearest 10mg
+        - 500-1000mg: nearest 25mg
+        - >1000mg: nearest 50mg
+        """
+        if dose_mg < 10:
+            return round(dose_mg)
+        elif dose_mg < 100:
+            return round(dose_mg / 5) * 5
+        elif dose_mg < 500:
+            return round(dose_mg / 10) * 10
+        elif dose_mg < 1000:
+            return round(dose_mg / 25) * 25
+        else:
+            return round(dose_mg / 50) * 50
+
+    def _dedupe_immunizations(self, immunizations: list) -> list:
+        """Deduplicate immunizations by vaccine name and dose number."""
+        seen = set()
+        deduped = []
+        for imm in immunizations:
+            key = (imm.display_name, imm.dose_number)
+            if key not in seen:
+                deduped.append(imm)
+                seen.add(key)
+        return deduped
+
+    def _dedupe_medications(self, medications: list) -> list:
+        """Deduplicate medications, keeping most recent for PRN meds."""
+        by_name: dict = {}
+        for med in medications:
+            key = med.display_name.lower()
+            if key not in by_name:
+                by_name[key] = med
+            elif getattr(med, 'prn', False) and getattr(by_name[key], 'prn', False):
+                # For PRN meds, keep the more recent one
+                if med.start_date and by_name[key].start_date:
+                    if med.start_date > by_name[key].start_date:
+                        by_name[key] = med
+        return list(by_name.values())
+
+    def _ensure_chronic_treatment(self, patient) -> None:
+        """Add maintenance medications for chronic conditions (Bug 4 fix)."""
+        from src.models import Medication, MedicationStatus, CodeableConcept
+
+        # Map conditions to typical maintenance medications
+        chronic_meds = {
+            'asthma': {
+                'agent': 'Albuterol HFA Inhaler',
+                'rxnorm': '351137',
+                'dose_quantity': '1-2',
+                'dose_unit': 'puffs',
+                'frequency': 'Q4-6H PRN',
+                'route': 'inhaled',
+                'prn': True,
+            },
+            'adhd': {
+                'agent': 'Methylphenidate ER',
+                'rxnorm': '866924',
+                'dose_quantity': '18',
+                'dose_unit': 'mg',
+                'frequency': 'daily in AM',
+                'route': 'oral',
+                'prn': False,
+            },
+            'eczema': {
+                'agent': 'Hydrocortisone 1% Cream',
+                'rxnorm': '312312',
+                'dose_quantity': 'thin layer',
+                'dose_unit': '',
+                'frequency': 'BID to affected areas',
+                'route': 'topical',
+                'prn': True,
+            },
+            'anxiety': {
+                'agent': 'Fluoxetine',
+                'rxnorm': '310385',
+                'dose_quantity': '10',
+                'dose_unit': 'mg',
+                'frequency': 'daily',
+                'route': 'oral',
+                'prn': False,
+            },
+            'depression': {
+                'agent': 'Sertraline',
+                'rxnorm': '312938',
+                'dose_quantity': '25',
+                'dose_unit': 'mg',
+                'frequency': 'daily',
+                'route': 'oral',
+                'prn': False,
+            },
+            'allergic rhinitis': {
+                'agent': 'Cetirizine',
+                'rxnorm': '998671',
+                'dose_quantity': '10',
+                'dose_unit': 'mg',
+                'frequency': 'daily',
+                'route': 'oral',
+                'prn': False,
+            },
+            'type 1 diabetes': {
+                'agent': 'Insulin Glargine',
+                'rxnorm': '261551',
+                'dose_quantity': 'per sliding scale',
+                'dose_unit': '',
+                'frequency': 'at bedtime',
+                'route': 'subcutaneous',
+                'prn': False,
+            },
+            'epilepsy': {
+                'agent': 'Levetiracetam',
+                'rxnorm': '310422',
+                'dose_quantity': '250',
+                'dose_unit': 'mg',
+                'frequency': 'BID',
+                'route': 'oral',
+                'prn': False,
+            },
+            'seizure disorder': {
+                'agent': 'Levetiracetam',
+                'rxnorm': '310422',
+                'dose_quantity': '250',
+                'dose_unit': 'mg',
+                'frequency': 'BID',
+                'route': 'oral',
+                'prn': False,
+            },
+        }
+
+        # Get existing medication names
+        existing_meds = {m.display_name.lower() for m in patient.medication_list}
+
+        # Check each active condition
+        for problem in patient.problem_list:
+            if not problem.is_active:
+                continue
+
+            condition_key = problem.display_name.lower()
+            if condition_key in chronic_meds:
+                med_def = chronic_meds[condition_key]
+                if med_def['agent'].lower() not in existing_meds:
+                    # Add the maintenance medication
+                    # Use condition onset date as medication start date
+                    start_date = problem.onset_date if problem.onset_date else date.today()
+                    med = Medication(
+                        code=CodeableConcept(
+                            system="http://www.nlm.nih.gov/research/umls/rxnorm",
+                            code=med_def['rxnorm'],
+                            display=med_def['agent'],
+                        ),
+                        display_name=med_def['agent'],
+                        dose_quantity=med_def['dose_quantity'],
+                        dose_unit=med_def['dose_unit'],
+                        frequency=med_def['frequency'],
+                        route=med_def['route'],
+                        status=MedicationStatus.ACTIVE,
+                        start_date=start_date,
+                        prn=med_def['prn'],
+                        indication=f"Maintenance treatment for {problem.display_name}",
+                    )
+                    patient.medication_list.append(med)
+                    existing_meds.add(med_def['agent'].lower())
+
     def _apply_vitals_impact(
         self,
         vitals_dict: dict,
@@ -305,7 +474,7 @@ Examples:
         # Apply temperature range if specified
         temp_range = vitals_impact.get('temp_f')
         if temp_range and len(temp_range) == 2:
-            vitals_dict['temperature_f'] = random.uniform(temp_range[0], temp_range[1])
+            vitals_dict['temperature_f'] = round(random.uniform(temp_range[0], temp_range[1]), 1)
 
         # Apply heart rate multiplier
         hr_mult = vitals_impact.get('hr_multiplier', 1.0)
@@ -818,14 +987,31 @@ Examples:
 
         # Extract resolved conditions and past medications from acute illness encounters
         resolved_conditions, past_medications = self._extract_resolved_history(encounters)
-        problem_list.extend(resolved_conditions)
+
+        # Deduplicate problem list - only add if not already present (Bug 10 fix)
+        existing_problem_names = {p.display_name.lower() for p in problem_list}
+        for cond in resolved_conditions:
+            if cond.display_name.lower() not in existing_problem_names:
+                problem_list.append(cond)
+                existing_problem_names.add(cond.display_name.lower())
+
+        # Deduplicate medications - keep unique, most recent PRN (Bug 11 fix)
+        past_medications = self._dedupe_medications(past_medications)
+
+        # Deduplicate immunizations - one record per vaccine/dose combo (Bug 2 fix)
+        immunizations = self._dedupe_immunizations(immunizations)
 
         # Create Allergy objects from discovered medication allergies (life events)
         allergy_list = []
         discovered_allergies = getattr(self, '_discovered_allergies', [])
         for allergy_info in discovered_allergies:
+            # Ensure substance is not empty (Bug 12 fix)
+            substance = allergy_info.get('substance', '').strip()
+            if not substance:
+                substance = random.choice(['Penicillin', 'Amoxicillin', 'Sulfa', 'Cephalosporin'])
+
             allergy = Allergy(
-                display_name=f"{allergy_info['substance']} allergy",
+                display_name=f"{substance} allergy",
                 category=AllergyCategory.MEDICATION,
                 criticality=random.choice(["low", "high"]),
                 reactions=[
@@ -837,14 +1023,35 @@ Examples:
                         severity=random.choice([AllergySeverity.MILD, AllergySeverity.MODERATE]),
                     )
                 ],
-                onset_date=allergy_info["discovery_date"],
+                onset_date=allergy_info.get("discovery_date"),
                 code=CodeableConcept(
                     system="http://www.nlm.nih.gov/research/umls/rxnorm",
                     code=allergy_info.get("rxnorm", ""),
-                    display=allergy_info["substance"],
+                    display=substance,
                 ) if allergy_info.get("rxnorm") else None,
             )
             allergy_list.append(allergy)
+
+        # Add food allergy to allergy_list if patient has food allergy condition
+        for cond_name in life_arc.major_conditions:
+            if cond_name.lower() == 'food allergy':
+                food_allergen = random.choice(['Peanut', 'Tree nuts', 'Milk', 'Egg', 'Shellfish', 'Wheat', 'Soy'])
+                allergy = Allergy(
+                    display_name=f"{food_allergen} allergy",
+                    category=AllergyCategory.FOOD,
+                    criticality=random.choice(["low", "high"]),
+                    reactions=[
+                        AllergyReaction(
+                            manifestation=random.choice([
+                                "Hives", "Swelling", "Vomiting", "Anaphylaxis",
+                                "Itching", "Difficulty breathing"
+                            ]),
+                            severity=random.choice([AllergySeverity.MILD, AllergySeverity.MODERATE, AllergySeverity.SEVERE]),
+                        )
+                    ],
+                )
+                allergy_list.append(allergy)
+                break
 
         # Build the patient
         patient = Patient(
@@ -861,6 +1068,9 @@ Examples:
             patient_messages=patient_messages,
             message_frequency=message_frequency,
         )
+
+        # Ensure chronic conditions have maintenance medications (Bug 4 fix)
+        self._ensure_chronic_treatment(patient)
 
         return patient
     
@@ -2335,8 +2545,32 @@ VITAL SIGNS:
             instructions = treatment.get('patient_instructions', [])
 
             if medications or instructions:
-                # Generate medication plan items and prescriptions
+                # Filter medications to select appropriate ones (Bug 3 fix)
+                # Group by indication - alternatives have similar indications
+                # Select ONE medication per indication group
+                selected_meds = []
+                seen_indications = set()
+
                 for med in medications:
+                    if not isinstance(med, dict):
+                        continue
+                    indication = med.get('indication', 'primary')
+                    # Normalize indication for grouping
+                    ind_key = indication.lower().split(',')[0].strip() if indication else 'primary'
+
+                    # Skip if we already have a medication for this indication
+                    if ind_key in seen_indications and not med.get('prn', False):
+                        continue
+
+                    # For PRN medications, always include them
+                    if med.get('prn', False):
+                        selected_meds.append(med)
+                    else:
+                        selected_meds.append(med)
+                        seen_indications.add(ind_key)
+
+                # Generate medication plan items and prescriptions
+                for med in selected_meds:
                     if not isinstance(med, dict):
                         continue
 
@@ -2359,15 +2593,16 @@ VITAL SIGNS:
                     if age_min and age_months and age_months < age_min:
                         continue
 
-                    # Calculate dose
+                    # Calculate dose with clinical rounding
                     if dose_mg_kg and weight_kg:
                         dose = dose_mg_kg * weight_kg
                         if max_dose_mg:
                             dose = min(dose, max_dose_mg)
-                        dose_str = f"{dose:.0f}mg"
+                        rounded_dose = self._round_dose(dose)
+                        dose_str = str(rounded_dose)
                         dose_unit = "mg"
                     elif fixed_dose:
-                        dose_str = f"{fixed_dose}mg"
+                        dose_str = str(fixed_dose)
                         dose_unit = "mg"
                     else:
                         dose_str = "per package"
@@ -2377,10 +2612,11 @@ VITAL SIGNS:
                     duration_str = f" x {duration} days" if duration else ""
                     prn_str = " PRN" if is_prn else ""
 
-                    # Create plan item
+                    # Create plan item (include unit in description for display)
+                    dose_display = f"{dose_str}{dose_unit}" if dose_unit else dose_str
                     plan_items.append(PlanItem(
                         category="medication",
-                        description=f"{agent} {dose_str} {frequency}{duration_str}{prn_str}",
+                        description=f"{agent} {dose_display} {frequency}{duration_str}{prn_str}",
                         details=indication if indication else None,
                     ))
 
@@ -3124,9 +3360,12 @@ VITAL SIGNS:
         age_months = demographics.age_months
         sex = "male" if demographics.sex_at_birth == Sex.MALE else "female"
 
-        # Determine visit type
+        # Determine visit type (with fallback)
         if visit_type is None:
-            visit_type = random.choice(config["visit_types"])
+            if config["visit_types"]:
+                visit_type = random.choice(config["visit_types"])
+            else:
+                visit_type = EncounterType.ACUTE_ILLNESS
 
         # Determine condition for acute/urgent visits
         encounter_condition = None

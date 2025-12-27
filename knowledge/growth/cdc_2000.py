@@ -540,11 +540,11 @@ class GrowthTrajectory:
         weight_percentile: float = 50,
         height_percentile: float = 50,
         hc_percentile: float = 50,
-        variance: float = 0.1,
+        variance: float = 0.3,  # Bug 7 fix: increased from 0.1 for more realistic variation
     ):
         """
         Initialize a growth trajectory.
-        
+
         Args:
             sex: "male" or "female"
             weight_percentile: Starting weight percentile (0-100)
@@ -562,12 +562,13 @@ class GrowthTrajectory:
         self._measurements: list[tuple[int, float, float, float | None]] = []
     
     def _drift_percentile(self, current: float, variance: float) -> float:
-        """Apply random walk to a percentile."""
+        """Apply random walk to a percentile (Bug 7 fix: increased drift)."""
         import random
-        drift = random.gauss(0, variance * 10)  # Scale variance to percentile points
+        # Scale variance to percentile points - increased multiplier for more variation
+        drift = random.gauss(0, variance * 15)
         new = current + drift
-        # Keep within bounds and bias toward staying in channel
-        return max(1, min(99, new * 0.95 + current * 0.05))
+        # Keep within bounds, blend new (85%) with current (15%) for channel tracking
+        return max(3, min(97, new * 0.85 + current * 0.15))
     
     def generate_measurement(
         self,

@@ -590,6 +590,12 @@ class Condition(BaseModel):
     caused_by: str | None = Field(default=None, description="ID of causing condition")
     complications: list[str] = Field(default_factory=list, description="IDs of complication conditions")
 
+    @computed_field
+    @property
+    def is_active(self) -> bool:
+        """Check if condition is currently active (Bug 9 fix - easier status checking)."""
+        return self.clinical_status == ConditionStatus.ACTIVE
+
 
 class DoseChange(BaseModel):
     """Record of a medication dose change."""

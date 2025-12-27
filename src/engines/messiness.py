@@ -759,7 +759,7 @@ class MessinessInjector:
     Returns:
       Text with appropriate messiness injected
     """
-    if self.level == 0:
+    if self.level == 0 or not text or len(text.strip()) < 20:
       return text
 
     context = context or {}
@@ -794,6 +794,10 @@ class MessinessInjector:
 
   def _inject_zombie_notes(self, text: str, context: dict) -> str:
     """Insert outdated copy-forward fragments."""
+    # Don't inject into very short texts
+    if len(text.strip()) < 50:
+      return text
+
     age_months = context.get("age_months", 60)
 
     fragments_to_add = []

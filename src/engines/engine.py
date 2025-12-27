@@ -1464,8 +1464,9 @@ Examples:
         vitals_contradiction_text = ""
         threading_content = None
         if self.messiness_level > 0:
-            # Get timeline-appropriate errors
-            timeline_errors = self.messiness.get_errors_for_timeline_position(
+            # Get timeline-appropriate errors (for future structured error injection)
+            # Currently used for tracking; structured injection coming in future update
+            _ = self.messiness.get_errors_for_timeline_position(
                 timeline_position, age_months
             )
 
@@ -1476,10 +1477,6 @@ Examples:
                     "blood_pressure_systolic": vitals.blood_pressure_systolic,
                 }
                 _, vitals_contradiction_text = self.messiness.inject_vitals_contradiction(vitals_dict_copy)
-
-            # Store timeline errors for potential use in note generation
-            # These can be used by the narrative generator to plant specific errors
-            self._current_timeline_errors = timeline_errors
 
             # For level 5, get threading error content for this visit
             if self.messiness_level >= 5:
@@ -1748,34 +1745,6 @@ Examples:
                             enc.anticipatory_guidance = result["guidance"]
 
                         break
-
-    def _generate_narrative_note(self, encounter: Encounter, demographics: Demographics, age_months: int) -> str:
-        """Generate a narrative clinical note, using LLM if available."""
-        if not self.use_llm:
-            note = self._generate_templated_note(encounter, demographics, age_months)
-        else:
-            try:
-                note = self._generate_llm_narrative(encounter, demographics, age_months)
-            except Exception:
-                # Fall back to template on any LLM error
-                note = self._generate_templated_note(encounter, demographics, age_months)
-
-        # Apply chart messiness if configured
-        if self.messiness_level > 0:
-            context = {
-                "sex": demographics.sex_at_birth.value,
-                "age_months": age_months,
-            }
-            note = self.messiness.inject_text(note, context)
-            note = self.messiness.add_redundant_text(note)
-            note = self.messiness.inject_incomplete_sentence(note)
-
-            # Level 4+: potentially add wrong-sex exam finding
-            wrong_finding = self.messiness.get_wrong_sex_finding(demographics.sex_at_birth.value)
-            if wrong_finding:
-                note = note.rstrip() + f"\n\n{wrong_finding}"
-
-        return note
 
     def _generate_llm_narrative(self, encounter: Encounter, demographics: Demographics, age_months: int) -> str:
         """Generate a natural clinical narrative using Claude."""

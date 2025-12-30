@@ -22,6 +22,7 @@ from src.models import (
     Observation,
     LabResult,
     LabPanel,
+    ImagingResult,
     Procedure,
     PatientMessage,
     MessageCategory,
@@ -33,6 +34,8 @@ from src.models import (
     AllergyCategory,
     EncounterClass,
     EncounterStatus,
+    Interpretation,
+    ResultStatus,
 )
 
 
@@ -102,12 +105,31 @@ class FHIRExporter:
             encounter_id_map[encounter.id] = enc_id
             enc_resource = self._create_encounter_resource(encounter, patient_id, enc_id)
             entries.append(self._bundle_entry(enc_resource, enc_id))
-            
+
             # Observations from this encounter (vitals)
             if encounter.vital_signs:
                 for obs in self._create_vital_observations(encounter, patient_id, enc_id):
                     obs_id = generate_uuid()
                     entries.append(self._bundle_entry(obs, obs_id))
+
+            # Lab results from this encounter
+            for lab_result in encounter.lab_results:
+                # Handle both LabResult and LabPanel
+                if isinstance(lab_result, LabResult):
+                    lab_id = generate_uuid()
+                    lab_obs = self._create_lab_observation(lab_result, patient_id, enc_id)
+                    entries.append(self._bundle_entry(lab_obs, lab_id))
+                elif hasattr(lab_result, 'results'):  # LabPanel
+                    for lab in lab_result.results:
+                        lab_id = generate_uuid()
+                        lab_obs = self._create_lab_observation(lab, patient_id, enc_id)
+                        entries.append(self._bundle_entry(lab_obs, lab_id))
+
+            # Imaging results from this encounter
+            for imaging in encounter.imaging_results:
+                img_id = generate_uuid()
+                img_report = self._create_diagnostic_report(imaging, patient_id, enc_id)
+                entries.append(self._bundle_entry(img_report, img_id))
         
         # Growth observations
         for growth in patient.growth_data:
@@ -599,6 +621,156 @@ class FHIRExporter:
             observations.append(obs)
 
         return observations
+
+    def _create_lab_observation(
+        self,
+        lab: LabResult,
+        patient_id: str,
+        enc_id: str | None,
+    ) -> dict:
+        """Create FHIR Observation resource for a lab result."""
+        # Map interpretation to FHIR
+        interpretation_map = {
+            Interpretation.NORMAL: {"code": "N", "display": "Normal"},
+            Interpretation.ABNORMAL: {"code": "A", "display": "Abnormal"},
+            Interpretation.CRITICAL: {"code": "AA", "display": "Critical abnormal"},
+            Interpretation.HIGH: {"code": "H", "display": "High"},
+            Interpretation.LOW: {"code": "L", "display": "Low"},
+            Interpretation.POSITIVE: {"code": "POS", "display": "Positive"},
+            Interpretation.NEGATIVE: {"code": "NEG", "display": "Negative"},
+        }
+
+        interp = interpretation_map.get(
+            lab.interpretation,
+            {"code": "N", "display": "Normal"}
+        )
+
+        obs = {
+            "resourceType": "Observation",
+            "status": "final",
+            "category": [{
+                "coding": [{
+                    "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                    "code": "laboratory",
+                    "display": "Laboratory",
+                }],
+            }],
+            "code": {
+                "coding": [{
+                    "system": lab.code.system if lab.code else "http://loinc.org",
+                    "code": lab.code.code if lab.code else "",
+                    "display": lab.code.display if lab.code else lab.display_name,
+                }],
+                "text": lab.display_name,
+            },
+            "subject": {
+                "reference": f"urn:uuid:{patient_id}",
+            },
+            "effectiveDateTime": format_date(lab.resulted_date),
+            "interpretation": [{
+                "coding": [{
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                    "code": interp["code"],
+                    "display": interp["display"],
+                }],
+            }],
+        }
+
+        # Add encounter reference if available
+        if enc_id:
+            obs["encounter"] = {"reference": f"urn:uuid:{enc_id}"}
+
+        # Add value - either numeric or string
+        if lab.value is not None:
+            if isinstance(lab.value, (int, float)):
+                obs["valueQuantity"] = {
+                    "value": lab.value,
+                    "unit": lab.unit or "",
+                    "system": "http://unitsofmeasure.org",
+                    "code": lab.unit or "",
+                }
+            else:
+                obs["valueString"] = str(lab.value)
+
+        # Add reference range if available
+        if lab.reference_range:
+            obs["referenceRange"] = [{
+                "low": {"value": lab.reference_range.low, "unit": lab.reference_range.unit or ""},
+                "high": {"value": lab.reference_range.high, "unit": lab.reference_range.unit or ""},
+            }]
+
+        return obs
+
+    def _create_diagnostic_report(
+        self,
+        imaging: ImagingResult,
+        patient_id: str,
+        enc_id: str | None,
+    ) -> dict:
+        """Create FHIR DiagnosticReport resource for imaging result."""
+        # Map status
+        status_map = {
+            ResultStatus.PRELIMINARY: "preliminary",
+            ResultStatus.FINAL: "final",
+            ResultStatus.AMENDED: "amended",
+            ResultStatus.CANCELLED: "cancelled",
+        }
+
+        report = {
+            "resourceType": "DiagnosticReport",
+            "status": status_map.get(imaging.status, "final"),
+            "category": [{
+                "coding": [{
+                    "system": "http://terminology.hl7.org/CodeSystem/v2-0074",
+                    "code": "RAD",
+                    "display": "Radiology",
+                }],
+            }],
+            "code": {
+                "coding": [{
+                    "system": imaging.code.system if imaging.code else "http://loinc.org",
+                    "code": imaging.code.code if imaging.code else "",
+                    "display": imaging.code.display if imaging.code else imaging.display_name,
+                }] if imaging.code else [],
+                "text": imaging.display_name,
+            },
+            "subject": {
+                "reference": f"urn:uuid:{patient_id}",
+            },
+            "effectiveDateTime": format_date(imaging.performed_date),
+            "issued": format_date(imaging.reported_date) if imaging.reported_date else None,
+            "conclusion": imaging.impression,
+            "presentedForm": [{
+                "contentType": "text/plain",
+                "data": None,  # Would be base64 encoded report
+                "title": imaging.display_name,
+            }],
+        }
+
+        # Add encounter reference if available
+        if enc_id:
+            report["encounter"] = {"reference": f"urn:uuid:{enc_id}"}
+
+        # Add performer (radiologist)
+        if imaging.radiologist:
+            report["performer"] = [{
+                "display": imaging.radiologist,
+            }]
+
+        # Add performing facility
+        if imaging.performing_facility:
+            report["performer"] = report.get("performer", []) + [{
+                "display": imaging.performing_facility,
+            }]
+
+        # Add findings as result narrative
+        if imaging.findings:
+            report["conclusionCode"] = [{
+                "text": imaging.findings,
+            }]
+
+        # Remove None values
+        return {k: v for k, v in report.items() if v is not None}
 
     def _create_communication_resource(
         self,

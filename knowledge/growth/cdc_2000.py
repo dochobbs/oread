@@ -529,11 +529,18 @@ def generate_hc_at_percentile(
 class GrowthTrajectory:
     """
     Generates a coherent growth trajectory for a patient.
-    
+
     Uses a "percentile channel" approach where a patient generally
     tracks along the same percentile lines, with natural variation.
+
+    Supports growth patterns:
+      - normal: Standard percentile channel tracking
+      - ftt: Failure to thrive (weight falls, height preserved)
+      - obesity: Weight percentile >> height percentile
+      - preterm_catchup: Accelerated catch-up growth in first 24 months
+      - growth_delay: Plateau during specific age range
     """
-    
+
     def __init__(
         self,
         sex: Literal["male", "female"],
@@ -541,6 +548,10 @@ class GrowthTrajectory:
         height_percentile: float = 50,
         hc_percentile: float = 50,
         variance: float = 0.3,  # Bug 7 fix: increased from 0.1 for more realistic variation
+        # Growth pattern support
+        pattern: str = "normal",  # normal, ftt, obesity, preterm_catchup, growth_delay
+        pattern_onset_age: int | None = None,  # Age in months when pattern starts
+        gestational_age_weeks: int | None = None,  # For preterm catch-up
     ):
         """
         Initialize a growth trajectory.
@@ -551,21 +562,88 @@ class GrowthTrajectory:
             height_percentile: Starting height percentile (0-100)
             hc_percentile: Starting HC percentile (0-100)
             variance: How much percentiles can drift between measurements (0-1)
+            pattern: Growth pattern type (normal, ftt, obesity, preterm_catchup, growth_delay)
+            pattern_onset_age: Age in months when non-normal pattern starts
+            gestational_age_weeks: For preterm infants (corrected age calculation)
         """
         self.sex = sex
         self.weight_percentile = weight_percentile
         self.height_percentile = height_percentile
         self.hc_percentile = hc_percentile
         self.variance = variance
-        
+
+        # Growth pattern settings
+        self.pattern = pattern
+        self.pattern_onset_age = pattern_onset_age or 0
+        self.gestational_age_weeks = gestational_age_weeks
+
+        # For preterm, calculate corrected age offset
+        if pattern == "preterm_catchup" and gestational_age_weeks:
+            self._corrected_age_offset = (40 - gestational_age_weeks) / 4.3  # months
+            # Preterm infants typically start lower
+            self.weight_percentile = min(weight_percentile, 35)
+            self.height_percentile = min(height_percentile, 40)
+        else:
+            self._corrected_age_offset = 0
+
         # Track history
         self._measurements: list[tuple[int, float, float, float | None]] = []
-    
-    def _drift_percentile(self, current: float, variance: float) -> float:
-        """Apply random walk to a percentile (Bug 7 fix: increased drift)."""
+
+    def _pattern_drift(self, age_months: int) -> tuple[float, float]:
+        """
+        Calculate pattern-specific drift bias for weight and height.
+
+        Returns:
+            Tuple of (weight_drift_bias, height_drift_bias)
+        """
+        import random
+
+        if self.pattern == "ftt":
+            # Failure to thrive: weight drifts down, height relatively stable
+            # More severe for younger children
+            if age_months < 24:
+                return (-1.5, 0.0)  # Aggressive downward weight drift
+            else:
+                return (-0.8, 0.0)  # Slower decline for older children
+
+        elif self.pattern == "obesity":
+            if age_months >= self.pattern_onset_age:
+                # Weight drifts up, height stays normal
+                time_factor = min(1.0, (age_months - self.pattern_onset_age) / 24)
+                return (2.0 * (0.5 + time_factor), 0.0)
+            return (0.0, 0.0)
+
+        elif self.pattern == "preterm_catchup":
+            # Accelerated catch-up growth in first 24 months (corrected age)
+            corrected_age = age_months - self._corrected_age_offset
+            if corrected_age < 24:
+                # Catch-up: both weight and height drift upward
+                catch_up_factor = max(0.3, 1.0 - (corrected_age / 24))
+                return (1.5 * catch_up_factor, 1.2 * catch_up_factor)
+            return (0.0, 0.0)
+
+        elif self.pattern == "growth_delay":
+            # Plateau during specific period
+            if self.pattern_onset_age <= age_months < self.pattern_onset_age + 12:
+                # Minimal drift during plateau - almost no growth
+                return (0.0, -0.5)  # Slight height lag
+            elif age_months >= self.pattern_onset_age + 12:
+                # Recovery phase - accelerated growth
+                return (0.5, 0.8)
+            return (0.0, 0.0)
+
+        return (0.0, 0.0)  # Normal pattern
+
+    def _drift_percentile(
+        self,
+        current: float,
+        variance: float,
+        bias: float = 0.0,
+    ) -> float:
+        """Apply random walk to a percentile with optional directional bias."""
         import random
         # Scale variance to percentile points - increased multiplier for more variation
-        drift = random.gauss(0, variance * 15)
+        drift = random.gauss(bias, variance * 15)
         new = current + drift
         # Keep within bounds, blend new (85%) with current (15%) for channel tracking
         return max(3, min(97, new * 0.85 + current * 0.15))
@@ -577,22 +655,25 @@ class GrowthTrajectory:
     ) -> tuple[float, float, float | None, float | None]:
         """
         Generate a measurement at a given age.
-        
+
         Args:
             age_months: Age in months
             include_hc: Include head circumference (auto-determined if None)
-        
+
         Returns:
             Tuple of (weight_kg, height_cm, hc_cm or None, bmi or None)
         """
-        # Apply drift to percentiles
+        # Get pattern-specific drift biases
+        weight_bias, height_bias = self._pattern_drift(age_months)
+
+        # Apply drift to percentiles with pattern-aware bias
         self.weight_percentile = self._drift_percentile(
-            self.weight_percentile, self.variance
+            self.weight_percentile, self.variance, bias=weight_bias
         )
         self.height_percentile = self._drift_percentile(
-            self.height_percentile, self.variance
+            self.height_percentile, self.variance, bias=height_bias
         )
-        
+
         # Generate measurements
         weight = generate_weight_at_percentile(
             self.weight_percentile, age_months, self.sex
@@ -600,7 +681,7 @@ class GrowthTrajectory:
         height = generate_height_at_percentile(
             self.height_percentile, age_months, self.sex
         )
-        
+
         # Head circumference (only for 0-36 months)
         hc = None
         if include_hc is None:
@@ -612,7 +693,7 @@ class GrowthTrajectory:
             hc = generate_hc_at_percentile(
                 self.hc_percentile, age_months, self.sex
             )
-        
+
         # BMI (only for 24+ months)
         bmi = None
         if age_months >= 24:

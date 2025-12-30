@@ -48,7 +48,7 @@ python cli.py generate --age 5 --conditions asthma
 # Start the server
 python server.py
 
-# Open your browser to http://localhost:8000
+# Open your browser to http://localhost:8004
 ```
 
 The web UI lets you:
@@ -63,7 +63,7 @@ The web UI lets you:
 python server.py
 
 # Generate a patient
-curl -X POST http://localhost:8000/api/generate \
+curl -X POST http://localhost:8004/api/generate \
   -H "Content-Type: application/json" \
   -d '{"age_months": 18}'
 
@@ -71,13 +71,13 @@ curl -X POST http://localhost:8000/api/generate \
 # {"id": "abc123", "name": "Emma Johnson", ...}
 
 # Get full patient data
-curl http://localhost:8000/api/patients/abc123
+curl http://localhost:8004/api/patients/abc123
 
 # Export as FHIR
-curl http://localhost:8000/api/patients/abc123/export/fhir -o patient.fhir.json
+curl http://localhost:8004/api/patients/abc123/export/fhir -o patient.fhir.json
 
 # Export as C-CDA
-curl http://localhost:8000/api/patients/abc123/export/ccda -o patient.ccda.xml
+curl http://localhost:8004/api/patients/abc123/export/ccda -o patient.ccda.xml
 ```
 
 ## Understanding the Output
@@ -159,7 +159,7 @@ Make sure you activated the virtual environment:
 source .venv/bin/activate
 ```
 
-### Port 8000 Already in Use
+### Port 8004 Already in Use
 
 Use a different port:
 ```bash
@@ -174,4 +174,4 @@ First-time generation may be slower as caches warm up. Subsequent generations ar
 
 - Read [CONDITION_SCHEMA.md](CONDITION_SCHEMA.md) to understand condition definitions
 - Check [ARCHITECTURE.md](ARCHITECTURE.md) for system design details
-- Explore the API docs at http://localhost:8000/docs
+- Explore the API docs at http://localhost:8004/docs

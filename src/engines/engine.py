@@ -115,6 +115,8 @@ class PedsEngine(BaseEngine):
 
     # Class-level cache for conditions data
     _conditions_cache: dict | None = None
+    # Class-level cache for immunization schedule
+    _immunization_cache: dict | None = None
 
     @classmethod
     def _load_conditions(cls, knowledge_dir: Path) -> dict:
@@ -132,13 +134,31 @@ class PedsEngine(BaseEngine):
 
         return cls._conditions_cache
 
+    @classmethod
+    def _load_immunization_schedule(cls, knowledge_dir: Path) -> dict:
+        """Load AAP immunization schedule from YAML file, with caching."""
+        if cls._immunization_cache is not None:
+            return cls._immunization_cache
+
+        schedule_path = knowledge_dir / "immunizations" / "aap_schedule.yaml"
+        if schedule_path.exists():
+            with open(schedule_path, 'r') as f:
+                cls._immunization_cache = yaml.safe_load(f)
+        else:
+            cls._immunization_cache = {}
+
+        return cls._immunization_cache
+
     def __init__(self, *args, use_llm: bool = True, messiness_level: int = 0, **kwargs):
         super().__init__(*args, **kwargs)
         # Load conditions database
         self._conditions = self._load_conditions(self.knowledge_dir)
+        # Load immunization schedule
+        self._immunization_schedule = self._load_immunization_schedule(self.knowledge_dir)
 
         # Build derived data structures for efficient lookups
         self._build_condition_lookups()
+        self._build_immunization_lookups()
 
         # LLM is enabled if requested AND client is available
         self.use_llm = use_llm and self.llm is not None
@@ -202,6 +222,54 @@ class PedsEngine(BaseEngine):
                 continue
             display_name = data.get('display_name', key.replace('_', ' ').title())
             self._display_to_key[display_name.lower()] = key
+
+    def _build_immunization_lookups(self):
+        """Build lookup tables from immunization schedule."""
+        # Vaccine definitions with CVX codes
+        self._vaccines = self._immunization_schedule.get('vaccines', {})
+
+        # Build age-based vaccine schedule from YAML
+        # Maps age_months -> list of (vaccine_key, dose_number)
+        self._vaccines_by_age = {}
+
+        schedule = self._immunization_schedule.get('schedule', {})
+        age_key_to_months = {
+            'birth': 0,
+            '1_month': 1,
+            '2_months': 2,
+            '4_months': 4,
+            '6_months': 6,
+            '12_months': 12,
+            '15_months': 15,
+            '18_months': 18,
+            '4_years': 48,
+            '11_years': 132,
+            '12_years': 144,
+            '16_years': 192,
+        }
+
+        for age_key, vaccines in schedule.items():
+            age_months = age_key_to_months.get(age_key)
+            if age_months is None:
+                continue
+
+            self._vaccines_by_age[age_months] = []
+            for vax in vaccines:
+                vaccine_key = vax.get('vaccine')
+                dose_number = vax.get('dose_number', 1)
+                vaccine_def = self._vaccines.get(vaccine_key, {})
+                cvx_code = vaccine_def.get('cvx_code', '')
+                vaccine_name = vaccine_def.get('name', vaccine_key)
+
+                self._vaccines_by_age[age_months].append({
+                    'key': vaccine_key,
+                    'name': vaccine_name,
+                    'cvx_code': cvx_code,
+                    'dose_number': dose_number,
+                    'window_start': vax.get('window_start_months', age_months),
+                    'window_end': vax.get('window_end_months', age_months + 2),
+                    'notes': vax.get('notes'),
+                })
 
     def _get_condition_key(self, reason: str) -> str | None:
         """Map a display name or reason text to a condition key."""
@@ -589,10 +657,23 @@ Examples:
         self,
         condition_key: str | None,
         encounter_date: date,
-        encounter_type: EncounterType
+        encounter_type: EncounterType,
+        age_months: int | None = None,
     ) -> list:
-        """Generate condition-specific lab results."""
-        from src.models import LabResult, CodeableConcept, Interpretation
+        """Generate condition-specific lab results.
+
+        Supports both binary (positive/negative) and numeric lab values.
+
+        Args:
+            condition_key: The condition key to look up labs for
+            encounter_date: Date of the encounter
+            encounter_type: Type of encounter (determines if labs are generated)
+            age_months: Patient age for age-specific reference ranges
+
+        Returns:
+            List of LabResult objects
+        """
+        from src.models import LabResult, CodeableConcept, Interpretation, ReferenceRange
 
         if not condition_key or encounter_type not in (
             EncounterType.ACUTE_ILLNESS,
@@ -615,27 +696,185 @@ Examples:
 
             name = lab.get('name', '')
             loinc = lab.get('loinc', '')
-            result_positive = lab.get('result_positive', 'Positive')
-            result_negative = lab.get('result_negative', 'Negative')
-            prob_positive = lab.get('probability_positive', 0.5)
 
             if not name or not loinc:
                 continue
 
-            # Probabilistically determine if result is positive
+            value_type = lab.get('value_type', 'binary')
+
+            if value_type == 'numeric':
+                # Generate numeric lab value
+                result = self._generate_numeric_lab(lab, age_months, encounter_date)
+                if result:
+                    results.append(result)
+            else:
+                # Binary (positive/negative) result
+                result_positive = lab.get('result_positive', 'Positive')
+                result_negative = lab.get('result_negative', 'Negative')
+                prob_positive = lab.get('probability_positive', 0.5)
+
+                is_positive = random.random() < prob_positive
+
+                results.append(LabResult(
+                    code=CodeableConcept(
+                        system="http://loinc.org",
+                        code=loinc,
+                        display=name
+                    ),
+                    display_name=name,
+                    value=result_positive if is_positive else result_negative,
+                    interpretation=Interpretation.POSITIVE if is_positive else Interpretation.NEGATIVE,
+                    resulted_date=datetime.combine(encounter_date, datetime.min.time()),
+                ))
+
+        return results
+
+    def _generate_numeric_lab(
+        self,
+        lab_def: dict,
+        age_months: int | None,
+        encounter_date: date,
+    ):
+        """Generate a numeric lab result with value, unit, and reference range.
+
+        Args:
+            lab_def: Lab definition dictionary from conditions.yaml
+            age_months: Patient age for reference range lookup
+            encounter_date: Date for the result
+
+        Returns:
+            LabResult object or None
+        """
+        from src.models import LabResult, CodeableConcept, Interpretation, ReferenceRange
+
+        name = lab_def.get('name', '')
+        loinc = lab_def.get('loinc', '')
+        unit = lab_def.get('unit', '')
+
+        # Get reference range (age-specific if available)
+        normal_low = lab_def.get('normal_range_low')
+        normal_high = lab_def.get('normal_range_high')
+
+        if age_months and lab_def.get('age_ranges'):
+            for age_range in lab_def['age_ranges']:
+                age_min = age_range.get('age_min', 0)
+                age_max = age_range.get('age_max', 999)
+                if age_min <= age_months <= age_max:
+                    normal_low = age_range.get('low', normal_low)
+                    normal_high = age_range.get('high', normal_high)
+                    break
+
+        if normal_low is None or normal_high is None:
+            return None  # Can't generate without reference range
+
+        # Determine if abnormal
+        prob_abnormal = lab_def.get('probability_abnormal', 0.3)
+        is_abnormal = random.random() < prob_abnormal
+
+        if is_abnormal:
+            # Generate abnormal value (high or low)
+            if random.random() < 0.6:  # 60% high abnormal
+                abn_min = lab_def.get('abnormal_high_min', normal_high)
+                abn_max = lab_def.get('abnormal_high_max', normal_high * 1.5)
+                value = random.uniform(abn_min, abn_max)
+                interpretation = Interpretation.HIGH
+            else:  # 40% low abnormal
+                abn_min = lab_def.get('abnormal_low_min', normal_low * 0.5)
+                abn_max = lab_def.get('abnormal_low_max', normal_low)
+                value = random.uniform(abn_min, abn_max)
+                interpretation = Interpretation.LOW
+        else:
+            # Generate normal value
+            value = random.uniform(normal_low, normal_high)
+            interpretation = Interpretation.NORMAL
+
+        # Round appropriately
+        if value >= 100:
+            value = round(value, 0)
+        elif value >= 10:
+            value = round(value, 1)
+        else:
+            value = round(value, 2)
+
+        return LabResult(
+            code=CodeableConcept(
+                system="http://loinc.org",
+                code=loinc,
+                display=name
+            ),
+            display_name=name,
+            value=value,
+            unit=unit,
+            reference_range=ReferenceRange(
+                low=normal_low,
+                high=normal_high,
+                unit=unit,
+            ),
+            interpretation=interpretation,
+            resulted_date=datetime.combine(encounter_date, datetime.min.time()),
+        )
+
+    def _generate_imaging(
+        self,
+        condition_key: str | None,
+        encounter_date: date,
+    ) -> list:
+        """Generate imaging results for a condition.
+
+        Args:
+            condition_key: Condition key from conditions.yaml (e.g., 'pneumonia')
+            encounter_date: Date of the encounter
+
+        Returns:
+            List of ImagingResult objects
+        """
+        from src.models import ImagingResult, CodeableConcept, ResultStatus
+
+        if not condition_key:
+            return []
+
+        condition_def = self._conditions.get(condition_key, {})
+        imaging_defs = condition_def.get('diagnostics', {}).get('imaging', [])
+
+        if not imaging_defs:
+            return []
+
+        results = []
+        for img_def in imaging_defs:
+            name = img_def.get('name', '')
+            modality = img_def.get('modality', 'X-ray')
+            loinc = img_def.get('loinc', '')
+            prob_positive = img_def.get('probability_positive', 0.5)
+
+            # Determine positive or negative finding
             is_positive = random.random() < prob_positive
 
-            results.append(LabResult(
+            if is_positive:
+                finding = img_def.get('finding_positive', 'Abnormal finding')
+                impression = img_def.get('impression_positive', 'Abnormal study')
+            else:
+                finding = img_def.get('finding_negative', 'No abnormality')
+                impression = img_def.get('impression_negative', 'Normal study')
+
+            performed_dt = datetime.combine(encounter_date, datetime.min.time())
+
+            result = ImagingResult(
                 code=CodeableConcept(
                     system="http://loinc.org",
                     code=loinc,
                     display=name
-                ),
+                ) if loinc else None,
                 display_name=name,
-                value=result_positive if is_positive else result_negative,
-                interpretation=Interpretation.POSITIVE if is_positive else Interpretation.NEGATIVE,
-                resulted_date=datetime.combine(encounter_date, datetime.min.time()),
-            ))
+                modality=modality,
+                status=ResultStatus.FINAL,
+                findings=finding,
+                impression=impression,
+                performed_date=performed_dt,
+                reported_date=performed_dt,
+                performing_facility="Pediatric Imaging Center",
+                radiologist="Dr. Sarah Chen, MD",
+            )
+            results.append(result)
 
         return results
 
@@ -831,22 +1070,27 @@ Examples:
         
         # Step 3: Generate encounter timeline
         encounter_stubs = self.generate_encounter_timeline(demographics, life_arc, seed)
-        
+
         # Step 4: Generate growth trajectory
         from knowledge.growth.cdc_2000 import GrowthTrajectory
         sex = "male" if demographics.sex_at_birth == Sex.MALE else "female"
-        
+
         # Determine starting percentiles (can be influenced by conditions)
         weight_pct = random.gauss(50, 20)
         height_pct = random.gauss(50, 20)
         weight_pct = max(5, min(95, weight_pct))
         height_pct = max(5, min(95, height_pct))
-        
+
+        # Select growth pattern based on conditions
+        pattern, pattern_kwargs = self._select_growth_pattern(life_arc.major_conditions)
+
         growth = GrowthTrajectory(
             sex=sex,
             weight_percentile=weight_pct,
             height_percentile=height_pct,
             hc_percentile=random.gauss(50, 15),
+            pattern=pattern,
+            **pattern_kwargs,
         )
         
         # Step 5: Generate each encounter
@@ -1670,6 +1914,9 @@ Examples:
         # Generate lab results for acute illness encounters
         lab_results = self._generate_labs(condition_key, stub.date, stub.type)
 
+        # Generate imaging results for applicable conditions
+        imaging_results = self._generate_imaging(condition_key, stub.date)
+
         # Apply timeline-aware messiness errors
         vitals_contradiction_text = ""
         threading_content = None
@@ -1706,6 +1953,7 @@ Examples:
             growth_percentiles=growth_percentiles,
             immunizations_given=immunizations,
             lab_results=lab_results,
+            imaging_results=imaging_results,
             prescriptions=illness_prescriptions,
             anticipatory_guidance=self._generate_anticipatory_guidance_list(age_months) if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN) else [],
             developmental_screen=developmental_screen,
@@ -1716,43 +1964,235 @@ Examples:
 
         return encounter
     
-    def _generate_immunizations(self, age_months: int, visit_date: date) -> list[Immunization]:
-        """Generate age-appropriate immunizations."""
-        from src.models import CodeableConcept
-        
+    # Hesitancy reasons for vaccine refusals
+    HESITANCY_REASONS = [
+        "Parental refusal - vaccine hesitancy",
+        "Parental concern about vaccine safety",
+        "Parent requested delay",
+        "Contraindication - immunocompromised",
+        "Insurance coverage issue",
+        "Vaccine not available at clinic",
+        "Deferred due to acute illness",
+        "Parental religious exemption",
+    ]
+
+    def _generate_immunizations(
+        self,
+        age_months: int,
+        visit_date: date,
+        existing_immunizations: list[Immunization] | None = None,
+        include_catchup: bool = True,
+    ) -> list[Immunization]:
+        """Generate age-appropriate immunizations using AAP schedule from YAML.
+
+        Args:
+            age_months: Patient's age in months
+            visit_date: Date of the visit
+            existing_immunizations: Previously administered vaccines (for catch-up calc)
+            include_catchup: Whether to include catch-up vaccines for missed doses
+
+        Returns:
+            List of Immunization objects (both completed and refused)
+        """
+        from src.models import CodeableConcept, ImmunizationStatus
+
         immunizations = []
-        
-        # Simplified immunization logic based on AAP schedule
-        vaccines_by_age = {
-            0: [("HepB", "08", 1)],
-            2: [("DTaP", "20", 1), ("Hib", "17", 1), ("PCV", "152", 1), ("IPV", "10", 1), ("RV", "122", 1)],
-            4: [("DTaP", "20", 2), ("Hib", "17", 2), ("PCV", "152", 2), ("IPV", "10", 2), ("RV", "122", 2)],
-            6: [("DTaP", "20", 3), ("HepB", "08", 3), ("PCV", "152", 3), ("RV", "122", 3)],
-            12: [("MMR", "03", 1), ("VAR", "21", 1), ("HepA", "83", 1), ("PCV", "152", 4), ("Hib", "17", 4)],
-            15: [("DTaP", "20", 4)],
-            18: [("HepA", "83", 2)],
-            48: [("DTaP", "20", 5), ("IPV", "10", 4), ("MMR", "03", 2), ("VAR", "21", 2)],
-            132: [("Tdap", "115", 1), ("HPV", "165", 1), ("MenACWY", "147", 1)],
-            144: [("HPV", "165", 2)],
-            192: [("MenACWY", "147", 2)],
-        }
-        
+        existing_immunizations = existing_immunizations or []
+
+        # Build set of already-received vaccines for catch-up calculation
+        received_vaccines = set()
+        for imm in existing_immunizations:
+            received_vaccines.add((imm.display_name, imm.dose_number))
+
+        # Get vaccines due at this age from YAML-based schedule
+        if not self._vaccines_by_age:
+            return immunizations
+
         # Find the closest age match
-        closest_age = min(vaccines_by_age.keys(), key=lambda x: abs(x - age_months))
+        closest_age = min(self._vaccines_by_age.keys(), key=lambda x: abs(x - age_months))
+
         if abs(closest_age - age_months) <= 2:  # Within 2 months
-            for vaccine_name, cvx, dose_num in vaccines_by_age.get(closest_age, []):
+            for vax in self._vaccines_by_age.get(closest_age, []):
+                vaccine_key = (vax['name'], vax['dose_number'])
+
+                # Skip if already received
+                if vaccine_key in received_vaccines:
+                    continue
+
                 immunizations.append(Immunization(
                     vaccine_code=CodeableConcept(
                         system="http://hl7.org/fhir/sid/cvx",
-                        code=cvx,
-                        display=vaccine_name,
+                        code=vax['cvx_code'],
+                        display=vax['key'],
                     ),
-                    display_name=vaccine_name,
+                    display_name=vax['name'],
                     date=visit_date,
-                    dose_number=dose_num,
+                    dose_number=vax['dose_number'],
+                    status=ImmunizationStatus.COMPLETED,
+                    notes=vax.get('notes'),
                 ))
-        
+
+        # Calculate catch-up vaccines if requested
+        if include_catchup and age_months > 6:
+            catchup = self._calculate_catchup_vaccines(age_months, existing_immunizations)
+            for vax_info in catchup:
+                vaccine_key = (vax_info['name'], vax_info['dose_number'])
+                if vaccine_key not in received_vaccines:
+                    immunizations.append(Immunization(
+                        vaccine_code=CodeableConcept(
+                            system="http://hl7.org/fhir/sid/cvx",
+                            code=vax_info['cvx_code'],
+                            display=vax_info['key'],
+                        ),
+                        display_name=vax_info['name'],
+                        date=visit_date,
+                        dose_number=vax_info['dose_number'],
+                        status=ImmunizationStatus.COMPLETED,
+                        notes="Catch-up dose",
+                    ))
+
+        # Apply hesitancy if messiness level warrants it
+        if self.messiness_level >= 2:
+            immunizations = self._inject_vaccine_hesitancy(immunizations)
+
         return immunizations
+
+    def _calculate_catchup_vaccines(
+        self,
+        age_months: int,
+        existing_immunizations: list[Immunization],
+    ) -> list[dict]:
+        """Calculate which vaccines are overdue for catch-up.
+
+        Returns list of vaccine info dicts for missed doses that should be caught up.
+        """
+        catchup = []
+
+        # Build set of received doses
+        received = {}  # vaccine_name -> set of dose_numbers
+        for imm in existing_immunizations:
+            if imm.display_name not in received:
+                received[imm.display_name] = set()
+            if imm.dose_number:
+                received[imm.display_name].add(imm.dose_number)
+
+        # Check all schedule milestones before current age
+        for schedule_age, vaccines in sorted(self._vaccines_by_age.items()):
+            if schedule_age >= age_months:
+                break  # Only look at past milestones
+
+            for vax in vaccines:
+                vaccine_name = vax['name']
+                dose_number = vax['dose_number']
+
+                # Check if this dose was missed
+                if vaccine_name not in received or dose_number not in received[vaccine_name]:
+                    # Only add one catch-up dose per vaccine (the next needed dose)
+                    existing_catchup_names = [c['name'] for c in catchup]
+                    if vaccine_name not in existing_catchup_names:
+                        catchup.append(vax)
+
+        # Limit catch-up to 2 vaccines per visit to be realistic
+        return catchup[:2]
+
+    def _inject_vaccine_hesitancy(
+        self,
+        immunizations: list[Immunization],
+        hesitancy_rate: float | None = None,
+    ) -> list[Immunization]:
+        """Mark some vaccines as NOT_DONE with realistic refusal reasons.
+
+        Args:
+            immunizations: List of immunizations to potentially modify
+            hesitancy_rate: Probability of hesitancy per vaccine (default based on messiness)
+
+        Returns:
+            Modified list with some vaccines marked as refused
+        """
+        from src.models import ImmunizationStatus
+
+        if hesitancy_rate is None:
+            # Higher messiness = more hesitancy
+            hesitancy_rate = 0.05 * self.messiness_level  # 5% per level
+
+        result = []
+        for imm in immunizations:
+            if random.random() < hesitancy_rate:
+                # Mark as refused
+                reason = random.choice(self.HESITANCY_REASONS)
+                result.append(Immunization(
+                    vaccine_code=imm.vaccine_code,
+                    display_name=imm.display_name,
+                    date=imm.date,
+                    dose_number=imm.dose_number,
+                    status=ImmunizationStatus.NOT_DONE,
+                    status_reason=reason,
+                    notes=f"Vaccine not administered: {reason}",
+                ))
+            else:
+                result.append(imm)
+
+        return result
+
+    def _select_growth_pattern(
+        self,
+        conditions: list[str],
+    ) -> tuple[str, dict]:
+        """Select a growth pattern based on patient conditions.
+
+        Args:
+            conditions: List of condition names (display names or keys)
+
+        Returns:
+            Tuple of (pattern_name, pattern_kwargs dict)
+        """
+        conditions_lower = [c.lower() for c in conditions]
+
+        # Check for conditions that would cause failure to thrive
+        ftt_conditions = [
+            "malabsorption", "celiac disease", "celiac", "cystic fibrosis",
+            "inflammatory bowel disease", "ibd", "crohn", "ulcerative colitis",
+            "feeding difficulty", "failure to thrive", "ftt",
+        ]
+        for ftt_cond in ftt_conditions:
+            for cond in conditions_lower:
+                if ftt_cond in cond:
+                    return "ftt", {"pattern_onset_age": random.randint(6, 18)}
+
+        # Check for obesity-related conditions
+        obesity_conditions = [
+            "obesity", "overweight", "prediabetes", "type 2 diabetes",
+            "metabolic syndrome", "insulin resistance",
+        ]
+        for obesity_cond in obesity_conditions:
+            for cond in conditions_lower:
+                if obesity_cond in cond:
+                    return "obesity", {"pattern_onset_age": random.randint(36, 72)}
+
+        # Check for prematurity
+        preterm_conditions = [
+            "prematurity", "preterm", "premature", "low birth weight",
+            "very low birth weight", "vlbw",
+        ]
+        for preterm_cond in preterm_conditions:
+            for cond in conditions_lower:
+                if preterm_cond in cond:
+                    return "preterm_catchup", {
+                        "gestational_age_weeks": random.randint(28, 36)
+                    }
+
+        # Check for conditions causing growth delay
+        delay_conditions = [
+            "hypothyroidism", "growth hormone deficiency", "turner syndrome",
+            "constitutional delay",
+        ]
+        for delay_cond in delay_conditions:
+            for cond in conditions_lower:
+                if delay_cond in cond:
+                    return "growth_delay", {"pattern_onset_age": random.randint(24, 60)}
+
+        # Default to normal growth
+        return "normal", {}
 
     def _generate_developmental_screen(self, age_months: int, visit_date: date) -> DevelopmentalScreen | None:
         """Generate age-appropriate developmental screening for well-child visits."""

@@ -151,6 +151,15 @@ class ImmunizationStatus(str, Enum):
     ENTERED_IN_ERROR = "entered-in-error"
 
 
+class GrowthPattern(str, Enum):
+    """Growth trajectory patterns for realistic patient generation."""
+    NORMAL = "normal"  # Standard percentile channel tracking
+    FAILURE_TO_THRIVE = "ftt"  # Weight falls across percentiles, height preserved
+    OBESITY = "obesity"  # Weight percentile >> height percentile
+    PRETERM_CATCHUP = "preterm_catchup"  # Accelerated catch-up in first 24 months
+    GROWTH_DELAY = "growth_delay"  # Plateau/minimal growth (e.g., hypothyroidism)
+
+
 class ComplexityTier(str, Enum):
     TIER_0 = "tier-0"  # Healthy (no conditions)
     TIER_1 = "tier-1"  # 1 condition
@@ -282,16 +291,74 @@ class PhysicalExamFindingDef(BaseModel):
 
 
 class LabDefinition(BaseModel):
-    """Definition of a laboratory test with LOINC coding."""
+    """Definition of a laboratory test with LOINC coding.
+
+    Supports both binary (positive/negative) and numeric lab values.
+    For numeric labs, provide normal_range and optionally abnormal ranges.
+    """
     name: str = Field(description="Lab test display name")
     loinc: str = Field(description="LOINC code for the lab test")
-    result_positive: str = Field(description="Result text when positive/abnormal")
-    result_negative: str = Field(description="Result text when negative/normal")
+
+    # Binary results (existing)
+    result_positive: str | None = Field(
+        default=None,
+        description="Result text when positive/abnormal"
+    )
+    result_negative: str | None = Field(
+        default=None,
+        description="Result text when negative/normal"
+    )
     probability_positive: float = Field(
         ge=0.0,
         le=1.0,
         default=0.5,
         description="Probability of positive result given the condition"
+    )
+
+    # Numeric results (new)
+    value_type: str = Field(
+        default="binary",
+        description="Type of result: 'binary' or 'numeric'"
+    )
+    unit: str | None = Field(
+        default=None,
+        description="Unit of measurement (e.g., 'mg/dL', 'K/uL')"
+    )
+    normal_range_low: float | None = Field(
+        default=None,
+        description="Lower bound of normal range"
+    )
+    normal_range_high: float | None = Field(
+        default=None,
+        description="Upper bound of normal range"
+    )
+    abnormal_low_min: float | None = Field(
+        default=None,
+        description="Minimum value for low-abnormal results"
+    )
+    abnormal_low_max: float | None = Field(
+        default=None,
+        description="Maximum value for low-abnormal (usually same as normal_range_low)"
+    )
+    abnormal_high_min: float | None = Field(
+        default=None,
+        description="Minimum value for high-abnormal (usually same as normal_range_high)"
+    )
+    abnormal_high_max: float | None = Field(
+        default=None,
+        description="Maximum value for high-abnormal results"
+    )
+    probability_abnormal: float = Field(
+        ge=0.0,
+        le=1.0,
+        default=0.3,
+        description="Probability of abnormal result given the condition"
+    )
+
+    # Age-specific reference ranges (for pediatric variation)
+    age_ranges: list[dict] | None = Field(
+        default=None,
+        description="Age-specific reference ranges [{age_min, age_max, low, high}]"
     )
 
 

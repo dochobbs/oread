@@ -291,6 +291,16 @@ croup:
 
   diagnostics:
     labs: []  # Clinical diagnosis
+    imaging:
+      - name: "AP Neck X-ray"
+        modality: "X-ray"
+        loinc: "36572-6"
+        finding_positive: "Subglottic narrowing with 'steeple sign' appearance."
+        finding_negative: "No subglottic narrowing. Airway appears patent."
+        impression_positive: "IMPRESSION: Subglottic narrowing consistent with croup."
+        impression_negative: "IMPRESSION: No radiographic evidence of airway obstruction."
+        probability_positive: 0.75
+    notes: "Imaging not routinely required - clinical diagnosis"
 
   treatment:
     approach: "steroid_plus_supportive"
@@ -715,7 +725,38 @@ pneumonia:
 
   diagnostics:
     labs:
-      - { name: "Chest X-ray", loinc: "36643-5", result_positive: "Lobar consolidation or infiltrate", result_negative: "Clear lung fields", probability_positive: 0.85 }
+      # Numeric labs
+      - name: "White Blood Cell Count"
+        loinc: "6690-2"
+        value_type: numeric
+        unit: "K/uL"
+        normal_range_low: 4.5
+        normal_range_high: 13.5
+        abnormal_high_min: 13.6
+        abnormal_high_max: 25.0
+        probability_abnormal: 0.70
+        age_ranges:
+          - { age_min: 0, age_max: 12, normal_low: 6.0, normal_high: 17.5 }
+          - { age_min: 12, age_max: 48, normal_low: 5.5, normal_high: 15.5 }
+          - { age_min: 48, age_max: 216, normal_low: 4.5, normal_high: 13.5 }
+      - name: "C-Reactive Protein"
+        loinc: "1988-5"
+        value_type: numeric
+        unit: "mg/L"
+        normal_range_low: 0.0
+        normal_range_high: 3.0
+        abnormal_high_min: 3.1
+        abnormal_high_max: 150.0
+        probability_abnormal: 0.75
+    imaging:
+      - name: "Chest X-ray PA and Lateral"
+        modality: "X-ray"
+        loinc: "36643-5"
+        finding_positive: "Right lower lobe consolidation with air bronchograms. No pleural effusion."
+        finding_negative: "Clear lung fields bilaterally. No focal consolidation or effusion."
+        impression_positive: "IMPRESSION: Findings consistent with pneumonia in right lower lobe."
+        impression_negative: "IMPRESSION: No acute cardiopulmonary disease."
+        probability_positive: 0.85
     notes: "CXR not required for uncomplicated outpatient management"
 
   treatment:
@@ -800,8 +841,44 @@ urinary_tract_infection:
 
   diagnostics:
     labs:
-      - { name: "Urinalysis", loinc: "5767-9", result_positive: "Positive leukocyte esterase, positive nitrites, WBC >5/HPF", result_negative: "Negative", probability_positive: 0.90 }
-      - { name: "Urine Culture", loinc: "630-4", result_positive: ">50,000 CFU/mL single pathogen", result_negative: "No growth", probability_positive: 0.85 }
+      # Numeric urinalysis components
+      - name: "Urine WBC"
+        loinc: "5821-4"
+        value_type: numeric
+        unit: "/HPF"
+        normal_range_low: 0
+        normal_range_high: 5
+        abnormal_high_min: 6
+        abnormal_high_max: 100
+        probability_abnormal: 0.90
+      - name: "Urine RBC"
+        loinc: "5822-2"
+        value_type: numeric
+        unit: "/HPF"
+        normal_range_low: 0
+        normal_range_high: 2
+        abnormal_high_min: 3
+        abnormal_high_max: 50
+        probability_abnormal: 0.40
+      # Binary urinalysis tests
+      - name: "Leukocyte Esterase"
+        loinc: "5799-2"
+        value_type: binary
+        result_positive: "Positive"
+        result_negative: "Negative"
+        probability_positive: 0.88
+      - name: "Nitrites"
+        loinc: "5802-4"
+        value_type: binary
+        result_positive: "Positive"
+        result_negative: "Negative"
+        probability_positive: 0.50
+      - name: "Urine Culture"
+        loinc: "630-4"
+        value_type: binary
+        result_positive: ">50,000 CFU/mL E. coli"
+        result_negative: "No growth at 48 hours"
+        probability_positive: 0.85
 
   treatment:
     approach: "antibiotic"

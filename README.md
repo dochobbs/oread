@@ -65,7 +65,7 @@ python cli.py generate --complexity tier-3
 # Start the web server
 python server.py
 
-# Open http://localhost:8000
+# Open http://localhost:8004
 ```
 
 ## Output Formats

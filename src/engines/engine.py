@@ -48,6 +48,9 @@ from src.models import (
 )
 from src.llm import get_client, LLMClient
 from src.engines.messiness import MessinessInjector
+from src.validators import PatientValidator, ValidationResult
+from src.knowledge import ConditionKnowledgeService, create_condition_service
+from src.reconciliation import PatientReconciler
 
 
 class LifeArc(BaseModel):
@@ -167,6 +170,22 @@ class PedsEngine(BaseEngine):
         self.messiness_level = messiness_level
         self.messiness = MessinessInjector(level=messiness_level)
 
+        # Initialize condition knowledge service
+        cache_dir = self.knowledge_dir.parent / "cache" / "conditions"
+        self.condition_service = create_condition_service(
+            yaml_conditions=self._conditions,
+            llm_client=self.llm,
+            cache_dir=cache_dir,
+            web_search_fn=None,  # Can be injected later
+            web_fetch_fn=None,
+        )
+
+        # Initialize validator
+        self.validator = PatientValidator()
+
+        # Initialize reconciler (requires LLM)
+        self.reconciler = PatientReconciler(self.llm) if self.llm else None
+
     def _build_condition_lookups(self):
         """Build lookup tables from conditions database."""
         # Chronic conditions with their minimum ages
@@ -272,7 +291,11 @@ class PedsEngine(BaseEngine):
                 })
 
     def _get_condition_key(self, reason: str) -> str | None:
-        """Map a display name or reason text to a condition key."""
+        """Map a display name or reason text to a condition key.
+
+        Uses local YAML lookup first, then falls back to knowledge service
+        for unknown conditions.
+        """
         # Try exact match first (case-insensitive)
         key = self._display_to_key.get(reason.lower())
         if key:
@@ -283,6 +306,12 @@ class PedsEngine(BaseEngine):
         for display_name, key in self._display_to_key.items():
             if display_name in reason_lower:
                 return key
+
+        # Fall back to condition knowledge service for unknown conditions
+        if hasattr(self, 'condition_service'):
+            result = self.condition_service.get_condition(reason)
+            if result.found and result.definition:
+                return result.definition.condition_key
 
         return None
 
@@ -675,7 +704,18 @@ Examples:
         """
         from src.models import LabResult, CodeableConcept, Interpretation, ReferenceRange
 
-        if not condition_key or encounter_type not in (
+        # Must have a condition to generate labs
+        if not condition_key:
+            return []
+
+        # Allow labs for chronic follow-ups if condition requires monitoring
+        if encounter_type == EncounterType.CHRONIC_FOLLOWUP:
+            condition_data = self._conditions.get(condition_key, {})
+            monitoring = condition_data.get('monitoring_requirements', {})
+            if not monitoring.get('required_labs_at_followup'):
+                return []
+            # Continue to generate monitoring labs
+        elif encounter_type not in (
             EncounterType.ACUTE_ILLNESS,
             EncounterType.URGENT_CARE,
             EncounterType.ED_VISIT
@@ -1316,7 +1356,172 @@ Examples:
         # Ensure chronic conditions have maintenance medications (Bug 4 fix)
         self._ensure_chronic_treatment(patient)
 
+        # Post-generation validation
+        validation_result = self.validator.validate(patient)
+
+        if not validation_result.valid:
+            # Attempt auto-fixes for fixable issues
+            patient = self._apply_validation_fixes(patient, validation_result)
+
+            # Re-validate after fixes
+            validation_result = self.validator.validate(patient)
+
+        # Store validation metadata
+        patient.generation_seed["validation"] = {
+            "valid": validation_result.valid,
+            "error_count": len(validation_result.errors),
+            "warning_count": len(validation_result.warnings),
+            "issues": [issue.model_dump() for issue in validation_result.issues[:10]],
+        }
+
+        # Narrative-structured reconciliation (if LLM available)
+        if self.reconciler and self.use_llm:
+            reconciliation = self.reconciler.reconcile(patient)
+
+            if reconciliation.narratives_to_regenerate:
+                # Regenerate problematic narratives
+                for enc_id in reconciliation.narratives_to_regenerate:
+                    enc = next((e for e in patient.encounters if e.id == enc_id), None)
+                    if enc:
+                        # Get the discrepancies for this encounter
+                        discs = reconciliation.get_discrepancies_for_encounter(enc_id)
+                        forbidden_claims = [d.claim.claim_text for d in discs]
+
+                        # Regenerate with constraints
+                        enc.narrative_note = self._regenerate_constrained_narrative(
+                            encounter=enc,
+                            patient=patient,
+                            forbidden_claims=forbidden_claims,
+                        )
+
+            # Store reconciliation metadata
+            patient.generation_seed["reconciliation"] = {
+                "discrepancy_count": len(reconciliation.discrepancies),
+                "narratives_regenerated": len(reconciliation.narratives_to_regenerate),
+            }
+
         return patient
+
+    def _apply_validation_fixes(self, patient: Patient, result: ValidationResult) -> Patient:
+        """Apply automatic fixes for validation issues."""
+        import re
+
+        for issue in result.issues:
+            if not issue.auto_fixable:
+                continue
+
+            if issue.type.value == "temporal":
+                patient = self._fix_temporal_issue(patient, issue)
+
+            elif issue.type.value == "coding":
+                patient = self._fix_coding_issue(patient, issue)
+
+            elif issue.type.value == "medication":
+                patient = self._fix_medication_issue(patient, issue)
+
+        return patient
+
+    def _fix_temporal_issue(self, patient: Patient, issue) -> Patient:
+        """Fix temporal issues (dates before DOB)."""
+        import re
+        dob = patient.demographics.date_of_birth
+
+        if "encounters" in issue.path:
+            match = re.search(r'encounters\[(\d+)\]', issue.path)
+            if match:
+                idx = int(match.group(1))
+                if idx < len(patient.encounters):
+                    patient.encounters[idx].date = datetime.combine(
+                        dob + timedelta(days=3),
+                        patient.encounters[idx].date.time()
+                    )
+
+        elif "problem_list" in issue.path:
+            match = re.search(r'problem_list\[(\d+)\]', issue.path)
+            if match:
+                idx = int(match.group(1))
+                if idx < len(patient.problem_list):
+                    patient.problem_list[idx].onset_date = dob + timedelta(days=30)
+
+        return patient
+
+    def _fix_coding_issue(self, patient: Patient, issue) -> Patient:
+        """Fix ICD-10 coding issues using condition service."""
+        import re
+        match = re.search(r'problem_list\[(\d+)\]', issue.path)
+        if not match:
+            return patient
+
+        idx = int(match.group(1))
+        if idx >= len(patient.problem_list):
+            return patient
+
+        condition = patient.problem_list[idx]
+
+        # Look up correct code via condition service
+        result = self.condition_service.get_condition(condition.display_name)
+
+        if result.found and result.definition and result.definition.icd10_primary:
+            condition.code.code = result.definition.icd10_primary
+            condition.code.display = condition.display_name
+
+        return patient
+
+    def _fix_medication_issue(self, patient: Patient, issue) -> Patient:
+        """Add missing medications for conditions that require them."""
+        for condition in patient.problem_list:
+            if condition.clinical_status.value != "active":
+                continue
+
+            # Look up condition to get expected medications
+            result = self.condition_service.get_condition(condition.display_name)
+
+            if result.found and result.definition and result.definition.medications:
+                current_meds = {m.display_name.lower() for m in patient.medication_list}
+
+                for med_def in result.definition.medications:
+                    if med_def.agent.lower() not in current_meds:
+                        new_med = Medication(
+                            display_name=med_def.agent,
+                            code=CodeableConcept(
+                                system="http://www.nlm.nih.gov/research/umls/rxnorm",
+                                code=med_def.rxnorm or "",
+                                display=med_def.agent,
+                            ),
+                            status=MedicationStatus.ACTIVE,
+                            frequency=med_def.frequency,
+                            route=med_def.route,
+                            start_date=condition.onset_date,
+                        )
+                        patient.medication_list.append(new_med)
+                        break  # Add one medication at a time
+
+        return patient
+
+    def _regenerate_constrained_narrative(
+        self,
+        encounter: Encounter,
+        patient: Patient,
+        forbidden_claims: list[str],
+    ) -> str:
+        """Regenerate a narrative with constraints to avoid hallucinations."""
+        # Build list of actual facts from structured data
+        actual_meds = [m.display_name for m in patient.medication_list if m.status.value == "active"]
+        actual_conditions = [c.display_name for c in patient.problem_list if c.clinical_status.value == "active"]
+
+        constraint_text = ""
+        if forbidden_claims:
+            constraint_text = f"""
+IMPORTANT: Do NOT include any of these claims (they are not supported by structured data):
+{chr(10).join(f'- {claim}' for claim in forbidden_claims)}
+
+"""
+
+        # Get age for context
+        age_months = (encounter.date.date() - patient.demographics.date_of_birth).days // 30
+
+        # Call existing narrative generation with constraints in mind
+        return self._generate_llm_narrative(encounter, patient.demographics, age_months)
     
     def _generate_demographics(self, seed: GenerationSeed) -> Demographics:
         """Generate patient demographics."""

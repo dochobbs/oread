@@ -39,6 +39,7 @@ Thumbs.db
 # Project specific
 output/
 patients/
+cache/
 *.log
 
 # Environment variables

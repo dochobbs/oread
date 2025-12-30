@@ -1,22 +1,31 @@
 # Oread Learning Platform - Roadmap
 
-**Last Updated:** December 26, 2025
+**Last Updated:** December 29, 2025
 **Full Plan:** `docs/LEARNING_PLATFORM_PLAN.md`
 
-## Current Status: Phase 1 Complete, Phase 2 In Progress
+## Current Status: Phase 2 Substantially Complete
 
-### Recently Completed (December 26, 2025)
-- [x] **Enhanced Messiness System** - Complete rewrite with:
-  - 5 error categories (safety-critical, workflow, data-integrity, coding/billing, medicolegal)
-  - Timeline-aware error distribution (early/middle/recent encounters)
-  - 4 "boss level" threading errors for level 5 charts
-  - Difficulty-based level descriptions (0-5)
-- [x] Fixed time travel slider (only shows for active chronic conditions)
-- [x] Panel generation now uses LLM by default (richer patient records)
-- [x] Added natural language configuration modal for panel generation
-- [x] Fixed database credentials (.env file + dotenv loading)
-- [x] Fixed variable name mismatch (SUPABASE_KEY vs SUPABASE_ANON_KEY)
-- [x] Dark mode header text fixes
+### Recently Completed (December 29, 2025)
+- [x] **Vaccine Engine** - Complete rewrite:
+  - AAP schedule loaded from YAML (not hardcoded)
+  - Catch-up vaccine logic for missed doses
+  - Vaccine hesitancy injection (8 reason types)
+  - CVX codes from YAML schedule
+- [x] **Growth Pattern Variations** - New patterns:
+  - GrowthPattern enum (NORMAL, FTT, OBESITY, PRETERM_CATCHUP, GROWTH_DELAY)
+  - Pattern-aware percentile drift in GrowthTrajectory
+  - Condition-based pattern selection (celiac→FTT, obesity→obesity pattern, preterm→catch-up)
+- [x] **Labs Expansion** - Numeric values:
+  - Age-specific pediatric reference ranges
+  - Numeric lab generation with units
+  - WBC/CRP for pneumonia, urinalysis panel for UTI
+- [x] **Imaging Generation** - New capability:
+  - `_generate_imaging()` method
+  - Chest X-ray, AP Neck X-ray definitions
+  - Positive/negative findings with impressions
+- [x] **FHIR Export** - Labs and imaging:
+  - Lab results as FHIR Observations
+  - Imaging results as FHIR DiagnosticReports
 
 ---
 
@@ -29,16 +38,16 @@
 | 5 | Mass Generate (Panels) | **Complete** | High |
 | 6 | Single Case Generation | **Complete** | High |
 
-### Phase 2: Clinical Depth (In Progress)
+### Phase 2: Clinical Depth - **COMPLETE**
 | # | Feature | Status | Priority |
 |---|---------|--------|----------|
 | 3 | Time Travel (Disease Arcs) | **Complete** | **Critical** |
 | - | Enhanced Messiness System | **Complete** | High |
-| 9 | First-Class Vaccine Engine | Not started | High |
-| 8 | Growth/Development Variations | Partial (screening exists) | High |
-| 4 | Results Expansion (Labs/Imaging) | Partial (labs exist) | High |
+| 9 | First-Class Vaccine Engine | **Complete** | High |
+| 8 | Growth/Development Variations | **Complete** | High |
+| 4 | Results Expansion (Labs/Imaging) | **Complete** | High |
 
-### Phase 3: Learning Experience
+### Phase 3: Learning Experience (Next)
 | # | Feature | Status | Priority |
 |---|---------|--------|----------|
 | 7 | Echo (AI Attending) | Not started | **Critical** |
@@ -76,7 +85,25 @@
 - "What Changed" panel
 - Only shows for patients with chronic conditions
 
-### Chart Messiness (NEW)
+### Vaccines (NEW)
+- AAP schedule from YAML
+- Catch-up logic for missed vaccines
+- Hesitancy scenarios with reasons
+- CVX codes throughout
+
+### Growth Patterns (NEW)
+- FTT: Weight drifts down, height stable
+- Obesity: Weight >> height percentile
+- Preterm catch-up: Accelerated early growth
+- Growth delay: Plateau period
+
+### Labs & Imaging (NEW)
+- Numeric labs with reference ranges
+- Age-specific pediatric ranges
+- Imaging with findings/impressions
+- Integrated into encounters
+
+### Chart Messiness
 - 6 difficulty levels (0=Pristine → 5=Chart From Hell)
 - 43 specific error types across 5 categories
 - Timeline-aware error placement
@@ -85,36 +112,24 @@
 ### Exports
 - JSON, FHIR R4, C-CDA 2.1, Markdown
 - Proper SNOMED/RxNorm/LOINC codes
+- Lab Observations and Imaging DiagnosticReports in FHIR
 
 ---
 
-## Messiness Level Reference
+## Immediate Next Steps
 
-| Level | Name | Description |
-|-------|------|-------------|
-| 0 | Pristine | Teaching ideal - learn what "right" looks like |
-| 1 | Real World | Minor inconsistencies, abbreviations |
-| 2 | Busy Clinic | Copy-forward artifacts, stale data |
-| 3 | Needs Reconciliation | Conflicts requiring clinical judgment |
-| 4 | Safety Landmines | Hidden dangers among the noise |
-| 5 | Chart From Hell | Threading errors, near-misses, medicolegal nightmares |
+1. **Test Phase 2 Features** - Run pytest and manual testing
+2. **Commit Phase 2 Work** - ~977 lines of new code ready
+3. **Clean Up Duplicates** - Remove server (1).py, engine (1).py, etc.
+4. **Start Echo (AI Attending)** - Phase 3 priority
 
 ---
 
 ## Known Issues / Tech Debt
 - [ ] Server requires manual restart after code changes
-- [x] Environment variables need .env file (fixed)
 - [ ] Some UI polish needed for dark mode
-
----
-
-## Deferred Features
-- #2 Image Generation (Gemini) - Skipped per decision
-- Parent Communication Practice
-- Handoff/IPASS Practice
-- Voice Presentation
-- Mobile App (use PWA)
-- LMS Integration
+- [ ] Duplicate files need cleanup (server (1).py, etc.)
+- [x] Environment variables need .env file (fixed)
 
 ---
 
@@ -124,6 +139,8 @@
 - **Echo**: Full attending simulation (not MVP)
 - **Validation**: Self-review + user flagging
 - **Messiness**: Difficulty-based, not count-based
+- **Labs**: Both binary and numeric supported
+- **Growth**: Pattern-aware drift based on conditions
 
 ---
 
@@ -133,10 +150,3 @@
 - Current LLM: Claude Haiku 3.5
 - Fonts: Crimson Pro + Work Sans + JetBrains Mono
 - Icons: Lucide via CDN
-
----
-
-## Next Up (Suggested)
-1. **Vaccine Engine** - Catch-up schedules, hesitancy scenarios
-2. **Echo (AI Attending)** - Socratic learning assistant
-3. **Documentation Practice** - Note writing with AI feedback

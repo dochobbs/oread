@@ -51,6 +51,9 @@ dev = [
     "mypy>=1.8.0",
     "pre-commit>=3.6.0",
 ]
+websearch = [
+    "exa_py>=1.0.0",
+]
 
 [project.scripts]
 oread = "cli:main"

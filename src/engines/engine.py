@@ -49,7 +49,11 @@ from src.models import (
 from src.llm import get_client, LLMClient
 from src.engines.messiness import MessinessInjector
 from src.validators import PatientValidator, ValidationResult
-from src.knowledge import ConditionKnowledgeService, create_condition_service
+from src.knowledge import (
+    ConditionKnowledgeService,
+    create_condition_service,
+    create_exa_search_functions,
+)
 from src.reconciliation import PatientReconciler
 
 
@@ -170,14 +174,25 @@ class PedsEngine(BaseEngine):
         self.messiness_level = messiness_level
         self.messiness = MessinessInjector(level=messiness_level)
 
-        # Initialize condition knowledge service
+        # Initialize condition knowledge service with optional web search
         cache_dir = self.knowledge_dir.parent / "cache" / "conditions"
+
+        # Try to enable Exa web search if available
+        web_search_fn, web_fetch_fn = None, None
+        if create_exa_search_functions:
+            try:
+                web_search_fn, web_fetch_fn = create_exa_search_functions()
+                if web_search_fn:
+                    print("✓ Exa web search enabled for condition knowledge")
+            except Exception as e:
+                print(f"Note: Exa web search not available: {e}")
+
         self.condition_service = create_condition_service(
             yaml_conditions=self._conditions,
             llm_client=self.llm,
             cache_dir=cache_dir,
-            web_search_fn=None,  # Can be injected later
-            web_fetch_fn=None,
+            web_search_fn=web_search_fn,
+            web_fetch_fn=web_fetch_fn,
         )
 
         # Initialize validator

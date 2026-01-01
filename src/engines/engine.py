@@ -291,6 +291,17 @@ class PedsEngine(BaseEngine):
             'obstructive_sleep_apnea': (24, None),  # OSA: ≥2 years
         }
 
+    def _months_to_date(self, base_date: date, months: int) -> date:
+        """
+        Add months to a date using proper calendar arithmetic.
+
+        Uses relativedelta instead of days*30 for accurate month calculations.
+        """
+        from dateutil.relativedelta import relativedelta
+        years = months // 12
+        remaining_months = months % 12
+        return base_date + relativedelta(years=years, months=remaining_months)
+
     def _validate_condition_age(self, condition_name: str, age_at_onset_months: float) -> tuple[bool, str]:
         """
         Validate that a condition can be diagnosed at the given age.
@@ -1331,7 +1342,7 @@ Examples:
         today = date.today()
         for cond_name in life_arc.major_conditions:
             onset_months = life_arc.condition_onset_ages.get(cond_name, 24)
-            onset_date = demographics.date_of_birth + timedelta(days=onset_months * 30)
+            onset_date = self._months_to_date(demographics.date_of_birth, onset_months)
             # Clamp onset date: not before DOB, not after today
             onset_date = max(onset_date, demographics.date_of_birth)
             onset_date = min(onset_date, today)
@@ -1696,9 +1707,10 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         # Sex
         sex = seed.sex or random.choice([Sex.MALE, Sex.FEMALE])
         
-        # Calculate DOB
+        # Calculate DOB using proper calendar month arithmetic
         today = date.today()
-        dob = today - timedelta(days=age_months * 30)
+        from dateutil.relativedelta import relativedelta
+        dob = today - relativedelta(months=age_months)
         
         # Generate name based on sex
         first_name = self._generate_first_name(sex)
@@ -1997,13 +2009,14 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             if visit_age > current_age_months:
                 break
             
-            visit_date = dob + timedelta(days=visit_age * 30)
+            visit_date = self._months_to_date(dob, visit_age)
             if visit_date > today:
                 continue
 
-            # Add some realistic variation to dates (but never before DOB)
+            # Add some realistic variation to dates (clamped to valid range)
             visit_date += timedelta(days=random.randint(-7, 14))
             visit_date = max(visit_date, dob)  # Clamp to DOB floor
+            visit_date = min(visit_date, today)  # Clamp to today ceiling
             
             stub = EncounterStub(
                 date=visit_date,
@@ -2037,7 +2050,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             for _ in range(actual_visits):
                 # Random date in this age range
                 visit_age_months = random.randint(start_month, end_month)
-                visit_date = dob + timedelta(days=visit_age_months * 30 + random.randint(0, 29))
+                visit_date = self._months_to_date(dob, visit_age_months) + timedelta(days=random.randint(0, 29))
 
                 if visit_date > today:
                     continue
@@ -2059,7 +2072,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                 continue
             
             # Initial diagnosis visit
-            diagnosis_date = dob + timedelta(days=onset_age * 30)
+            diagnosis_date = self._months_to_date(dob, onset_age)
             diagnosis_date = max(diagnosis_date, dob)  # Clamp to DOB floor
             diagnosis_date = min(diagnosis_date, today)  # Clamp to today ceiling (no future dates)
             stubs.append(EncounterStub(
@@ -2074,7 +2087,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             # Follow-up visits (every 3-6 months)
             follow_up_age = onset_age + random.randint(2, 4)
             while follow_up_age < current_age_months:
-                fu_date = dob + timedelta(days=follow_up_age * 30)
+                fu_date = self._months_to_date(dob, follow_up_age)
                 if fu_date <= today:
                     stubs.append(EncounterStub(
                         date=fu_date,
@@ -2155,7 +2168,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                 if random.random() < adjusted_rate:
                     # Event occurred!
                     event_age_months = random.randint(age_months_start, age_months_end)
-                    event_date = dob + timedelta(days=event_age_months * 30 + random.randint(0, 29))
+                    event_date = self._months_to_date(dob, event_age_months) + timedelta(days=random.randint(0, 29))
                     event_date = max(event_date, dob)  # Clamp to DOB floor
 
                     if event_date > today:
@@ -4585,7 +4598,7 @@ VITAL SIGNS:
         )
 
         for age_months in snapshot_ages:
-            snapshot_date = dob + timedelta(days=age_months * 30)
+            snapshot_date = self._months_to_date(dob, age_months)
 
             # Determine active conditions at this age
             active_conditions = self._get_conditions_at_age(
@@ -4758,7 +4771,7 @@ VITAL SIGNS:
                         ),
                         snomed_code=snomed,
                         clinical_status=ConditionStatus.ACTIVE,
-                        onset_date=patient.demographics.date_of_birth + timedelta(days=start_age * 30),
+                        onset_date=self._months_to_date(patient.demographics.date_of_birth, start_age),
                     )
                     active_conditions.append(condition)
 
@@ -4787,7 +4800,7 @@ VITAL SIGNS:
         active_meds = []
         condition_names = {c.display_name.lower() for c in active_conditions}
         dob = patient.demographics.date_of_birth
-        med_start_date = dob + timedelta(days=age_months * 30)
+        med_start_date = self._months_to_date(dob, age_months)
 
         # Map conditions to typical medications with full details
         # (name, rxnorm, dose_qty, dose_unit, frequency, route)
@@ -4879,8 +4892,8 @@ VITAL SIGNS:
         weight, height, hc, bmi = growth.generate_measurement(age_months)
 
         return GrowthMeasurement(
-            date=patient.demographics.date_of_birth + timedelta(days=age_months * 30),
-            age_in_days=age_months * 30,
+            date=self._months_to_date(patient.demographics.date_of_birth, age_months),
+            age_in_days=int(age_months * 30.44),  # Approximate days for age_in_days field
             weight_kg=weight,
             height_cm=height,
             head_circumference_cm=hc if age_months <= 36 else None,

@@ -18,6 +18,63 @@ import re
 from pathlib import Path
 from typing import Callable, Any, TYPE_CHECKING
 
+
+def _repair_json(json_str: str) -> str:
+  """
+  Repair common JSON malformations from LLM responses.
+
+  Handles:
+  - Trailing commas before ] or }
+  - "N/A" or "n/a" in numeric fields
+  - Missing commas between elements
+  - Single quotes instead of double quotes
+  - Unquoted None/null
+  """
+  # Replace single quotes with double quotes (but not inside strings)
+  # This is a simple heuristic - may not work in all cases
+  json_str = re.sub(r"(?<=[:\[,\s])'([^']*)'(?=[,\]\}:])", r'"\1"', json_str)
+
+  # Replace "N/A", "n/a", "NA", "na" with null in contexts expecting numbers
+  # Pattern: "field_name": "N/A" where field suggests numeric
+  numeric_field_patterns = [
+    r'"dose_mg_kg"\s*:\s*"[Nn]/[Aa]"',
+    r'"dose_mg_kg"\s*:\s*"[Nn][Aa]"',
+    r'"max_dose_mg"\s*:\s*"[Nn]/[Aa]"',
+    r'"max_dose_mg"\s*:\s*"[Nn][Aa]"',
+    r'"probability"\s*:\s*"[Nn]/[Aa]"',
+    r'"probability"\s*:\s*"[Nn][Aa]"',
+    r'"normal_range_low"\s*:\s*"[Nn]/[Aa]"',
+    r'"normal_range_low"\s*:\s*"[Nn][Aa]"',
+    r'"normal_range_high"\s*:\s*"[Nn]/[Aa]"',
+    r'"normal_range_high"\s*:\s*"[Nn][Aa]"',
+    r'"probability_abnormal"\s*:\s*"[Nn]/[Aa]"',
+    r'"probability_abnormal"\s*:\s*"[Nn][Aa]"',
+    r'"confidence"\s*:\s*"[Nn]/[Aa]"',
+    r'"confidence"\s*:\s*"[Nn][Aa]"',
+  ]
+
+  for pattern in numeric_field_patterns:
+    # Extract field name and replace with null
+    field_name = pattern.split('"')[1]
+    json_str = re.sub(pattern, f'"{field_name}": null', json_str)
+
+  # Remove trailing commas before } or ]
+  json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
+
+  # Add missing commas between } and { or } and "
+  json_str = re.sub(r'}\s*{', r'}, {', json_str)
+  json_str = re.sub(r'}\s*"', r'}, "', json_str)
+  json_str = re.sub(r']\s*"', r'], "', json_str)
+
+  # Replace unquoted None with null
+  json_str = re.sub(r':\s*None\b', ': null', json_str)
+
+  # Replace Python True/False with JSON true/false
+  json_str = re.sub(r':\s*True\b', ': true', json_str)
+  json_str = re.sub(r':\s*False\b', ': false', json_str)
+
+  return json_str
+
 from .models import (
   ConditionDefinition,
   ConditionLookupResult,
@@ -322,6 +379,67 @@ class ConditionKnowledgeService:
     """Use LLM's training knowledge only (no grounding)."""
     return self._structure_with_llm(condition_name, [], grounded=False)
 
+  def _normalize_condition_data(self, data: dict) -> dict:
+    """
+    Normalize LLM-generated condition data to match expected schema.
+
+    Handles common issues:
+    - specialty as list instead of string
+    - string numbers that should be floats
+    - missing required fields
+    """
+    # Specialty should be a string, not a list
+    if isinstance(data.get("specialty"), list):
+      specialties = data["specialty"]
+      data["specialty"] = specialties[0] if specialties else None
+
+    # Ensure numeric fields are actually numbers
+    numeric_fields = ["confidence"]
+    for field in numeric_fields:
+      if field in data and isinstance(data[field], str):
+        try:
+          data[field] = float(data[field])
+        except (ValueError, TypeError):
+          data[field] = None
+
+    # Normalize medications
+    if "medications" in data and isinstance(data["medications"], list):
+      for med in data["medications"]:
+        if isinstance(med, dict):
+          for num_field in ["dose_mg_kg", "max_dose_mg"]:
+            if num_field in med:
+              if isinstance(med[num_field], str):
+                try:
+                  med[num_field] = float(med[num_field])
+                except (ValueError, TypeError):
+                  med[num_field] = None
+              elif med[num_field] == "N/A" or med[num_field] == "n/a":
+                med[num_field] = None
+
+    # Normalize labs
+    if "labs" in data and isinstance(data["labs"], list):
+      for lab in data["labs"]:
+        if isinstance(lab, dict):
+          for num_field in ["normal_range_low", "normal_range_high", "probability_abnormal"]:
+            if num_field in lab:
+              if isinstance(lab[num_field], str):
+                try:
+                  lab[num_field] = float(lab[num_field])
+                except (ValueError, TypeError):
+                  lab[num_field] = None
+
+    # Normalize physical exam findings
+    if "physical_exam_findings" in data and isinstance(data["physical_exam_findings"], list):
+      for finding in data["physical_exam_findings"]:
+        if isinstance(finding, dict):
+          if "probability" in finding and isinstance(finding["probability"], str):
+            try:
+              finding["probability"] = float(finding["probability"])
+            except (ValueError, TypeError):
+              finding["probability"] = 0.8  # Default probability
+
+    return data
+
   def _structure_with_llm(
     self,
     condition_name: str,
@@ -347,7 +465,14 @@ class ConditionKnowledgeService:
 
     prompt = f"""{grounding_instruction}Create a structured condition definition for "{condition_name}" in pediatric patients.
 
-Return a JSON object with these fields:
+CRITICAL JSON FORMATTING RULES:
+1. All numeric fields (dose_mg_kg, max_dose_mg, probability, normal_range_low, normal_range_high) MUST be numbers, NOT strings
+2. If a numeric value is unknown or not applicable, use null (not "N/A" or "unknown")
+3. Ensure proper comma placement between array/object elements
+4. Use double quotes for all strings
+5. Boolean values must be true or false (lowercase, no quotes)
+
+Return ONLY a valid JSON object with these fields:
 {{
   "condition_key": "snake_case_key",
   "display_name": "Standard Clinical Name",
@@ -355,8 +480,8 @@ Return a JSON object with these fields:
   "icd10_codes": ["X00.0", "X00.1"],
   "icd10_primary": "X00.0",
   "snomed_code": "12345678",
-  "category": "acute or chronic",
-  "body_system": "e.g., respiratory, hematology_oncology, neurology",
+  "category": "acute",
+  "body_system": "respiratory",
   "typical_symptoms": ["symptom1", "symptom2"],
   "physical_exam_findings": [
     {{"system": "heent", "finding": "finding text", "probability": 0.8}}
@@ -365,10 +490,11 @@ Return a JSON object with these fields:
     {{
       "name": "Lab Name",
       "loinc": "12345-6",
-      "value_type": "numeric or binary",
-      "unit": "unit if numeric",
+      "value_type": "numeric",
+      "unit": "mg/dL",
       "normal_range_low": 0.0,
       "normal_range_high": 10.0,
+      "probability_abnormal": 0.3,
       "required_at_followup": true
     }}
   ],
@@ -377,10 +503,11 @@ Return a JSON object with these fields:
       "agent": "Medication Name",
       "rxnorm": "12345",
       "dose_mg_kg": 10.0,
+      "max_dose_mg": 500.0,
       "frequency": "BID",
       "route": "oral",
       "indication": "why prescribed",
-      "line": "first, second, or alternative"
+      "line": "first"
     }}
   ],
   "treatment_approach": "brief description",
@@ -388,19 +515,22 @@ Return a JSON object with these fields:
   "specialty": "specialty name if managed_by_specialty is true",
   "requires_monitoring_labs": true,
   "monitoring_lab_types": ["cbc", "cmp"],
-  "followup_frequency": "e.g., monthly, every 3 months",
+  "followup_frequency": "monthly",
   "needs_verification": true
 }}
 
-Be precise with medical codes. If uncertain about a specific code, set needs_verification to true.
-For pediatric-specific conditions, include age-appropriate dosing and monitoring.
-For chronic conditions, always set requires_monitoring_labs to true."""
+IMPORTANT:
+- Be precise with medical codes. If uncertain about a specific code, set needs_verification to true.
+- For pediatric-specific conditions, include age-appropriate dosing and monitoring.
+- For chronic conditions, always set requires_monitoring_labs to true.
+- For medications without weight-based dosing, use null for dose_mg_kg (example: "dose_mg_kg": null)
+- Return ONLY the JSON object, no additional text or markdown code fences."""
 
     try:
       response = self.llm.generate(
         prompt,
-        system="You are a pediatric medical knowledge system. Provide accurate, structured condition information. Always use real ICD-10-CM, SNOMED-CT, LOINC, and RxNorm codes - never invent codes.",
-        temperature=0.2,  # Low temperature for factual content
+        system="You are a pediatric medical knowledge system. Provide accurate, structured condition information in valid JSON format. Always use real ICD-10-CM, SNOMED-CT, LOINC, and RxNorm codes - never invent codes. Numeric fields must be numbers (not strings like 'N/A').",
+        temperature=0.1,  # Very low temperature for structured output
       )
 
       # Parse JSON from response
@@ -415,7 +545,21 @@ For chronic conditions, always set requires_monitoring_labs to true."""
         else:
           json_str = response
 
-      data = json.loads(json_str)
+      # Apply JSON repair before parsing
+      json_str = _repair_json(json_str)
+
+      try:
+        data = json.loads(json_str)
+      except json.JSONDecodeError as parse_error:
+        # Second attempt: more aggressive repair
+        # Remove any remaining problematic patterns
+        json_str = re.sub(r',\s*,', ',', json_str)  # Double commas
+        json_str = re.sub(r'\[\s*,', '[', json_str)  # Leading comma in array
+        json_str = re.sub(r'{\s*,', '{', json_str)   # Leading comma in object
+        data = json.loads(json_str)
+
+      # Normalize data types before Pydantic validation
+      data = self._normalize_condition_data(data)
 
       # Add metadata
       data["source"] = "web_search" if grounded else "llm"

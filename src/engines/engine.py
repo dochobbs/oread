@@ -217,13 +217,30 @@ class PedsEngine(BaseEngine):
 
             category = data.get('category', 'acute')
             display_name = data.get('display_name', key.replace('_', ' ').title())
+
+            # Handle both age restriction formats in YAML:
+            # 1. age_ranges.min_months (newer format)
+            # 2. demographics.age_months.min (older format)
             age_ranges = data.get('age_ranges', {})
-            min_months = age_ranges.get('min_months', 0)
+            demographics = data.get('demographics', {})
+            age_months_config = demographics.get('age_months', {})
+
+            min_months = (
+                age_ranges.get('min_months') or
+                age_months_config.get('min') or
+                0
+            )
+            max_months = (
+                age_ranges.get('max_months') or
+                age_months_config.get('max') or
+                None  # None means no upper limit
+            )
 
             if category == 'chronic':
                 self._chronic_conditions[display_name] = {
                     'key': key,
                     'min_months': min_months,
+                    'max_months': max_months,
                     'typical_diagnosis_months': age_ranges.get('typical_diagnosis_months', min_months),
                     'comorbidities': data.get('comorbidities', {}),
                 }
@@ -246,6 +263,7 @@ class PedsEngine(BaseEngine):
                 self._acute_conditions[display_name] = {
                     'key': key,
                     'min_months': min_months,
+                    'max_months': max_months,
                     'seasonality': data.get('seasonality', {}),
                 }
 
@@ -256,6 +274,65 @@ class PedsEngine(BaseEngine):
                 continue
             display_name = data.get('display_name', key.replace('_', ' ').title())
             self._display_to_key[display_name.lower()] = key
+
+        # Hardcoded age gates for conditions that need explicit limits
+        # Format: condition_key -> (min_months, max_months or None)
+        self._hardcoded_age_gates = {
+            'adhd': (48, None),           # ADHD: ≥4 years
+            'anxiety': (36, None),        # Anxiety: ≥3 years
+            'depression': (72, None),     # Depression: ≥6 years
+            'asthma': (12, None),         # Asthma: ≥1 year
+            'bronchiolitis': (0, 24),     # Bronchiolitis: ≤2 years
+            'prediabetes': (120, None),   # Prediabetes: ≥10 years
+            'type_2_diabetes': (120, None),  # T2D: ≥10 years
+            'learning_disorder': (60, None), # Learning disorder: ≥5 years
+            'enuresis': (60, None),       # Enuresis: ≥5 years (not diagnosed before expected continence)
+            'obesity': (24, None),        # Obesity: ≥2 years
+            'obstructive_sleep_apnea': (24, None),  # OSA: ≥2 years
+        }
+
+    def _validate_condition_age(self, condition_name: str, age_at_onset_months: float) -> tuple[bool, str]:
+        """
+        Validate that a condition can be diagnosed at the given age.
+
+        Returns (is_valid, error_message).
+        """
+        # Normalize condition name to key format
+        cond_key = condition_name.lower().replace(' ', '_')
+
+        # Check hardcoded gates first (most reliable)
+        if cond_key in self._hardcoded_age_gates:
+            min_age, max_age = self._hardcoded_age_gates[cond_key]
+            if age_at_onset_months < min_age:
+                return False, f"{condition_name} requires age ≥{min_age}mo at onset, got {age_at_onset_months:.0f}mo"
+            if max_age is not None and age_at_onset_months > max_age:
+                return False, f"{condition_name} requires age ≤{max_age}mo at onset, got {age_at_onset_months:.0f}mo"
+            return True, ""
+
+        # Check chronic conditions dictionary
+        if condition_name in self._chronic_conditions:
+            data = self._chronic_conditions[condition_name]
+            min_age = data.get('min_months', 0)
+            max_age = data.get('max_months')
+            if age_at_onset_months < min_age:
+                return False, f"{condition_name} requires age ≥{min_age}mo at onset"
+            if max_age is not None and age_at_onset_months > max_age:
+                return False, f"{condition_name} requires age ≤{max_age}mo at onset"
+            return True, ""
+
+        # Check acute conditions dictionary
+        if condition_name in self._acute_conditions:
+            data = self._acute_conditions[condition_name]
+            min_age = data.get('min_months', 0)
+            max_age = data.get('max_months')
+            if age_at_onset_months < min_age:
+                return False, f"{condition_name} requires age ≥{min_age}mo at onset"
+            if max_age is not None and age_at_onset_months > max_age:
+                return False, f"{condition_name} requires age ≤{max_age}mo at onset"
+            return True, ""
+
+        # No age gate found - allow by default
+        return True, ""
 
     def _build_immunization_lookups(self):
         """Build lookup tables from immunization schedule."""
@@ -527,6 +604,24 @@ Examples:
                 'route': 'oral',
                 'prn': False,
             },
+            'kawasaki disease': {
+                'agent': 'Aspirin',
+                'rxnorm': '1191',
+                'dose_quantity': '81',
+                'dose_unit': 'mg',
+                'frequency': 'daily',
+                'route': 'oral',
+                'prn': False,
+            },
+            'kawasaki_disease': {
+                'agent': 'Aspirin',
+                'rxnorm': '1191',
+                'dose_quantity': '81',
+                'dose_unit': 'mg',
+                'frequency': 'daily',
+                'route': 'oral',
+                'prn': False,
+            },
         }
 
         # Get existing medication names
@@ -537,8 +632,15 @@ Examples:
             if not problem.is_active:
                 continue
 
-            condition_key = problem.display_name.lower()
-            if condition_key in chronic_meds:
+            # Try multiple key formats: "kawasaki disease", "kawasaki_disease"
+            condition_name = problem.display_name.lower()
+            possible_keys = [
+                condition_name,
+                condition_name.replace(' ', '_'),
+                condition_name.replace('_', ' '),
+            ]
+            condition_key = next((k for k in possible_keys if k in chronic_meds), None)
+            if condition_key:
                 med_def = chronic_meds[condition_key]
                 if med_def['agent'].lower() not in existing_meds:
                     # Add the maintenance medication
@@ -1226,16 +1328,21 @@ Examples:
         
         # Create Condition objects from life_arc
         problem_list = []
+        today = date.today()
         for cond_name in life_arc.major_conditions:
             onset_months = life_arc.condition_onset_ages.get(cond_name, 24)
             onset_date = demographics.date_of_birth + timedelta(days=onset_months * 30)
-            
+            # Clamp onset date: not before DOB, not after today
+            onset_date = max(onset_date, demographics.date_of_birth)
+            onset_date = min(onset_date, today)
+
             # Map condition names to ICD-10 codes (case-insensitive lookup)
             condition_codes = {
                 "asthma": ("J45.20", "Mild intermittent asthma, uncomplicated"),
                 "adhd": ("F90.2", "Attention-deficit hyperactivity disorder, combined type"),
-                "eczema": ("L30.9", "Dermatitis, unspecified"),
+                "eczema": ("L20.9", "Atopic dermatitis, unspecified"),
                 "allergic rhinitis": ("J30.9", "Allergic rhinitis, unspecified"),
+                "allergic_rhinitis": ("J30.9", "Allergic rhinitis, unspecified"),
                 "anxiety": ("F41.1", "Generalized anxiety disorder"),
                 "food allergy": ("T78.1", "Other adverse food reactions, not elsewhere classified"),
                 "obesity": ("E66.9", "Obesity, unspecified"),
@@ -1244,25 +1351,38 @@ Examples:
                 "depression": ("F32.9", "Major depressive disorder, single episode, unspecified"),
                 "autism": ("F84.0", "Autistic disorder"),
                 "type 1 diabetes": ("E10.9", "Type 1 diabetes mellitus without complications"),
+                "type_1_diabetes": ("E10.9", "Type 1 diabetes mellitus without complications"),
                 "type 2 diabetes": ("E11.9", "Type 2 diabetes mellitus without complications"),
+                "type_2_diabetes": ("E11.9", "Type 2 diabetes mellitus without complications"),
                 "seizure disorder": ("G40.909", "Epilepsy, unspecified, not intractable"),
                 "epilepsy": ("G40.909", "Epilepsy, unspecified, not intractable"),
                 "cerebral palsy": ("G80.9", "Cerebral palsy, unspecified"),
+                "gerd": ("K21.0", "Gastro-esophageal reflux disease with esophagitis"),
+                "prediabetes": ("R73.03", "Prediabetes"),
+                "cough": ("R05.9", "Cough, unspecified"),
+                "swimmer's ear": ("H60.339", "Swimmer's ear, unspecified ear"),
+                "swimmers ear": ("H60.339", "Swimmer's ear, unspecified ear"),
             }
-            
-            # Case-insensitive lookup
+
+            # First try ConditionKnowledgeService for accurate codes
             lookup_key = cond_name.lower().strip()
-            code, display = condition_codes.get(lookup_key, ("R69", cond_name))
-            
-            # Normalize display name
-            display_name = cond_name.title() if code != "R69" else cond_name
-            
+            result = self.condition_service.get_condition(cond_name)
+            if result.found and result.definition and result.definition.icd10_primary:
+                code = result.definition.icd10_primary
+                display_name = result.definition.display_name
+                display = display_name  # Use display_name for ICD-10 display text
+            else:
+                # Fall back to hardcoded dictionary
+                code, display = condition_codes.get(lookup_key, ("R69", cond_name))
+                # Convert snake_case to proper display name
+                display_name = cond_name.replace('_', ' ').title() if code != "R69" else cond_name
+
             condition = Condition(
                 display_name=display_name,
                 code=CodeableConcept(
                     system="http://hl7.org/fhir/sid/icd-10-cm",
                     code=code,
-                    display=display,
+                    display=display_name,  # Use formatted display_name consistently
                 ),
                 clinical_status=ConditionStatus.ACTIVE,
                 onset_date=onset_date,
@@ -1381,6 +1501,20 @@ Examples:
             # Re-validate after fixes
             validation_result = self.validator.validate(patient)
 
+            # Block output if critical issues remain after auto-fix attempts
+            critical_issues = [
+                i for i in validation_result.issues
+                if i.severity.value == "critical"
+            ]
+            if critical_issues:
+                issue_summary = "; ".join([
+                    f"{i.type.value}: {i.message}" for i in critical_issues[:5]
+                ])
+                raise ValueError(
+                    f"Patient generation failed - {len(critical_issues)} critical issue(s) "
+                    f"could not be auto-fixed: {issue_summary}"
+                )
+
         # Store validation metadata
         patient.generation_seed["validation"] = {
             "valid": validation_result.valid,
@@ -1458,6 +1592,14 @@ Examples:
                 if idx < len(patient.problem_list):
                     patient.problem_list[idx].onset_date = dob + timedelta(days=30)
 
+        elif "immunization_record" in issue.path:
+            match = re.search(r'immunization_record\[(\d+)\]', issue.path)
+            if match:
+                idx = int(match.group(1))
+                if idx < len(patient.immunization_record):
+                    # Clamp immunization date to DOB (birth dose vaccines)
+                    patient.immunization_record[idx].date = dob
+
         return patient
 
     def _fix_coding_issue(self, patient: Patient, issue) -> Patient:
@@ -1504,8 +1646,10 @@ Examples:
                                 display=med_def.agent,
                             ),
                             status=MedicationStatus.ACTIVE,
-                            frequency=med_def.frequency,
-                            route=med_def.route,
+                            dose_quantity="1",  # Default dose (string)
+                            dose_unit="dose",   # Generic unit
+                            frequency=med_def.frequency or "as directed",
+                            route=med_def.route or "oral",
                             start_date=condition.onset_date,
                         )
                         patient.medication_list.append(new_med)
@@ -1680,14 +1824,72 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         onset_ages = {}
         
         if seed.conditions:
-            conditions = list(seed.conditions)
+            # Filter out age-inappropriate conditions and apply comorbidity logic
+            patient_age = demographics.age_months
+            filtered_conditions = []
+
+            for cond in seed.conditions:
+                # Get age constraints from hardcoded gates or YAML
+                cond_key = cond.lower().replace(' ', '_')
+                if cond_key in self._hardcoded_age_gates:
+                    min_age, max_age = self._hardcoded_age_gates[cond_key]
+                else:
+                    cond_data = self._conditions.get(cond_key, {})
+                    age_ranges = cond_data.get('age_ranges', {})
+                    demographics_cfg = cond_data.get('demographics', {})
+                    age_months_config = demographics_cfg.get('age_months', {})
+                    min_age = age_ranges.get('min_months') or age_months_config.get('min') or 0
+                    max_age = age_ranges.get('max_months') or age_months_config.get('max') or None
+
+                # Check if patient age allows this condition
+                if patient_age < min_age:
+                    print(f"Warning: Skipping {cond} - patient age {patient_age}mo is below minimum {min_age}mo")
+                    continue
+
+                # Check if there's a valid onset range (considering max age constraints)
+                onset_min = min_age
+                onset_max = patient_age
+                if max_age is not None:
+                    onset_max = min(onset_max, max_age)
+
+                if onset_min > onset_max:
+                    print(f"Warning: Skipping {cond} - no valid onset range for patient age {patient_age}mo")
+                    continue
+
+                filtered_conditions.append(cond)
+
+            conditions = filtered_conditions
             # Apply co-morbidity logic to user-specified conditions
             conditions = self._apply_comorbidity_logic(conditions)
-            # Generate plausible onset ages
+
+            # Generate plausible onset ages with proper age constraints
+            valid_conditions = []
             for cond in conditions:
-                max_onset = min(demographics.age_months, 120)
-                min_onset = min(6, max_onset)  # Don't use 6 if child is younger
-                onset_ages[cond] = random.randint(min_onset, max(min_onset, max_onset))
+                cond_key = cond.lower().replace(' ', '_')
+                if cond_key in self._hardcoded_age_gates:
+                    cond_min_age, cond_max_age = self._hardcoded_age_gates[cond_key]
+                else:
+                    cond_data = self._conditions.get(cond_key, {})
+                    age_ranges = cond_data.get('age_ranges', {})
+                    demographics_cfg = cond_data.get('demographics', {})
+                    age_months_config = demographics_cfg.get('age_months', {})
+                    cond_min_age = age_ranges.get('min_months') or age_months_config.get('min') or 6
+                    cond_max_age = age_ranges.get('max_months') or age_months_config.get('max') or None
+
+                # Calculate valid onset age range
+                onset_min = cond_min_age
+                onset_max = patient_age
+                if cond_max_age is not None:
+                    onset_max = min(onset_max, cond_max_age)
+
+                if onset_min > onset_max:
+                    print(f"Warning: Skipping {cond} - no valid onset range (min {onset_min}mo, max {onset_max}mo)")
+                    continue
+
+                valid_conditions.append(cond)
+                onset_ages[cond] = random.randint(onset_min, onset_max)
+
+            conditions = valid_conditions
         elif tier != ComplexityTier.TIER_0:
             # Use conditions loaded from YAML database
             age_months = demographics.age_months
@@ -1727,13 +1929,45 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             # Apply co-morbidity logic - conditions tend to cluster
             conditions = self._apply_comorbidity_logic(conditions)
 
+            # Filter out conditions where patient age doesn't allow valid onset
+            valid_conditions = []
             for cond in conditions:
-                # Use condition-specific minimum onset age from YAML
-                cond_data = self._chronic_conditions.get(cond, {})
-                cond_min_age = cond_data.get('min_months', 6)
-                max_onset = min(demographics.age_months, 120)
-                min_onset = min(cond_min_age, max_onset)
-                onset_ages[cond] = random.randint(min_onset, max(min_onset, max_onset))
+                # Get age constraints from hardcoded gates or YAML
+                cond_key = cond.lower().replace(' ', '_')
+                if cond_key in self._hardcoded_age_gates:
+                    cond_min_age, cond_max_age = self._hardcoded_age_gates[cond_key]
+                else:
+                    cond_data = self._chronic_conditions.get(cond, {})
+                    cond_min_age = cond_data.get('min_months', 6)
+                    cond_max_age = cond_data.get('max_months')
+
+                patient_age = demographics.age_months
+
+                # Check if patient is too young for this condition
+                if patient_age < cond_min_age:
+                    print(f"Warning: Skipping {cond} - patient age {patient_age}mo is below condition minimum {cond_min_age}mo")
+                    continue
+
+                # Check if patient is too old for this condition (e.g., bronchiolitis)
+                if cond_max_age is not None and cond_min_age > cond_max_age:
+                    # Invalid constraint - skip
+                    continue
+
+                # Calculate valid onset age range
+                onset_min = cond_min_age
+                onset_max = patient_age
+                if cond_max_age is not None:
+                    onset_max = min(onset_max, cond_max_age)
+
+                if onset_min > onset_max:
+                    # No valid onset range - skip condition
+                    print(f"Warning: Skipping {cond} - no valid onset range (min {onset_min}mo, max {onset_max}mo)")
+                    continue
+
+                valid_conditions.append(cond)
+                onset_ages[cond] = random.randint(onset_min, onset_max)
+
+            conditions = valid_conditions
         
         trajectory = "healthy" if not conditions else "single_chronic" if len(conditions) == 1 else "multiple_chronic"
         
@@ -1766,9 +2000,10 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             visit_date = dob + timedelta(days=visit_age * 30)
             if visit_date > today:
                 continue
-                
-            # Add some realistic variation to dates
+
+            # Add some realistic variation to dates (but never before DOB)
             visit_date += timedelta(days=random.randint(-7, 14))
+            visit_date = max(visit_date, dob)  # Clamp to DOB floor
             
             stub = EncounterStub(
                 date=visit_date,
@@ -1825,6 +2060,8 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             
             # Initial diagnosis visit
             diagnosis_date = dob + timedelta(days=onset_age * 30)
+            diagnosis_date = max(diagnosis_date, dob)  # Clamp to DOB floor
+            diagnosis_date = min(diagnosis_date, today)  # Clamp to today ceiling (no future dates)
             stubs.append(EncounterStub(
                 date=diagnosis_date,
                 type=EncounterType.CHRONIC_FOLLOWUP,
@@ -1919,6 +2156,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                     # Event occurred!
                     event_age_months = random.randint(age_months_start, age_months_end)
                     event_date = dob + timedelta(days=event_age_months * 30 + random.randint(0, 29))
+                    event_date = max(event_date, dob)  # Clamp to DOB floor
 
                     if event_date > today:
                         continue
@@ -2672,9 +2910,24 @@ Plan: {plan_str}
 
 Write the clinical note (start with HPI, end with signature):"""
 
-        system = """You are a pediatric physician writing clinical documentation.
+        # Build age-appropriate constraints
+        age_constraints = []
+        if age_months > 18:
+            age_constraints.append("fontanelles (closed by 18 months)")
+        if age_months > 6:
+            age_constraints.append("Moro reflex (disappears by 6 months)")
+            age_constraints.append("umbilical cord stump (heals within first weeks)")
+        if age_months < 6:
+            age_constraints.append("walking or running (too young)")
+
+        constraints_note = ""
+        if age_constraints:
+            constraints_note = f"\nDO NOT mention these age-inappropriate findings: {', '.join(age_constraints)}."
+
+        system = f"""You are a pediatric physician writing clinical documentation.
 Write clear, professional SOAP-style notes. Use standard medical abbreviations where appropriate.
-Keep it concise but complete. Sign as the provider."""
+Keep it concise but complete. Sign as the provider.
+IMPORTANT: This patient is {age_str}. Only include age-appropriate exam findings.{constraints_note}"""
 
         note = self.llm.generate(prompt, system=system, max_tokens=600, temperature=0.7)
 
@@ -3132,45 +3385,67 @@ VITAL SIGNS:
                 ("Viral Gastroenteritis", 10),
             ]
 
-        # Age-appropriate filtering using acute conditions from YAML
+        # Age-appropriate filtering using acute conditions from YAML and hardcoded gates
         filtered_pool = []
         for illness, weight in illness_pool:
-            # Check minimum age from acute conditions
-            if illness in self._acute_conditions:
+            illness_key = illness.lower().replace(' ', '_')
+
+            # Check hardcoded age gates first (most reliable)
+            if illness_key in self._hardcoded_age_gates:
+                min_age, max_age = self._hardcoded_age_gates[illness_key]
+            elif illness in self._acute_conditions:
                 min_age = self._acute_conditions[illness].get('min_months', 0)
+                max_age = self._acute_conditions[illness].get('max_months')
             else:
-                # Fallback min ages for common conditions
-                fallback_min_ages = {
-                    "Acute Otitis Media": 6,
-                    "Swimmer's Ear": 12,
-                    "Croup": 6,
-                    "Allergic Rhinitis": 24,
-                    "Influenza": 6,
-                    "Insect Bite Reaction": 6,
+                # Fallback ages for common conditions
+                fallback_ages = {
+                    "Acute Otitis Media": (6, None),
+                    "Swimmer's Ear": (12, None),
+                    "Croup": (6, None),
+                    "Allergic Rhinitis": (24, None),
+                    "Influenza": (6, None),
+                    "Insect Bite Reaction": (6, None),
+                    "Bronchiolitis": (0, 24),  # Max 24 months
                 }
-                min_age = fallback_min_ages.get(illness, 0)
+                min_age, max_age = fallback_ages.get(illness, (0, None))
 
-            if min_age <= age_months:
-                filtered_pool.append((illness, weight))
+            # Check both min and max age constraints
+            if age_months < min_age:
+                continue
+            if max_age is not None and age_months > max_age:
+                continue
 
-        # If all filtered out (very young infant), use infant fallback from YAML
+            filtered_pool.append((illness, weight))
+
+        # If all filtered out, use age-appropriate fallback
         if not filtered_pool:
-            infant_fallback = seasonal_weights.get('infant_fallback', {})
-            if infant_fallback:
-                for condition_key, weight in infant_fallback.items():
-                    if condition_key in self._conditions:
-                        display_name = self._conditions[condition_key].get('display_name', condition_key.replace('_', ' ').title())
-                    else:
-                        display_name = condition_key.replace('_', ' ').title()
-                    filtered_pool.append((display_name, weight))
+            # Use infant fallback only for patients ≤24 months
+            if age_months <= 24:
+                infant_fallback = seasonal_weights.get('infant_fallback', {})
+                if infant_fallback:
+                    for condition_key, weight in infant_fallback.items():
+                        if condition_key in self._conditions:
+                            display_name = self._conditions[condition_key].get('display_name', condition_key.replace('_', ' ').title())
+                        else:
+                            display_name = condition_key.replace('_', ' ').title()
+                        filtered_pool.append((display_name, weight))
+                else:
+                    # Hardcoded infant fallback (bronchiolitis OK for ≤24mo)
+                    filtered_pool = [
+                        ("Viral Syndrome", 30),
+                        ("Upper Respiratory Infection", 25),
+                        ("Bronchiolitis", 25),
+                        ("Fever", 15),
+                        ("Viral Gastroenteritis", 5),
+                    ]
             else:
-                # Hardcoded fallback if YAML doesn't have infant_fallback
+                # Generic fallback for older patients (no bronchiolitis)
                 filtered_pool = [
                     ("Viral Syndrome", 30),
                     ("Upper Respiratory Infection", 25),
-                    ("Bronchiolitis", 25),
-                    ("Fever", 15),
-                    ("Viral Gastroenteritis", 5),
+                    ("Fever", 20),
+                    ("Viral Gastroenteritis", 15),
+                    ("Cough", 10),
                 ]
 
         # Weighted random selection

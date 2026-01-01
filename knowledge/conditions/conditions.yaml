@@ -1777,6 +1777,73 @@ prediabetes:
       - category: "follow-up"
         description: "Repeat screening annually if risk factors persist"
 
+type_1_diabetes:
+  display_name: "Type 1 Diabetes"
+  aliases: ["T1DM", "Type 1 diabetes mellitus", "Juvenile diabetes", "Insulin-dependent diabetes"]
+  icd10: ["E10.9", "E10.65"]
+  category: chronic
+  system: metabolic
+
+  age_ranges:
+    min_months: 6
+    typical_diagnosis_months: 96  # Often diagnosed around age 8
+    peak_start_months: 48
+    peak_end_months: 168
+    max_months: 264
+
+  prevalence:
+    percent: 0.2
+    notes: "Most common form of diabetes in children; autoimmune destruction of beta cells"
+
+  comorbidities:
+    strong: ["celiac_disease", "thyroid_disease"]
+    moderate: ["vitamin_d_deficiency"]
+
+  presentation:
+    symptoms:
+      - { name: "polyuria", probability: 0.95, description: "excessive urination" }
+      - { name: "polydipsia", probability: 0.90, description: "excessive thirst" }
+      - { name: "weight loss", probability: 0.85, description: "unexplained weight loss" }
+      - { name: "fatigue", probability: 0.75, description: "tiredness and lethargy" }
+      - { name: "polyphagia", probability: 0.60, description: "increased hunger" }
+
+  treatment:
+    approach: "insulin_required"
+    managed_by_specialty: true
+    specialty: "Pediatric Endocrinology"
+    medications:
+      - agent: "Insulin (multiple daily injections or pump)"
+        rxnorm: "274783"
+        required: true
+        notes: "Basal-bolus regimen or insulin pump therapy"
+      - agent: "Insulin Glargine"
+        rxnorm: "261551"
+        dose_description: "Based on weight and blood glucose patterns"
+        frequency: "Once daily"
+        route: "subcutaneous"
+      - agent: "Insulin Lispro"
+        rxnorm: "86009"
+        dose_description: "Based on carbohydrate intake"
+        frequency: "With meals"
+        route: "subcutaneous"
+    items:
+      - category: "medication"
+        description: "Insulin therapy required - basal/bolus or pump"
+      - category: "referral"
+        description: "Pediatric endocrinology for ongoing management"
+      - category: "education"
+        description: "Diabetes education, carb counting, blood glucose monitoring"
+      - category: "order"
+        description: "Home blood glucose meter; continuous glucose monitor if available"
+
+  monitoring_requirements:
+    followup_frequency: "every 3 months"
+    required_labs_at_followup:
+      - "hemoglobin_a1c"
+      - "thyroid_panel"
+      - "celiac_screen"
+    monitoring_notes: "Target HbA1c <7.5% in most children; individualize based on age and hypoglycemia risk"
+
 type_2_diabetes:
   display_name: "Type 2 Diabetes"
   aliases: ["T2DM", "Type 2 diabetes mellitus"]

@@ -178,10 +178,10 @@ class ConditionKnowledgeService:
     """Convert YAML condition data to ConditionDefinition."""
     data = self.yaml_conditions[key]
 
-    # Extract ICD-10 codes
+    # Extract ICD-10 codes (check both top-level and nested under billing_codes)
     billing = data.get("billing_codes", {})
-    icd10_raw = billing.get("icd10", [])
-    icd10_codes = icd10_raw if isinstance(icd10_raw, list) else [icd10_raw]
+    icd10_raw = billing.get("icd10") or data.get("icd10", [])
+    icd10_codes = icd10_raw if isinstance(icd10_raw, list) else [icd10_raw] if icd10_raw else []
 
     # Extract labs
     labs = []

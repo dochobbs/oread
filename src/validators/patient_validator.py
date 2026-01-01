@@ -49,6 +49,8 @@ class PatientValidator:
     "epilepsy": ["levetiracetam", "keppra", "valproic", "lamotrigine", "phenobarbital"],
     "asthma": ["albuterol", "fluticasone", "budesonide", "montelukast"],
     "adhd": ["methylphenidate", "adderall", "vyvanse", "strattera", "guanfacine"],
+    "kawasaki": ["aspirin"],
+    "kawasaki disease": ["aspirin"],
   }
 
   # Conditions that require labs at chronic follow-up
@@ -153,9 +155,9 @@ class PatientValidator:
     """Check that conditions requiring medications have them."""
     issues = []
 
-    # Get active condition names (lowercase for matching)
+    # Get active condition names (lowercase, normalized for matching)
     active_conditions = [
-      c.display_name.lower()
+      c.display_name.lower().replace('_', ' ')
       for c in patient.problem_list
       if c.clinical_status.value == "active"
     ]

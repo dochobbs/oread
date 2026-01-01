@@ -22,11 +22,91 @@ Requires:
 from __future__ import annotations
 
 import os
+import re
+from pathlib import Path
 from typing import Callable
 
 # Type aliases matching condition_service.py
 WebSearchFn = Callable[[str], list[dict]]  # query -> list of {url, title, snippet}
 WebFetchFn = Callable[[str], str]  # url -> content
+
+
+def _load_api_key_from_shell_config() -> str | None:
+  """
+  Load EXA_API_KEY from shell config files (~/.zshrc, ~/.bashrc, ~/.bash_profile).
+
+  Useful when running Python directly without inheriting shell environment.
+  """
+  home = Path.home()
+  shell_files = [
+    home / ".zshrc",
+    home / ".bashrc",
+    home / ".bash_profile",
+  ]
+
+  # Pattern to match: export EXA_API_KEY="value" or export EXA_API_KEY='value'
+  pattern = re.compile(r'export\s+EXA_API_KEY\s*=\s*["\']?([^"\'#\n]+)["\']?')
+
+  for shell_file in shell_files:
+    if shell_file.exists():
+      try:
+        content = shell_file.read_text()
+        match = pattern.search(content)
+        if match:
+          return match.group(1).strip()
+      except Exception:
+        continue
+
+  return None
+
+
+def _load_api_key_from_dotenv() -> str | None:
+  """Load EXA_API_KEY from .env file in current or parent directories."""
+  current = Path.cwd()
+
+  for path in [current] + list(current.parents)[:3]:  # Check up to 3 parent dirs
+    env_file = path / ".env"
+    if env_file.exists():
+      try:
+        content = env_file.read_text()
+        for line in content.splitlines():
+          line = line.strip()
+          if line.startswith("EXA_API_KEY="):
+            value = line.split("=", 1)[1].strip()
+            # Remove quotes if present
+            if (value.startswith('"') and value.endswith('"')) or \
+               (value.startswith("'") and value.endswith("'")):
+              value = value[1:-1]
+            return value
+      except Exception:
+        continue
+
+  return None
+
+
+def get_exa_api_key() -> str | None:
+  """
+  Get EXA_API_KEY from multiple sources in order of priority:
+  1. Environment variable
+  2. .env file
+  3. Shell config files (~/.zshrc, ~/.bashrc)
+  """
+  # 1. Environment variable (highest priority)
+  key = os.getenv("EXA_API_KEY")
+  if key:
+    return key
+
+  # 2. .env file
+  key = _load_api_key_from_dotenv()
+  if key:
+    return key
+
+  # 3. Shell config files
+  key = _load_api_key_from_shell_config()
+  if key:
+    return key
+
+  return None
 
 
 class ExaSearchClient:
@@ -67,18 +147,19 @@ class ExaSearchClient:
     Initialize Exa client.
 
     Args:
-      api_key: Exa API key. If not provided, reads from EXA_API_KEY env var.
+      api_key: Exa API key. If not provided, reads from EXA_API_KEY env var,
+               .env file, or shell config (~/.zshrc).
 
     Raises:
       ImportError: If exa_py package not installed.
       ValueError: If no API key available.
     """
-    self.api_key = api_key or os.getenv("EXA_API_KEY")
+    self.api_key = api_key or get_exa_api_key()
 
     if not self.api_key:
       raise ValueError(
-        "Exa API key required. Set EXA_API_KEY environment variable "
-        "or pass api_key parameter."
+        "Exa API key required. Set EXA_API_KEY environment variable, "
+        "add to .env file, or add 'export EXA_API_KEY=...' to ~/.zshrc"
       )
 
     try:

@@ -170,6 +170,44 @@ uvicorn server:app --port 3000
 
 First-time generation may be slower as caches warm up. Subsequent generations are faster.
 
+## Quality & Validation
+
+Oread includes built-in validation to ensure clinically accurate patients:
+
+**Age-Appropriate Conditions:**
+- ADHD only assigned at ≥4 years (48 months)
+- Bronchiolitis only for infants ≤2 years (24 months)
+- Depression only at ≥6 years
+- Prediabetes only at ≥10 years
+
+**Medication Coherence:**
+- Type 1 Diabetes patients always have insulin
+- Kawasaki Disease patients always have aspirin
+- Asthma patients have rescue inhalers
+
+**Temporal Validation:**
+- No dates before date of birth
+- No future dates
+
+**ICD-10 Codes:**
+- Uses curated YAML definitions
+- Falls back to Exa web search for unknown conditions
+- Never uses R69 "unknown" fallback codes
+
+## Environment Variables (Optional)
+
+```bash
+# For LLM-enhanced narratives
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# For web search ICD-10 lookup
+export EXA_API_KEY=...
+
+# For database features
+export SUPABASE_URL=https://your-project.supabase.co
+export SUPABASE_ANON_KEY=eyJ...
+```
+
 ## Next Steps
 
 - Read [CONDITION_SCHEMA.md](CONDITION_SCHEMA.md) to understand condition definitions

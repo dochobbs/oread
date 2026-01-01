@@ -1,6 +1,6 @@
 # CLAUDE.md - Oread Development Context
 
-**Last Updated:** December 2025
+**Last Updated:** January 2026
 
 This file provides context for AI assistants (Claude Code, Cursor, etc.) working on the Oread project.
 
@@ -183,6 +183,35 @@ New models added for condition schema:
 - `MedicationDefinition` - Meds with RxNorm
 - `ConditionDefinition` - Complete condition schema
 
+### Quality & Validation System (January 2026)
+
+The engine now includes comprehensive validation to ensure clinical accuracy:
+
+**Age Gates (`engine.py:_hardcoded_age_gates`):**
+| Condition | Min Age | Max Age |
+|-----------|---------|---------|
+| ADHD | 48mo | - |
+| Anxiety | 36mo | - |
+| Depression | 72mo | - |
+| Asthma | 12mo | - |
+| Bronchiolitis | 0mo | 24mo |
+| Prediabetes | 120mo | - |
+| Learning Disorder | 60mo | - |
+| Enuresis | 60mo | - |
+| Obesity | 24mo | - |
+| OSA | 24mo | - |
+
+**Validation Checks:**
+- `_validate_condition_age()` - Validates onset age against min/max constraints
+- Temporal validation - No dates before DOB or after today
+- Medication coherence - Required meds for conditions (T1D→insulin, Kawasaki→aspirin)
+- ICD-10 validation - No R69 fallback codes (uses Exa web search for unknowns)
+
+**Key Files:**
+- `src/validators/patient_validator.py` - Validation logic
+- `src/knowledge/condition_service.py` - Condition lookup with web search fallback
+- `src/knowledge/exa_client.py` - Exa API integration for ICD-10 lookup
+
 ## Key Code Locations
 
 ### Condition Processing
@@ -338,27 +367,41 @@ After significant changes, update:
 3. `docs/CONDITION_SCHEMA.md` - If schema changes
 4. `docs/ARCHITECTURE.md` - If system design changes
 
-## Recent Changes (December 2025)
+## Recent Changes (January 2026)
+
+**Quality & Validation System (v2.1):**
+1. Age gate validation with min/max constraints (ADHD ≥48mo, bronchiolitis ≤24mo)
+2. Hardcoded age gates for 11 critical conditions in `_hardcoded_age_gates`
+3. `_validate_condition_age()` helper method for consistent validation
+4. Future date prevention (onset dates clamped to ≤ today)
+5. Medication coherence enforcement (Kawasaki → aspirin, T1D → insulin)
+6. Validation blocking - raises exception on unfixable critical issues
+7. Exa web search integration for unknown condition ICD-10 lookup
+8. Display name normalization (no more snake_case in output)
+9. Comorbidity-added conditions now validated through age gates
+10. Acute illness age filtering in `_get_seasonal_illness()`
+
+**December 2025:**
 
 **Learning Platform (Phase 1 Complete):**
-1. Supabase integration with user authentication
-2. Patient panels with mass generation
-3. Single case generation with 5 difficulty levels
-4. Login/signup UI in web interface
+- Supabase integration with user authentication
+- Patient panels with mass generation
+- Single case generation with 5 difficulty levels
+- Login/signup UI in web interface
 
 **Time Travel (Phase 2 Core Feature):**
-5. TimeSnapshot, DiseaseArc, DecisionPoint models
-6. Disease progression rules in conditions.yaml
-7. Six disease arcs (Atopic March, RSV→Asthma, Obesity, ADHD, AOM, GI)
-8. Timeline API endpoints
-9. Timeline slider UI with key moment markers
-10. Disease arc visualization with clinical pearls
+- TimeSnapshot, DiseaseArc, DecisionPoint models
+- Disease progression rules in conditions.yaml
+- Six disease arcs (Atopic March, RSV→Asthma, Obesity, ADHD, AOM, GI)
+- Timeline API endpoints
+- Timeline slider UI with key moment markers
+- Disease arc visualization with clinical pearls
 
 **Earlier (v2.0):**
-11. Restructured conditions.yaml to v2.0 schema
-12. Added SNOMED, RxNorm, LOINC codes throughout
-13. Implemented illness-aware vitals
-14. Created weight-based medication dosing
+- Restructured conditions.yaml to v2.0 schema
+- Added SNOMED, RxNorm, LOINC codes throughout
+- Implemented illness-aware vitals
+- Created weight-based medication dosing
 
 ## Metis Integration
 

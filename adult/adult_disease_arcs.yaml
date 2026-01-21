@@ -1,0 +1,261 @@
+# Adult Disease Arc Definitions
+# These define longitudinal disease progressions for Time Travel feature
+# Last Updated: 2026-01-20
+
+metabolic_cascade:
+  name: "Metabolic Cascade"
+  description: "Progression from obesity through metabolic syndrome to type 2 diabetes and cardiovascular disease."
+
+  stages:
+    - condition_key: "obesity"
+      display_name: "Obesity"
+      typical_age_range: [240, 480]  # 20-40 years in months
+      symptoms: ["BMI > 30", "weight gain", "fatigue"]
+      treatments: ["lifestyle modification", "dietary counseling"]
+      transition_triggers: ["continued weight gain", "sedentary lifestyle", "poor diet"]
+
+    - condition_key: "prediabetes"
+      display_name: "Prediabetes"
+      typical_age_range: [360, 600]  # 30-50 years
+      symptoms: ["impaired fasting glucose", "HbA1c 5.7-6.4%", "acanthosis nigricans"]
+      treatments: ["intensive lifestyle modification", "metformin consideration"]
+      transition_triggers: ["insulin resistance", "weight gain"]
+
+    - condition_key: "type2_diabetes"
+      display_name: "Type 2 Diabetes"
+      typical_age_range: [420, 720]  # 35-60 years
+      symptoms: ["hyperglycemia", "polyuria", "polydipsia", "fatigue"]
+      treatments: ["metformin", "GLP-1 agonists", "SGLT2 inhibitors"]
+      transition_triggers: ["beta cell failure", "sustained hyperglycemia"]
+
+    - condition_key: "coronary_artery_disease"
+      display_name: "Coronary Artery Disease"
+      typical_age_range: [540, 840]  # 45-70 years
+      symptoms: ["angina", "dyspnea on exertion", "reduced exercise tolerance"]
+      treatments: ["aspirin", "statin", "beta-blocker", "revascularization if needed"]
+      transition_triggers: ["atherosclerosis progression", "plaque rupture"]
+
+  clinical_pearls:
+    - "Metabolic syndrome increases cardiovascular risk 2-fold"
+    - "7% weight loss can prevent progression from prediabetes to diabetes"
+    - "SGLT2 inhibitors reduce cardiovascular events independent of glucose control"
+    - "Early intervention with GLP-1 agonists can address both obesity and diabetes"
+
+  references:
+    - "ADA Standards of Care in Diabetes 2024"
+    - "ACC/AHA Cardiovascular Risk Guidelines 2019"
+
+cardiovascular_progression:
+  name: "Hypertensive Heart Disease"
+  description: "Progression from untreated/poorly controlled hypertension to heart failure."
+
+  stages:
+    - condition_key: "hypertension"
+      display_name: "Essential Hypertension"
+      typical_age_range: [300, 600]  # 25-50 years
+      symptoms: ["elevated BP", "often asymptomatic", "headaches"]
+      treatments: ["ACE-I/ARB", "CCB", "thiazide diuretic"]
+      transition_triggers: ["uncontrolled BP", "medication non-adherence"]
+
+    - condition_key: "hyperlipidemia"
+      display_name: "Hyperlipidemia"
+      typical_age_range: [360, 660]  # 30-55 years
+      symptoms: ["elevated LDL", "low HDL", "elevated triglycerides"]
+      treatments: ["statin therapy", "lifestyle modification"]
+      transition_triggers: ["dietary factors", "genetics", "metabolic syndrome"]
+
+    - condition_key: "atrial_fibrillation"
+      display_name: "Atrial Fibrillation"
+      typical_age_range: [600, 840]  # 50-70 years
+      symptoms: ["palpitations", "irregular pulse", "fatigue", "dyspnea"]
+      treatments: ["anticoagulation", "rate control", "rhythm control"]
+      transition_triggers: ["left atrial enlargement", "hypertensive remodeling"]
+
+    - condition_key: "heart_failure"
+      display_name: "Heart Failure"
+      typical_age_range: [660, 900]  # 55-75 years
+      symptoms: ["dyspnea", "orthopnea", "edema", "fatigue"]
+      treatments: ["ACE-I/ARB", "beta-blocker", "diuretics", "SGLT2i"]
+      transition_triggers: ["LV dysfunction", "volume overload"]
+
+  clinical_pearls:
+    - "Every 20 mmHg increase in SBP doubles cardiovascular risk"
+    - "AF increases stroke risk 5-fold without anticoagulation"
+    - "HFpEF common in hypertensive patients, often underdiagnosed"
+    - "GDMT reduces mortality in HFrEF by 30-50%"
+
+  references:
+    - "ACC/AHA Hypertension Guidelines 2017"
+    - "ACC/AHA Heart Failure Guidelines 2022"
+
+ckd_progression:
+  name: "CKD Progression"
+  description: "Progression of chronic kidney disease from early stages to advanced disease."
+
+  stages:
+    - condition_key: "type2_diabetes"
+      display_name: "Diabetic Nephropathy Risk"
+      typical_age_range: [420, 660]  # 35-55 years
+      symptoms: ["microalbuminuria", "controlled diabetes"]
+      treatments: ["ACE-I/ARB", "tight glucose control", "BP control"]
+      transition_triggers: ["poor glycemic control", "uncontrolled hypertension"]
+
+    - condition_key: "ckd_stage_3"
+      display_name: "CKD Stage 3"
+      typical_age_range: [540, 780]  # 45-65 years
+      symptoms: ["eGFR 30-59", "mild fatigue", "nocturia"]
+      treatments: ["ACE-I/ARB", "SGLT2i", "nephrology referral"]
+      transition_triggers: ["progressive proteinuria", "uncontrolled BP/glucose"]
+
+    - condition_key: "ckd_stage_4"
+      display_name: "CKD Stage 4"
+      typical_age_range: [600, 840]  # 50-70 years
+      symptoms: ["eGFR 15-29", "fatigue", "fluid retention", "anemia"]
+      treatments: ["SGLT2i", "phosphate binders", "ESA for anemia", "dietary restriction"]
+      transition_triggers: ["ongoing nephron loss", "acute kidney injury"]
+
+    - condition_key: "ckd_stage_5"
+      display_name: "ESRD/CKD Stage 5"
+      typical_age_range: [660, 900]  # 55-75 years
+      symptoms: ["eGFR < 15", "uremic symptoms", "volume overload"]
+      treatments: ["dialysis planning", "transplant evaluation", "palliative care discussion"]
+      transition_triggers: ["symptomatic uremia", "refractory complications"]
+
+  clinical_pearls:
+    - "DM and HTN account for 70% of ESRD cases"
+    - "SGLT2 inhibitors reduce CKD progression by 30-40%"
+    - "Early nephrology referral improves outcomes"
+    - "Avoid NSAIDs and nephrotoxins"
+
+  references:
+    - "KDIGO CKD Guidelines 2024"
+    - "ADA Diabetic Kidney Disease Guidelines"
+
+copd_arc:
+  name: "COPD Progression"
+  description: "Progression of chronic obstructive pulmonary disease from smoking to end-stage lung disease."
+
+  stages:
+    - condition_key: "tobacco_use"
+      display_name: "Active Smoking"
+      typical_age_range: [216, 480]  # 18-40 years
+      symptoms: ["morning cough", "dyspnea with exertion", "recurrent bronchitis"]
+      treatments: ["smoking cessation counseling", "NRT", "varenicline"]
+      transition_triggers: ["continued smoking", "20+ pack-years"]
+
+    - condition_key: "copd"
+      display_name: "COPD (GOLD 1-2)"
+      typical_age_range: [480, 720]  # 40-60 years
+      symptoms: ["chronic cough", "dyspnea", "decreased FEV1"]
+      treatments: ["LAMA", "LABA", "ICS if needed", "pulmonary rehab"]
+      transition_triggers: ["continued smoking", "frequent exacerbations"]
+
+    - condition_key: "copd_severe"
+      display_name: "Severe COPD (GOLD 3-4)"
+      typical_age_range: [600, 840]  # 50-70 years
+      symptoms: ["severe dyspnea", "oxygen dependence", "cor pulmonale"]
+      treatments: ["triple therapy", "LTOT", "pulmonary rehab", "transplant evaluation"]
+      transition_triggers: ["FEV1 < 50%", "hypoxemia", "hypercapnia"]
+
+    - condition_key: "respiratory_failure"
+      display_name: "Chronic Respiratory Failure"
+      typical_age_range: [720, 900]  # 60-75 years
+      symptoms: ["severe hypoxemia", "hypercapnia", "frequent hospitalizations"]
+      treatments: ["home O2", "NIV/BiPAP", "palliative care", "goals of care"]
+      transition_triggers: ["end-stage lung disease", "refractory hypoxemia"]
+
+  clinical_pearls:
+    - "Smoking cessation at any stage reduces mortality"
+    - "Each exacerbation accelerates FEV1 decline"
+    - "LTOT improves survival in hypoxemic COPD"
+    - "Palliative care improves quality of life"
+
+  references:
+    - "GOLD Guidelines 2024"
+    - "ATS/ERS COPD Management Guidelines"
+
+depression_arc:
+  name: "Depression with Complications"
+  description: "Progression of depression with development of comorbidities and treatment resistance."
+
+  stages:
+    - condition_key: "anxiety"
+      display_name: "Generalized Anxiety"
+      typical_age_range: [216, 480]  # 18-40 years
+      symptoms: ["excessive worry", "restlessness", "sleep difficulties"]
+      treatments: ["CBT", "SSRI if needed"]
+      transition_triggers: ["chronic stress", "life events", "poor coping"]
+
+    - condition_key: "depression"
+      display_name: "Major Depressive Disorder"
+      typical_age_range: [300, 600]  # 25-50 years
+      symptoms: ["persistent sadness", "anhedonia", "sleep/appetite changes", "fatigue"]
+      treatments: ["SSRI/SNRI", "psychotherapy", "exercise"]
+      transition_triggers: ["untreated anxiety", "life stressors", "trauma"]
+
+    - condition_key: "substance_use"
+      display_name: "Alcohol/Substance Use"
+      typical_age_range: [360, 660]  # 30-55 years
+      symptoms: ["self-medication", "increased tolerance", "withdrawal"]
+      treatments: ["dual diagnosis treatment", "MAT", "intensive therapy"]
+      transition_triggers: ["untreated depression", "chronic pain", "social isolation"]
+
+    - condition_key: "treatment_resistant_depression"
+      display_name: "Treatment-Resistant Depression"
+      typical_age_range: [420, 720]  # 35-60 years
+      symptoms: ["failed 2+ antidepressants", "persistent symptoms", "functional impairment"]
+      treatments: ["augmentation", "TMS", "ketamine/esketamine", "ECT"]
+      transition_triggers: ["non-response to multiple trials", "comorbidities"]
+
+  clinical_pearls:
+    - "50% of depression patients have comorbid anxiety"
+    - "Early treatment reduces risk of treatment resistance"
+    - "Substance use doubles depression relapse risk"
+    - "Collaborative care models improve outcomes"
+
+  references:
+    - "APA Depression Treatment Guidelines 2023"
+    - "CANMAT Depression Guidelines"
+
+chronic_pain_arc:
+  name: "Chronic Pain Syndrome"
+  description: "Progression from acute injury to chronic pain with psychosocial complications."
+
+  stages:
+    - condition_key: "acute_injury"
+      display_name: "Acute Pain/Injury"
+      typical_age_range: [240, 600]  # 20-50 years
+      symptoms: ["localized pain", "inflammation", "functional limitation"]
+      treatments: ["NSAIDs", "PT", "activity modification"]
+      transition_triggers: ["inadequate treatment", "persistent inflammation"]
+
+    - condition_key: "chronic_pain"
+      display_name: "Chronic Pain Syndrome"
+      typical_age_range: [300, 720]  # 25-60 years
+      symptoms: ["pain > 3 months", "central sensitization", "sleep disruption"]
+      treatments: ["multimodal therapy", "PT", "SNRIs", "pain psychology"]
+      transition_triggers: ["central sensitization", "catastrophizing", "deconditioning"]
+
+    - condition_key: "depression"
+      display_name: "Pain-Related Depression"
+      typical_age_range: [360, 780]  # 30-65 years
+      symptoms: ["hopelessness", "social withdrawal", "functional decline"]
+      treatments: ["duloxetine/venlafaxine", "CBT for chronic pain", "ACT"]
+      transition_triggers: ["chronic disability", "social isolation", "sleep deprivation"]
+
+    - condition_key: "opioid_use_disorder"
+      display_name: "Opioid Use Disorder"
+      typical_age_range: [360, 720]  # 30-60 years
+      symptoms: ["tolerance", "withdrawal", "continued use despite harm"]
+      treatments: ["buprenorphine", "methadone", "naltrexone", "comprehensive MAT"]
+      transition_triggers: ["chronic opioid therapy", "dose escalation", "aberrant behaviors"]
+
+  clinical_pearls:
+    - "Early multimodal treatment prevents chronification"
+    - "Opioids rarely appropriate for long-term chronic non-cancer pain"
+    - "CBT for chronic pain reduces disability"
+    - "Pain catastrophizing is strongest predictor of disability"
+
+  references:
+    - "CDC Opioid Prescribing Guidelines 2022"
+    - "VA/DoD Chronic Pain Guidelines"

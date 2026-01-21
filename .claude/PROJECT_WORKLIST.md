@@ -1,31 +1,34 @@
 # Oread Learning Platform - Roadmap
 
-**Last Updated:** December 29, 2025
+**Last Updated:** January 21, 2026
 **Full Plan:** `docs/LEARNING_PLATFORM_PLAN.md`
 
-## Current Status: Phase 2 Substantially Complete
+## Current Status: Adult Engine Enhanced
 
-### Recently Completed (December 29, 2025)
-- [x] **Vaccine Engine** - Complete rewrite:
-  - AAP schedule loaded from YAML (not hardcoded)
-  - Catch-up vaccine logic for missed doses
-  - Vaccine hesitancy injection (8 reason types)
-  - CVX codes from YAML schedule
-- [x] **Growth Pattern Variations** - New patterns:
-  - GrowthPattern enum (NORMAL, FTT, OBESITY, PRETERM_CATCHUP, GROWTH_DELAY)
-  - Pattern-aware percentile drift in GrowthTrajectory
-  - Condition-based pattern selection (celiac→FTT, obesity→obesity pattern, preterm→catch-up)
-- [x] **Labs Expansion** - Numeric values:
-  - Age-specific pediatric reference ranges
-  - Numeric lab generation with units
-  - WBC/CRP for pneumonia, urinalysis panel for UTI
-- [x] **Imaging Generation** - New capability:
-  - `_generate_imaging()` method
-  - Chest X-ray, AP Neck X-ray definitions
-  - Positive/negative findings with impressions
-- [x] **FHIR Export** - Labs and imaging:
-  - Lab results as FHIR Observations
-  - Imaging results as FHIR DiagnosticReports
+### Recently Completed (January 21, 2026)
+- [x] **Adult Engine Condition-Aware Generation**
+  - Vitals impact for 17+ conditions
+  - Probabilistic symptom selection
+  - Condition-specific physical exam findings
+  - LOINC-coded lab generation
+- [x] **Adult Immunizations**
+  - 8 vaccines (flu, Tdap, Td, shingles, pneumococcal, COVID-19, Hep B)
+  - CVX codes and realistic uptake rates
+  - Age-appropriate scheduling
+- [x] **Adult Disease Arcs**
+  - 6 longitudinal arcs for Time Travel
+  - Metabolic, cardiovascular, CKD, COPD, depression, chronic pain
+  - Clinical pearls and references
+
+### Previously Completed (December 2025)
+- [x] Database + Auth (Supabase)
+- [x] Mass Generate (Panels)
+- [x] Single Case Generation
+- [x] Time Travel (Disease Arcs) - Pediatric
+- [x] Enhanced Messiness System
+- [x] First-Class Vaccine Engine - Pediatric
+- [x] Growth/Development Variations
+- [x] Results Expansion (Labs/Imaging)
 
 ---
 
@@ -41,11 +44,12 @@
 ### Phase 2: Clinical Depth - **COMPLETE**
 | # | Feature | Status | Priority |
 |---|---------|--------|----------|
-| 3 | Time Travel (Disease Arcs) | **Complete** | **Critical** |
+| 3 | Time Travel (Disease Arcs) | **Complete** (Peds + Adult) | **Critical** |
 | - | Enhanced Messiness System | **Complete** | High |
-| 9 | First-Class Vaccine Engine | **Complete** | High |
+| 9 | First-Class Vaccine Engine | **Complete** (Peds + Adult) | High |
 | 8 | Growth/Development Variations | **Complete** | High |
 | 4 | Results Expansion (Labs/Imaging) | **Complete** | High |
+| - | Adult Engine Parity | **Complete** | High |
 
 ### Phase 3: Learning Experience (Next)
 | # | Feature | Status | Priority |
@@ -67,69 +71,52 @@
 
 ## What's Working Now
 
+### Both Engines (Pediatric + Adult)
+- Condition-aware generation (vitals, symptoms, PE, labs)
+- Disease arcs for Time Travel
+- Immunizations with CVX codes
+- FHIR R4, C-CDA 2.1, JSON, Markdown exports
+- Messiness levels 0-5
+
+### Pediatric Engine
+- AAP vaccine schedule from YAML
+- Catch-up vaccine logic
+- Vaccine hesitancy scenarios
+- Growth pattern variations (FTT, obesity, preterm)
+- Age-specific pediatric lab ranges
+
+### Adult Engine (NEW)
+- 8 adult vaccines with realistic uptake
+- 6 disease arcs (metabolic, CV, CKD, COPD, depression, pain)
+- 17+ condition defaults for vitals impact
+- Timeline generation with auto-detection
+
 ### Authentication & Panels
 - Supabase auth (signup, login, JWT tokens)
-- User profiles with learner levels
 - Panel creation, viewing, deletion
 - Panel patient generation with natural language config
-
-### Patient Generation
-- LLM-powered narratives (Claude Haiku 3.5)
-- Description parsing ("5 year old with asthma")
-- Condition-aware generation
-- Template + LLM hybrid approach
-
-### Time Travel
-- Disease progression visualization
-- Age slider for longitudinal view
-- "What Changed" panel
-- Only shows for patients with chronic conditions
-
-### Vaccines (NEW)
-- AAP schedule from YAML
-- Catch-up logic for missed vaccines
-- Hesitancy scenarios with reasons
-- CVX codes throughout
-
-### Growth Patterns (NEW)
-- FTT: Weight drifts down, height stable
-- Obesity: Weight >> height percentile
-- Preterm catch-up: Accelerated early growth
-- Growth delay: Plateau period
-
-### Labs & Imaging (NEW)
-- Numeric labs with reference ranges
-- Age-specific pediatric ranges
-- Imaging with findings/impressions
-- Integrated into encounters
 
 ### Chart Messiness
 - 6 difficulty levels (0=Pristine → 5=Chart From Hell)
 - 43 specific error types across 5 categories
 - Timeline-aware error placement
-- Threading errors that span multiple visits
-
-### Exports
-- JSON, FHIR R4, C-CDA 2.1, Markdown
-- Proper SNOMED/RxNorm/LOINC codes
-- Lab Observations and Imaging DiagnosticReports in FHIR
 
 ---
 
 ## Immediate Next Steps
 
-1. **Test Phase 2 Features** - Run pytest and manual testing
-2. **Commit Phase 2 Work** - ~977 lines of new code ready
-3. **Clean Up Duplicates** - Remove server (1).py, engine (1).py, etc.
+1. **Integrate Adult Engine with Web UI** - Timeline feature for adults
+2. **Add More Adult Disease Arcs** - Cancer progressions, autoimmune
+3. **Test Messiness with Adult Engine** - Verify levels 1-5 work
 4. **Start Echo (AI Attending)** - Phase 3 priority
 
 ---
 
 ## Known Issues / Tech Debt
+- [ ] Web UI timeline needs adult engine integration
 - [ ] Server requires manual restart after code changes
 - [ ] Some UI polish needed for dark mode
-- [ ] Duplicate files need cleanup (server (1).py, etc.)
-- [x] Environment variables need .env file (fixed)
+- [ ] Duplicate files need cleanup
 
 ---
 
@@ -140,13 +127,4 @@
 - **Validation**: Self-review + user flagging
 - **Messiness**: Difficulty-based, not count-based
 - **Labs**: Both binary and numeric supported
-- **Growth**: Pattern-aware drift based on conditions
-
----
-
-## Environment Setup
-- API key: ANTHROPIC_API_KEY in ~/.zshrc
-- Supabase: .env file in project root (auto-loaded)
-- Current LLM: Claude Haiku 3.5
-- Fonts: Crimson Pro + Work Sans + JetBrains Mono
-- Icons: Lucide via CDN
+- **Adult/Peds**: Unified CLI with --engine flag

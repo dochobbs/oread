@@ -151,18 +151,25 @@ class PatientValidator:
 
     return issues
 
+  def _patient_has_condition(self, patient: Patient, condition_keyword: str) -> bool:
+    """Check if patient has an active condition matching the keyword."""
+    return any(
+      condition_keyword in c.display_name.lower().replace('_', ' ')
+      for c in patient.problem_list
+      if c.clinical_status.value == "active"
+    )
+
+  def _has_matching_item(self, items: list[str], keywords: list[str]) -> bool:
+    """Check if any item contains any of the keywords."""
+    return any(
+      any(kw in item for kw in keywords)
+      for item in items
+    )
+
   def _validate_condition_medications(self, patient: Patient) -> list[ValidationIssue]:
     """Check that conditions requiring medications have them."""
     issues = []
 
-    # Get active condition names (lowercase, normalized for matching)
-    active_conditions = [
-      c.display_name.lower().replace('_', ' ')
-      for c in patient.problem_list
-      if c.clinical_status.value == "active"
-    ]
-
-    # Get active medication names (lowercase)
     active_meds = [
       m.display_name.lower()
       for m in patient.medication_list
@@ -170,17 +177,8 @@ class PatientValidator:
     ]
 
     for condition_keyword, required_med_keywords in self.CONDITIONS_REQUIRING_MEDS.items():
-      # Check if patient has this condition
-      has_condition = any(condition_keyword in c for c in active_conditions)
-
-      if has_condition:
-        # Check if they have any of the required medications
-        has_required_med = any(
-          any(med_kw in med for med_kw in required_med_keywords)
-          for med in active_meds
-        )
-
-        if not has_required_med:
+      if self._patient_has_condition(patient, condition_keyword):
+        if not self._has_matching_item(active_meds, required_med_keywords):
           issues.append(ValidationIssue(
             type=ValidationType.MEDICATION,
             severity=ValidationSeverity.ERROR,
@@ -196,44 +194,36 @@ class PatientValidator:
     """Check that chronic conditions have monitoring labs at follow-up visits."""
     issues = []
 
-    # Get active chronic condition keywords
-    active_conditions = [
-      c.display_name.lower()
-      for c in patient.problem_list
-      if c.clinical_status.value == "active"
-    ]
-
-    # Find chronic follow-up encounters
     chronic_followups = [
       enc for enc in patient.encounters
       if enc.type.value == "chronic-followup"
     ]
 
+    if not chronic_followups:
+      return issues
+
     for condition_keyword, required_lab_keywords in self.CONDITIONS_REQUIRING_LABS.items():
-      has_condition = any(condition_keyword in c for c in active_conditions)
+      if not self._patient_has_condition(patient, condition_keyword):
+        continue
 
-      if has_condition and chronic_followups:
-        # Check if ANY follow-up has labs
-        has_any_labs = False
-        for enc in chronic_followups:
-          if enc.lab_results:
-            lab_names = [lab.display_name.lower() for lab in enc.lab_results]
-            if any(
-              any(kw in lab for kw in required_lab_keywords)
-              for lab in lab_names
-            ):
-              has_any_labs = True
-              break
+      # Check if ANY follow-up has the required labs
+      has_required_labs = any(
+        enc.lab_results and self._has_matching_item(
+          [lab.display_name.lower() for lab in enc.lab_results],
+          required_lab_keywords
+        )
+        for enc in chronic_followups
+      )
 
-        if not has_any_labs:
-          issues.append(ValidationIssue(
-            type=ValidationType.LAB,
-            severity=ValidationSeverity.ERROR,
-            message=f"'{condition_keyword}' has {len(chronic_followups)} follow-up(s) but no monitoring labs",
-            path="encounters[].lab_results",
-            suggested_fix=f"Add {required_lab_keywords[0]} labs to chronic follow-up encounters",
-            auto_fixable=True,
-          ))
+      if not has_required_labs:
+        issues.append(ValidationIssue(
+          type=ValidationType.LAB,
+          severity=ValidationSeverity.ERROR,
+          message=f"'{condition_keyword}' has {len(chronic_followups)} follow-up(s) but no monitoring labs",
+          path="encounters[].lab_results",
+          suggested_fix=f"Add {required_lab_keywords[0]} labs to chronic follow-up encounters",
+          auto_fixable=True,
+        ))
 
     return issues
 

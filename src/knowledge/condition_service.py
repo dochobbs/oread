@@ -31,45 +31,27 @@ def _repair_json(json_str: str) -> str:
   - Unquoted None/null
   """
   # Replace single quotes with double quotes (but not inside strings)
-  # This is a simple heuristic - may not work in all cases
   json_str = re.sub(r"(?<=[:\[,\s])'([^']*)'(?=[,\]\}:])", r'"\1"', json_str)
 
-  # Replace "N/A", "n/a", "NA", "na" with null in contexts expecting numbers
-  # Pattern: "field_name": "N/A" where field suggests numeric
-  numeric_field_patterns = [
-    r'"dose_mg_kg"\s*:\s*"[Nn]/[Aa]"',
-    r'"dose_mg_kg"\s*:\s*"[Nn][Aa]"',
-    r'"max_dose_mg"\s*:\s*"[Nn]/[Aa]"',
-    r'"max_dose_mg"\s*:\s*"[Nn][Aa]"',
-    r'"probability"\s*:\s*"[Nn]/[Aa]"',
-    r'"probability"\s*:\s*"[Nn][Aa]"',
-    r'"normal_range_low"\s*:\s*"[Nn]/[Aa]"',
-    r'"normal_range_low"\s*:\s*"[Nn][Aa]"',
-    r'"normal_range_high"\s*:\s*"[Nn]/[Aa]"',
-    r'"normal_range_high"\s*:\s*"[Nn][Aa]"',
-    r'"probability_abnormal"\s*:\s*"[Nn]/[Aa]"',
-    r'"probability_abnormal"\s*:\s*"[Nn][Aa]"',
-    r'"confidence"\s*:\s*"[Nn]/[Aa]"',
-    r'"confidence"\s*:\s*"[Nn][Aa]"',
+  # Replace N/A variants with null in numeric fields
+  numeric_fields = [
+    "dose_mg_kg", "max_dose_mg", "probability",
+    "normal_range_low", "normal_range_high",
+    "probability_abnormal", "confidence",
   ]
-
-  for pattern in numeric_field_patterns:
-    # Extract field name and replace with null
-    field_name = pattern.split('"')[1]
-    json_str = re.sub(pattern, f'"{field_name}": null', json_str)
+  na_pattern = r'"({})"\s*:\s*"[Nn]/?[Aa]"'.format("|".join(numeric_fields))
+  json_str = re.sub(na_pattern, r'"\1": null', json_str)
 
   # Remove trailing commas before } or ]
   json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
 
-  # Add missing commas between } and { or } and "
+  # Add missing commas between elements
   json_str = re.sub(r'}\s*{', r'}, {', json_str)
   json_str = re.sub(r'}\s*"', r'}, "', json_str)
   json_str = re.sub(r']\s*"', r'], "', json_str)
 
-  # Replace unquoted None with null
+  # Replace Python literals with JSON equivalents
   json_str = re.sub(r':\s*None\b', ': null', json_str)
-
-  # Replace Python True/False with JSON true/false
   json_str = re.sub(r':\s*True\b', ': true', json_str)
   json_str = re.sub(r':\s*False\b', ': false', json_str)
 
@@ -393,50 +375,43 @@ class ConditionKnowledgeService:
       specialties = data["specialty"]
       data["specialty"] = specialties[0] if specialties else None
 
-    # Ensure numeric fields are actually numbers
-    numeric_fields = ["confidence"]
-    for field in numeric_fields:
-      if field in data and isinstance(data[field], str):
+    # Helper to convert string/N/A to float or None
+    def to_float_or_none(value: Any, default: float | None = None) -> float | None:
+      if value is None:
+        return default
+      if isinstance(value, (int, float)):
+        return float(value)
+      if isinstance(value, str):
+        if value.upper() in ("N/A", "NA"):
+          return default
         try:
-          data[field] = float(data[field])
+          return float(value)
         except (ValueError, TypeError):
-          data[field] = None
+          return default
+      return default
+
+    # Normalize top-level numeric field
+    if "confidence" in data:
+      data["confidence"] = to_float_or_none(data["confidence"])
 
     # Normalize medications
-    if "medications" in data and isinstance(data["medications"], list):
-      for med in data["medications"]:
-        if isinstance(med, dict):
-          for num_field in ["dose_mg_kg", "max_dose_mg"]:
-            if num_field in med:
-              if isinstance(med[num_field], str):
-                try:
-                  med[num_field] = float(med[num_field])
-                except (ValueError, TypeError):
-                  med[num_field] = None
-              elif med[num_field] == "N/A" or med[num_field] == "n/a":
-                med[num_field] = None
+    for med in data.get("medications", []):
+      if isinstance(med, dict):
+        for field in ["dose_mg_kg", "max_dose_mg"]:
+          if field in med:
+            med[field] = to_float_or_none(med[field])
 
     # Normalize labs
-    if "labs" in data and isinstance(data["labs"], list):
-      for lab in data["labs"]:
-        if isinstance(lab, dict):
-          for num_field in ["normal_range_low", "normal_range_high", "probability_abnormal"]:
-            if num_field in lab:
-              if isinstance(lab[num_field], str):
-                try:
-                  lab[num_field] = float(lab[num_field])
-                except (ValueError, TypeError):
-                  lab[num_field] = None
+    for lab in data.get("labs", []):
+      if isinstance(lab, dict):
+        for field in ["normal_range_low", "normal_range_high", "probability_abnormal"]:
+          if field in lab:
+            lab[field] = to_float_or_none(lab[field])
 
     # Normalize physical exam findings
-    if "physical_exam_findings" in data and isinstance(data["physical_exam_findings"], list):
-      for finding in data["physical_exam_findings"]:
-        if isinstance(finding, dict):
-          if "probability" in finding and isinstance(finding["probability"], str):
-            try:
-              finding["probability"] = float(finding["probability"])
-            except (ValueError, TypeError):
-              finding["probability"] = 0.8  # Default probability
+    for finding in data.get("physical_exam_findings", []):
+      if isinstance(finding, dict) and "probability" in finding:
+        finding["probability"] = to_float_or_none(finding["probability"], default=0.8)
 
     return data
 

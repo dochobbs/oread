@@ -161,13 +161,15 @@ def cli():
 
 @cli.command()
 @click.option("--engine", type=click.Choice(["peds", "adult", "auto"]), default="auto",
-              help="Generation engine to use")
+              help="Generation engine: peds (<22yo), adult (22+yo), or auto (based on age)")
 @click.option("--age", type=int, help="Patient age in years")
 @click.option("--age-months", type=int, help="Patient age in months (for infants)")
 @click.option("--sex", type=click.Choice(["male", "female"]), help="Patient sex")
 @click.option("--conditions", type=str, help="Comma-separated list of conditions")
 @click.option("--complexity", type=click.Choice(["tier-0", "tier-1", "tier-2", "tier-3"]),
               help="Complexity tier (0=healthy, 3=complex)")
+@click.option("--messiness", "-m", type=click.IntRange(0, 5), default=0,
+              help="Chart messiness level 0-5 (0=pristine, 5=chart from hell)")
 @click.option("--encounters", type=int, help="Approximate number of encounters")
 @click.option("--years", type=int, help="Years of medical history")
 @click.option("--seed", type=int, help="Random seed for reproducibility")
@@ -184,6 +186,7 @@ def generate(
     sex: Optional[str],
     conditions: Optional[str],
     complexity: Optional[str],
+    messiness: int,
     encounters: Optional[int],
     years: Optional[int],
     seed: Optional[int],
@@ -205,9 +208,14 @@ def generate(
         oread generate --describe "A 3yo girl with poorly controlled eczema"
 
         oread generate -d "healthy newborn boy" --no-llm
+
+        oread generate --engine adult --age 55 --conditions "hypertension,diabetes"
+
+        oread generate --age 45 --messiness 3
     """
     from src.models import GenerationSeed, Sex, ComplexityTier
-    from src.engines import EngineOrchestrator, PedsEngine
+    from src.engines import PedsEngine
+    from adult.adult_engine import AdultEngine
     from src.exporters import export_json, export_markdown, export_fhir
 
     # Build generation seed
@@ -265,6 +273,19 @@ def generate(
     # LLM usage
     use_llm = not no_llm
 
+    # Determine which engine to use
+    def select_engine():
+        # Explicit engine choice
+        if engine == "peds":
+            return PedsEngine(use_llm=use_llm, messiness_level=messiness)
+        elif engine == "adult":
+            return AdultEngine(use_llm=use_llm, messiness_level=messiness)
+        # Auto-detect based on age
+        effective_age = age or (age_months // 12 if age_months else None)
+        if effective_age is not None and effective_age >= 22:
+            return AdultEngine(use_llm=use_llm, messiness_level=messiness)
+        return PedsEngine(use_llm=use_llm, messiness_level=messiness)
+
     # Generate patient
     if not quiet:
         with Progress(
@@ -273,22 +294,13 @@ def generate(
             console=console,
         ) as progress:
             task = progress.add_task("Generating patient...", total=None)
-
-            # Use appropriate engine
-            if engine == "peds" or (engine == "auto" and (age is None or age < 22)):
-                eng = PedsEngine(use_llm=use_llm)
-            else:
-                console.print("[red]Adult engine not yet implemented[/red]")
-                return
-
+            eng = select_engine()
+            engine_type = "adult" if isinstance(eng, AdultEngine) else "pediatric"
+            progress.update(task, description=f"Generating {engine_type} patient...")
             patient = eng.generate(gen_seed)
             progress.update(task, description="Patient generated!")
     else:
-        if engine == "peds" or (engine == "auto" and (age is None or age < 22)):
-            eng = PedsEngine(use_llm=use_llm)
-        else:
-            console.print("[red]Adult engine not yet implemented[/red]")
-            return
+        eng = select_engine()
         patient = eng.generate(gen_seed)
     
     # Determine which formats to export
@@ -321,13 +333,24 @@ def generate(
     
     # Display results
     if not quiet:
+        engine_label = "Adult" if isinstance(eng, AdultEngine) else "Pediatric"
+        messiness_labels = {
+            0: "Pristine",
+            1: "Real World",
+            2: "Busy Clinic",
+            3: "Needs Reconciliation",
+            4: "Safety Landmines",
+            5: "Chart From Hell",
+        }
         console.print()
         console.print(Panel(
             f"[bold green]✓ Patient Generated[/bold green]\n\n"
             f"[bold]{patient.demographics.full_name}[/bold]\n"
             f"Age: {patient.demographics.age_years} years\n"
             f"Sex: {patient.demographics.sex_at_birth.value}\n"
+            f"Engine: {engine_label}\n"
             f"Complexity: {patient.complexity_tier.value}\n"
+            f"Messiness: {messiness} ({messiness_labels.get(messiness, 'Unknown')})\n"
             f"Encounters: {len(patient.encounters)}\n"
             f"Conditions: {len(patient.active_conditions)}",
             title="Patient Summary",
@@ -353,56 +376,81 @@ def generate(
 @click.option("--count", "-n", type=int, default=10, help="Number of patients to generate")
 @click.option("--distribution", type=str, default="healthy:60,tier1:25,tier2:12,tier3:3",
               help="Distribution of complexity tiers (e.g., 'healthy:60,tier1:25,tier2:12,tier3:3')")
-@click.option("--age-range", type=str, default="0-18", help="Age range (e.g., '0-18', '5-10')")
+@click.option("--age-range", type=str, default="0-18", help="Age range (e.g., '0-18', '25-65')")
 @click.option("--engine", type=click.Choice(["peds", "adult", "auto"]), default="auto",
-              help="Generation engine to use")
+              help="Generation engine: peds, adult, or auto (based on age range)")
+@click.option("--messiness", "-m", type=click.IntRange(0, 5), default=0,
+              help="Chart messiness level 0-5 (0=pristine, 5=chart from hell)")
 @click.option("--output", "-o", type=click.Path(), required=True, help="Output directory")
 @click.option("--format", "formats", type=click.Choice(["json", "fhir", "markdown", "all"]),
               multiple=True, default=["json"], help="Output format(s)")
+@click.option("--no-llm", is_flag=True, help="Disable LLM features (use templates only)")
 def batch(
     count: int,
     distribution: str,
     age_range: str,
     engine: str,
+    messiness: int,
     output: str,
     formats: tuple,
+    no_llm: bool,
 ):
     """
     Generate a batch of synthetic patients.
-    
-    Example:
-    
+
+    Examples:
+
         oread batch --count 50 --output ./patients/
+
+        oread batch --count 20 --engine adult --age-range 40-70 -o ./adults/
+
+        oread batch --count 30 --messiness 2 -o ./messy_charts/
     """
     import random
     from src.models import GenerationSeed, ComplexityTier
     from src.engines import PedsEngine
+    from adult.adult_engine import AdultEngine
     from src.exporters import export_json, export_markdown, export_fhir, export_json_summary
-    
+
     # Parse distribution
     dist_parts = distribution.split(",")
     dist_map = {}
     for part in dist_parts:
         tier, pct = part.split(":")
         dist_map[tier] = int(pct)
-    
+
     # Parse age range
     age_parts = age_range.split("-")
     min_age = int(age_parts[0])
     max_age = int(age_parts[1])
-    
+
+    # Determine which engine to use
+    use_llm = not no_llm
+    if engine == "peds":
+        eng = PedsEngine(use_llm=use_llm, messiness_level=messiness)
+        engine_label = "pediatric"
+    elif engine == "adult":
+        eng = AdultEngine(use_llm=use_llm, messiness_level=messiness)
+        engine_label = "adult"
+    else:
+        # Auto: use adult if min age >= 22
+        if min_age >= 22:
+            eng = AdultEngine(use_llm=use_llm, messiness_level=messiness)
+            engine_label = "adult"
+        else:
+            eng = PedsEngine(use_llm=use_llm, messiness_level=messiness)
+            engine_label = "pediatric"
+
     # Create output directory
     output_dir = Path(output)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Determine formats
     if "all" in formats:
         export_formats = ["json", "fhir", "markdown"]
     else:
         export_formats = list(formats)
-    
-    # Generate patients
-    eng = PedsEngine()
+
     summaries = []
     
     with Progress(
@@ -456,15 +504,22 @@ def batch(
     # Write manifest
     manifest = {
         "count": len(summaries),
+        "engine": engine_label,
+        "messiness_level": messiness,
         "distribution": dist_map,
         "age_range": age_range,
         "patients": summaries,
     }
     (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str))
-    
+
     console.print()
-    console.print(f"[green]✓ Generated {count} patients to {output_dir}[/green]")
-    
+    messiness_labels = {
+        0: "Pristine", 1: "Real World", 2: "Busy Clinic",
+        3: "Needs Reconciliation", 4: "Safety Landmines", 5: "Chart From Hell",
+    }
+    console.print(f"[green]✓ Generated {count} {engine_label} patients to {output_dir}[/green]")
+    console.print(f"[dim]  Engine: {engine_label.title()} | Messiness: {messiness} ({messiness_labels.get(messiness, 'Unknown')})[/dim]")
+
     # Show summary table
     table = Table(title="Generation Summary")
     table.add_column("Tier", style="cyan")
@@ -639,18 +694,33 @@ def info():
         title="About",
         border_style="blue",
     ))
-    
-    console.print("\n[bold]Features:[/bold]")
-    console.print("  • Pediatric patients (birth through age 21)")
-    console.print("  • Well-child visits with growth tracking")
-    console.print("  • Immunization schedules (AAP/CDC)")
-    console.print("  • Acute illnesses and chronic conditions")
-    console.print("  • FHIR R4 compliant export")
-    console.print("  • Full narrative clinical notes")
-    
+
+    console.print("\n[bold]Engines:[/bold]")
+    console.print("  [cyan]Pediatric[/cyan] (birth through age 21)")
+    console.print("    • Well-child visits with growth tracking")
+    console.print("    • AAP/CDC immunization schedules")
+    console.print("    • Developmental milestones")
+    console.print("    • Disease arcs (Atopic March, RSV→Asthma, etc.)")
+    console.print()
+    console.print("  [cyan]Adult[/cyan] (age 22+)")
+    console.print("    • USPSTF screening schedules")
+    console.print("    • Chronic disease accumulation")
+    console.print("    • Weight trajectory modeling")
+    console.print("    • Employment/insurance complexity")
+
+    console.print("\n[bold]Messiness Levels (0-5):[/bold]")
+    console.print("  0 - Pristine: Teaching ideal")
+    console.print("  1 - Real World: Minor inconsistencies")
+    console.print("  2 - Busy Clinic: Copy-forward artifacts")
+    console.print("  3 - Needs Reconciliation: Conflicts requiring judgment")
+    console.print("  4 - Safety Landmines: Hidden dangers")
+    console.print("  5 - Chart From Hell: Threading errors, near-misses")
+
     console.print("\n[bold]Quick Start:[/bold]")
-    console.print("  oread generate --age 5")
-    console.print("  oread generate --conditions asthma,adhd")
+    console.print("  oread generate --age 5                          # Pediatric patient")
+    console.print("  oread generate --engine adult --age 55          # Adult patient")
+    console.print("  oread generate --age 8 --messiness 3            # With chart errors")
+    console.print("  oread generate -d \"45yo man with HTN and diabetes\"")
     console.print("  oread batch --count 50 -o ./patients/")
 
 

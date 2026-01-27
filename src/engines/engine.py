@@ -308,42 +308,34 @@ class PedsEngine(BaseEngine):
 
         Returns (is_valid, error_message).
         """
-        # Normalize condition name to key format
+        min_age, max_age = self._get_condition_age_limits(condition_name)
+
+        if age_at_onset_months < min_age:
+            return False, f"{condition_name} requires age >={min_age}mo at onset, got {age_at_onset_months:.0f}mo"
+        if max_age is not None and age_at_onset_months > max_age:
+            return False, f"{condition_name} requires age <={max_age}mo at onset, got {age_at_onset_months:.0f}mo"
+        return True, ""
+
+    def _get_condition_age_limits(self, condition_name: str) -> tuple[int, int | None]:
+        """
+        Get age limits for a condition.
+
+        Returns (min_months, max_months) where max_months may be None.
+        """
         cond_key = condition_name.lower().replace(' ', '_')
 
         # Check hardcoded gates first (most reliable)
         if cond_key in self._hardcoded_age_gates:
-            min_age, max_age = self._hardcoded_age_gates[cond_key]
-            if age_at_onset_months < min_age:
-                return False, f"{condition_name} requires age ≥{min_age}mo at onset, got {age_at_onset_months:.0f}mo"
-            if max_age is not None and age_at_onset_months > max_age:
-                return False, f"{condition_name} requires age ≤{max_age}mo at onset, got {age_at_onset_months:.0f}mo"
-            return True, ""
+            return self._hardcoded_age_gates[cond_key]
 
-        # Check chronic conditions dictionary
-        if condition_name in self._chronic_conditions:
-            data = self._chronic_conditions[condition_name]
-            min_age = data.get('min_months', 0)
-            max_age = data.get('max_months')
-            if age_at_onset_months < min_age:
-                return False, f"{condition_name} requires age ≥{min_age}mo at onset"
-            if max_age is not None and age_at_onset_months > max_age:
-                return False, f"{condition_name} requires age ≤{max_age}mo at onset"
-            return True, ""
+        # Check chronic then acute conditions dictionaries
+        for conditions_dict in (self._chronic_conditions, self._acute_conditions):
+            if condition_name in conditions_dict:
+                data = conditions_dict[condition_name]
+                return data.get('min_months', 0), data.get('max_months')
 
-        # Check acute conditions dictionary
-        if condition_name in self._acute_conditions:
-            data = self._acute_conditions[condition_name]
-            min_age = data.get('min_months', 0)
-            max_age = data.get('max_months')
-            if age_at_onset_months < min_age:
-                return False, f"{condition_name} requires age ≥{min_age}mo at onset"
-            if max_age is not None and age_at_onset_months > max_age:
-                return False, f"{condition_name} requires age ≤{max_age}mo at onset"
-            return True, ""
-
-        # No age gate found - allow by default
-        return True, ""
+        # No age gate found - no restrictions
+        return 0, None
 
     def _build_immunization_lookups(self):
         """Build lookup tables from immunization schedule."""
@@ -1564,69 +1556,56 @@ Examples:
 
     def _apply_validation_fixes(self, patient: Patient, result: ValidationResult) -> Patient:
         """Apply automatic fixes for validation issues."""
-        import re
+        fix_handlers = {
+            "temporal": self._fix_temporal_issue,
+            "coding": self._fix_coding_issue,
+            "medication": self._fix_medication_issue,
+        }
 
         for issue in result.issues:
-            if not issue.auto_fixable:
-                continue
-
-            if issue.type.value == "temporal":
-                patient = self._fix_temporal_issue(patient, issue)
-
-            elif issue.type.value == "coding":
-                patient = self._fix_coding_issue(patient, issue)
-
-            elif issue.type.value == "medication":
-                patient = self._fix_medication_issue(patient, issue)
+            if issue.auto_fixable and issue.type.value in fix_handlers:
+                patient = fix_handlers[issue.type.value](patient, issue)
 
         return patient
 
+    def _extract_list_index(self, path: str, list_name: str) -> int | None:
+        """Extract index from a path like 'encounters[3].date'."""
+        import re
+        match = re.search(rf'{list_name}\[(\d+)\]', path)
+        return int(match.group(1)) if match else None
+
     def _fix_temporal_issue(self, patient: Patient, issue) -> Patient:
         """Fix temporal issues (dates before DOB)."""
-        import re
         dob = patient.demographics.date_of_birth
+        path = issue.path
 
-        if "encounters" in issue.path:
-            match = re.search(r'encounters\[(\d+)\]', issue.path)
-            if match:
-                idx = int(match.group(1))
-                if idx < len(patient.encounters):
-                    patient.encounters[idx].date = datetime.combine(
-                        dob + timedelta(days=3),
-                        patient.encounters[idx].date.time()
-                    )
+        if "encounters" in path:
+            idx = self._extract_list_index(path, "encounters")
+            if idx is not None and idx < len(patient.encounters):
+                patient.encounters[idx].date = datetime.combine(
+                    dob + timedelta(days=3),
+                    patient.encounters[idx].date.time()
+                )
 
-        elif "problem_list" in issue.path:
-            match = re.search(r'problem_list\[(\d+)\]', issue.path)
-            if match:
-                idx = int(match.group(1))
-                if idx < len(patient.problem_list):
-                    patient.problem_list[idx].onset_date = dob + timedelta(days=30)
+        elif "problem_list" in path:
+            idx = self._extract_list_index(path, "problem_list")
+            if idx is not None and idx < len(patient.problem_list):
+                patient.problem_list[idx].onset_date = dob + timedelta(days=30)
 
-        elif "immunization_record" in issue.path:
-            match = re.search(r'immunization_record\[(\d+)\]', issue.path)
-            if match:
-                idx = int(match.group(1))
-                if idx < len(patient.immunization_record):
-                    # Clamp immunization date to DOB (birth dose vaccines)
-                    patient.immunization_record[idx].date = dob
+        elif "immunization_record" in path:
+            idx = self._extract_list_index(path, "immunization_record")
+            if idx is not None and idx < len(patient.immunization_record):
+                patient.immunization_record[idx].date = dob
 
         return patient
 
     def _fix_coding_issue(self, patient: Patient, issue) -> Patient:
         """Fix ICD-10 coding issues using condition service."""
-        import re
-        match = re.search(r'problem_list\[(\d+)\]', issue.path)
-        if not match:
-            return patient
-
-        idx = int(match.group(1))
-        if idx >= len(patient.problem_list):
+        idx = self._extract_list_index(issue.path, "problem_list")
+        if idx is None or idx >= len(patient.problem_list):
             return patient
 
         condition = patient.problem_list[idx]
-
-        # Look up correct code via condition service
         result = self.condition_service.get_condition(condition.display_name)
 
         if result.found and result.definition and result.definition.icd10_primary:

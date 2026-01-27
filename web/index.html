@@ -1758,6 +1758,230 @@
             position: absolute;
             left: 0;
         }
+
+        /* ============================================
+           ECHO WIDGET STYLES
+           ============================================ */
+        .echo-widget {
+            position: fixed;
+            bottom: var(--space-xl);
+            right: var(--space-xl);
+            z-index: 9999;
+            font-family: var(--font-body);
+        }
+
+        .echo-fab {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #06b6d4, #0891b2);
+            border: none;
+            color: white;
+            cursor: pointer;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .echo-fab i { width: 24px; height: 24px; }
+        .echo-fab:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 28px rgba(6, 182, 212, 0.5);
+        }
+        .echo-fab.active { transform: rotate(90deg); }
+
+        .echo-panel {
+            position: absolute;
+            bottom: 70px;
+            right: 0;
+            width: 380px;
+            max-height: 520px;
+            background: var(--bg-card);
+            border-radius: var(--radius-xl);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(20px) scale(0.95);
+            transition: all 0.2s ease;
+        }
+
+        .echo-panel.active {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0) scale(1);
+        }
+
+        .echo-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--space-md) var(--space-lg);
+            border-bottom: 1px solid var(--border);
+            background: linear-gradient(135deg, #06b6d4, #0891b2);
+            border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+            color: white;
+        }
+
+        .echo-title {
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+            font-weight: 600;
+        }
+
+        .echo-logo {
+            width: 28px;
+            height: 28px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+
+        .echo-actions { display: flex; gap: var(--space-xs); }
+        .echo-actions button {
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius-md);
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s;
+        }
+        .echo-actions button:hover { background: rgba(255, 255, 255, 0.2); }
+        .echo-actions button i { width: 16px; height: 16px; }
+
+        .echo-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: var(--space-lg);
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-md);
+            min-height: 280px;
+            max-height: 340px;
+        }
+
+        .echo-message {
+            display: flex;
+            gap: var(--space-sm);
+            align-items: flex-start;
+        }
+        .echo-message.echo-user { flex-direction: row-reverse; }
+
+        .echo-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #06b6d4, #0891b2);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.8rem;
+            flex-shrink: 0;
+        }
+        .echo-message.echo-user .echo-avatar { background: var(--accent-primary); }
+
+        .echo-bubble {
+            max-width: 260px;
+            padding: var(--space-sm) var(--space-md);
+            border-radius: var(--radius-lg);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        .echo-message.echo-assistant .echo-bubble {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-bottom-left-radius: var(--radius-sm);
+        }
+        .echo-message.echo-user .echo-bubble {
+            background: var(--accent-primary);
+            color: white;
+            border-bottom-right-radius: var(--radius-sm);
+        }
+
+        .echo-typing {
+            display: flex;
+            gap: 4px;
+            padding: var(--space-sm) var(--space-md);
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            border-bottom-left-radius: var(--radius-sm);
+        }
+        .echo-typing span {
+            width: 6px;
+            height: 6px;
+            background: var(--text-tertiary);
+            border-radius: 50%;
+            animation: echo-typing 1.4s infinite;
+        }
+        .echo-typing span:nth-child(2) { animation-delay: 0.2s; }
+        .echo-typing span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes echo-typing {
+            0%, 100% { transform: translateY(0); opacity: 0.5; }
+            50% { transform: translateY(-3px); opacity: 1; }
+        }
+
+        .echo-input-area {
+            display: flex;
+            gap: var(--space-sm);
+            padding: var(--space-md);
+            border-top: 1px solid var(--border);
+            background: var(--bg-card);
+            border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+        }
+
+        .echo-input-area input {
+            flex: 1;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: var(--space-sm) var(--space-md);
+            font-family: var(--font-body);
+            font-size: 0.9rem;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        .echo-input-area input:focus {
+            outline: none;
+            border-color: #06b6d4;
+        }
+        .echo-input-area input::placeholder { color: var(--text-tertiary); }
+
+        .echo-send {
+            width: 40px;
+            height: 40px;
+            border-radius: var(--radius-md);
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+            background: linear-gradient(135deg, #06b6d4, #0891b2);
+            color: white;
+        }
+        .echo-send:hover { opacity: 0.9; }
+        .echo-send i { width: 18px; height: 18px; }
+
+        @media (max-width: 480px) {
+            .echo-widget { bottom: var(--space-md); right: var(--space-md); }
+            .echo-panel { width: calc(100vw - 32px); max-height: 70vh; right: -8px; }
+        }
     </style>
 </head>
 <body>
@@ -3982,6 +4206,190 @@
         // Initialize panel listeners on DOM load
         document.addEventListener('DOMContentLoaded', () => {
             setupPanelListeners();
+        });
+    </script>
+
+    <!-- ============================================
+         ECHO WIDGET
+         ============================================ -->
+    <div id="echo-widget" class="echo-widget">
+        <!-- Floating Button -->
+        <button class="echo-fab" id="echoFab" title="Ask Echo">
+            <i data-lucide="message-circle"></i>
+        </button>
+
+        <!-- Chat Panel -->
+        <div class="echo-panel" id="echoPanel">
+            <div class="echo-header">
+                <div class="echo-title">
+                    <div class="echo-logo">E</div>
+                    <span>Echo</span>
+                </div>
+                <div class="echo-actions">
+                    <button class="echo-close" id="echoClose">
+                        <i data-lucide="x"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="echo-messages" id="echoMessages">
+                <div class="echo-message echo-assistant">
+                    <div class="echo-avatar">E</div>
+                    <div class="echo-bubble">
+                        Hi! I'm Echo, your clinical tutor. I can answer questions about the patient you're viewing or help you practice clinical reasoning. What would you like to explore?
+                    </div>
+                </div>
+            </div>
+            <div class="echo-input-area">
+                <input type="text" id="echoInput" placeholder="Ask a question..." />
+                <button class="echo-send" id="echoSend">
+                    <i data-lucide="send"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Echo Widget Script -->
+    <script>
+        const ECHO_API_URL = 'http://localhost:8001';
+
+        const echoState = {
+            isOpen: false,
+            messages: []
+        };
+
+        function initEchoWidget() {
+            const fab = document.getElementById('echoFab');
+            const panel = document.getElementById('echoPanel');
+            const closeBtn = document.getElementById('echoClose');
+            const input = document.getElementById('echoInput');
+            const sendBtn = document.getElementById('echoSend');
+
+            // Toggle panel
+            fab.addEventListener('click', () => {
+                echoState.isOpen = !echoState.isOpen;
+                fab.classList.toggle('active', echoState.isOpen);
+                panel.classList.toggle('active', echoState.isOpen);
+                if (echoState.isOpen) {
+                    input.focus();
+                }
+            });
+
+            // Close button
+            closeBtn.addEventListener('click', () => {
+                echoState.isOpen = false;
+                fab.classList.remove('active');
+                panel.classList.remove('active');
+            });
+
+            // Send message
+            sendBtn.addEventListener('click', () => sendEchoMessage());
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') sendEchoMessage();
+            });
+
+            // Refresh Lucide icons for the widget
+            lucide.createIcons();
+        }
+
+        async function sendEchoMessage() {
+            const input = document.getElementById('echoInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            // Add user message
+            addEchoMessage('user', text);
+            input.value = '';
+
+            // Show typing indicator
+            showEchoTyping();
+
+            try {
+                // Build patient context from currently selected patient
+                let patient = null;
+                if (selectedPatientId && patients.length > 0) {
+                    const currentPatient = patients.find(p => p.id === selectedPatientId);
+                    if (currentPatient) {
+                        patient = {
+                            patientId: currentPatient.id,
+                            source: 'oread',
+                            name: currentPatient.name,
+                            age: currentPatient.age_display || currentPatient.age,
+                            sex: currentPatient.sex,
+                            chiefComplaint: currentPatient.chief_complaint,
+                            problemList: currentPatient.conditions?.map(c => c.display_name) || [],
+                            medications: currentPatient.medications?.map(m => m.display_name) || [],
+                            allergies: currentPatient.allergies?.map(a => a.display_name) || []
+                        };
+                    }
+                }
+
+                // Call Echo /question endpoint
+                const response = await fetch(`${ECHO_API_URL}/question`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        learner_question: text,
+                        patient: patient,
+                        learner_level: 'student'
+                    })
+                });
+
+                hideEchoTyping();
+
+                if (response.ok) {
+                    const data = await response.json();
+                    // Echo returns { question, hint, topic, audio_url }
+                    addEchoMessage('assistant', data.question || data.response || data.text);
+                } else {
+                    addEchoMessage('assistant', 'Sorry, I had trouble processing that. Please try again.');
+                }
+            } catch (error) {
+                hideEchoTyping();
+                console.error('Echo API error:', error);
+                addEchoMessage('assistant', 'Echo is not available right now. Make sure the Echo server is running on port 8001.');
+            }
+        }
+
+        function addEchoMessage(role, text) {
+            const container = document.getElementById('echoMessages');
+            const isUser = role === 'user';
+
+            const msgEl = document.createElement('div');
+            msgEl.className = `echo-message echo-${role}`;
+            msgEl.innerHTML = `
+                <div class="echo-avatar">${isUser ? 'Y' : 'E'}</div>
+                <div class="echo-bubble">${text}</div>
+            `;
+
+            container.appendChild(msgEl);
+            container.scrollTop = container.scrollHeight;
+
+            echoState.messages.push({ role, text });
+        }
+
+        function showEchoTyping() {
+            const container = document.getElementById('echoMessages');
+            const typing = document.createElement('div');
+            typing.className = 'echo-message echo-assistant';
+            typing.id = 'echoTypingIndicator';
+            typing.innerHTML = `
+                <div class="echo-avatar">E</div>
+                <div class="echo-typing">
+                    <span></span><span></span><span></span>
+                </div>
+            `;
+            container.appendChild(typing);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function hideEchoTyping() {
+            const typing = document.getElementById('echoTypingIndicator');
+            if (typing) typing.remove();
+        }
+
+        // Initialize Echo widget when DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            initEchoWidget();
         });
     </script>
 </body>

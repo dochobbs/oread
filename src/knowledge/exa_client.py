@@ -91,22 +91,11 @@ def get_exa_api_key() -> str | None:
   2. .env file
   3. Shell config files (~/.zshrc, ~/.bashrc)
   """
-  # 1. Environment variable (highest priority)
-  key = os.getenv("EXA_API_KEY")
-  if key:
-    return key
-
-  # 2. .env file
-  key = _load_api_key_from_dotenv()
-  if key:
-    return key
-
-  # 3. Shell config files
-  key = _load_api_key_from_shell_config()
-  if key:
-    return key
-
-  return None
+  return (
+    os.getenv("EXA_API_KEY")
+    or _load_api_key_from_dotenv()
+    or _load_api_key_from_shell_config()
+  )
 
 
 class ExaSearchClient:

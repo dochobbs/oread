@@ -454,6 +454,20 @@ python server.py
 # API at http://localhost:8004
 ```
 
+### Cross-Service Integration (February 2026)
+
+Oread is the **data source** for the entire platform. Key integration points:
+
+| Endpoint | Purpose | Consumer |
+|----------|---------|----------|
+| `GET /api/patients/{id}/context` | Flat `PatientContext` for Echo | Metis Dashboard (Echo chat) |
+| `GET /api/patients/{id}?format=json` | Full patient record | Metis → Mneme import, Metis → Syrinx import |
+| `POST /api/generate` | Generate new patient | Metis Dashboard |
+
+**New file:** `src/exporters/context_export.py` — `patient_to_context()` converts nested `Patient` to Echo's flat `PatientContext` format (flat `name`, `age_years`, `age_months`, `sex`, `source: "oread"`).
+
+See **`docs/INTEGRATION.md`** for the full cross-service integration guide, architecture diagrams, and test procedures.
+
 ### Data Flow
 
 ```

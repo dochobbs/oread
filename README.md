@@ -222,10 +222,11 @@ oread/
 
 ## Documentation
 
-- [QUICKSTART.md](docs/QUICKSTART.md) - Get up and running in 5 minutes
-- [CONDITION_SCHEMA.md](docs/CONDITION_SCHEMA.md) - Adding and editing conditions
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System design and data flow
-- [CLAUDE.md](CLAUDE.md) - Development context for AI assistants
+- [QUICKSTART.md](docs/QUICKSTART.md) -- Get up and running in 5 minutes
+- [CONDITION_SCHEMA.md](docs/CONDITION_SCHEMA.md) -- Adding and editing conditions
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) -- System design and data flow
+- [Integration Guide](../docs/INTEGRATION.md) -- Cross-service data flow
+- [CLAUDE.md](CLAUDE.md) -- Development context for AI assistants
 
 ## Development
 

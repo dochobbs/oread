@@ -30,7 +30,7 @@ if str(project_root) not in sys.path:
 
 from src.models import GenerationSeed, Sex, ComplexityTier, Patient
 from src.engines import PedsEngine
-from src.exporters import export_json, export_json_summary, export_markdown, export_fhir, export_ccda
+from src.exporters import export_json, export_json_summary, export_markdown, export_fhir, export_ccda, patient_to_context
 from src.auth import get_current_user, get_current_user_optional, AuthenticatedUser
 from src.db.client import get_client, get_admin_client, is_configured as db_configured
 from src.db.repositories import UserRepository, PanelRepository, PatientRepository
@@ -322,6 +322,20 @@ async def get_patient(patient_id: str, format: str = Query("json", pattern="^(js
         return JSONResponse(content=export_fhir(patient))
     elif format == "markdown":
         return {"markdown": export_markdown(patient)}
+
+
+@app.get("/api/patients/{patient_id}/context")
+async def get_patient_context(patient_id: str):
+    """
+    Get patient data in Echo's PatientContext format.
+
+    Returns a flat structure suitable for Echo, Metis, and other services.
+    """
+    if patient_id not in patients_store:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    patient = patients_store[patient_id]
+    return JSONResponse(content=patient_to_context(patient))
 
 
 @app.get("/api/patients/{patient_id}/encounters")

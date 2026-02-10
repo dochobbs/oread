@@ -6,6 +6,7 @@ from .json_export import export_json, export_json_summary
 from .markdown import export_markdown
 from .fhir import export_to_fhir as export_fhir, FHIRExporter
 from .ccda import export_to_ccda as export_ccda, CCDAExporter
+from .context_export import patient_to_context
 
 __all__ = [
     "export_json",
@@ -15,4 +16,5 @@ __all__ = [
     "FHIRExporter",
     "export_ccda",
     "CCDAExporter",
+    "patient_to_context",
 ]

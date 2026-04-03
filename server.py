@@ -1380,7 +1380,7 @@ if web_dir.exists():
     app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
 
 
-def run_server(host: str = "0.0.0.0", port: int = 8004):
+def run_server(host: str = "0.0.0.0", port: int = 9104):
     """Run the server."""
     import uvicorn
     uvicorn.run(app, host=host, port=port)

@@ -30,6 +30,7 @@ if str(project_root) not in sys.path:
 
 from src.models import GenerationSeed, Sex, ComplexityTier, Patient
 from src.engines import PedsEngine
+from adult.adult_engine import AdultEngine as AdultEngineImpl
 from src.exporters import export_json, export_json_summary, export_markdown, export_fhir, export_ccda, patient_to_context
 from src.auth import get_current_user, get_current_user_optional, AuthenticatedUser
 from src.db.client import get_client, get_admin_client, is_configured as db_configured
@@ -71,6 +72,7 @@ class GenerateRequest(BaseModel):
     encounter_count: Optional[int] = Field(None, ge=1, description="Number of encounters")
     random_seed: Optional[int] = Field(None, description="Random seed for reproducibility")
     description: Optional[str] = Field(None, description="Natural language description")
+    specialty: Optional[str] = Field(None, description="Specialty: pediatrics, internal_medicine, family_practice")
     use_llm: bool = Field(True, description="Use LLM for natural narratives (default: True)")
     messiness_level: int = Field(0, ge=0, le=5, description="Chart messiness level (0=pristine to 5=hostile)")
 
@@ -206,8 +208,20 @@ async def generate_patient(request: GenerateRequest):
 
     gen_seed = GenerationSeed(**seed_params)
 
-    # Use engine with appropriate LLM and messiness settings
-    engine = PedsEngine(use_llm=request.use_llm, messiness_level=request.messiness_level)
+    # Route to appropriate engine based on age and specialty
+    age_months = request.age_months or (request.age * 12 if request.age else None)
+    use_adult = False
+    if request.specialty == "internal_medicine":
+      use_adult = True
+    elif request.specialty == "family_practice" and age_months and age_months >= 216:
+      use_adult = True
+    elif age_months and age_months >= 264:  # > 22 years, auto-route to adult
+      use_adult = True
+
+    if use_adult:
+      engine = AdultEngineImpl(use_llm=request.use_llm, messiness_level=request.messiness_level)
+    else:
+      engine = PedsEngine(use_llm=request.use_llm, messiness_level=request.messiness_level)
 
     # Generate patient
     try:

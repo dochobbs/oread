@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import json
+import os
 import sys
 import threading
 import random
@@ -43,6 +44,26 @@ app = FastAPI(
     description="Oread - Synthetic Patient Record Generator API",
     version="0.1.0",
 )
+
+
+@app.on_event("startup")
+async def _validate_config():
+    """Warn loudly on missing optional config; don't fail (engine works without
+    LLM, and Supabase is optional in standalone mode)."""
+    import sys as _sys
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print(
+            "WARN: ANTHROPIC_API_KEY not set. LLM-powered narrative generation "
+            "will be disabled; patients are generated rule-based only.",
+            file=_sys.stderr,
+        )
+    if not (os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_ANON_KEY")):
+        print(
+            "WARN: Supabase not configured (SUPABASE_URL + SUPABASE_ANON_KEY). "
+            "Auth and panel persistence disabled; /api/generate runs stateless.",
+            file=_sys.stderr,
+        )
+
 
 # Add CORS middleware
 app.add_middleware(

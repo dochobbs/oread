@@ -683,6 +683,87 @@ class AdultEngine:
             generation_seed=seed.model_dump(),
         )
 
+        # Age-gate enforcement (W1.1 fix) - clamp any condition whose
+        # onset_date violates its hardcoded age gate. Even for adults, the
+        # min-age gates (e.g. ADHD 48mo, asthma 12mo) protect against
+        # downstream code paths that mis-set onset_date.
+        patient = self._validate_and_fix_age_gates(patient)
+
+        return patient
+
+    # ------------------------------------------------------------------ #
+    # Age-gate enforcement (W1.1)                                        #
+    # ------------------------------------------------------------------ #
+
+    # Mirror of PedsEngine._hardcoded_age_gates / PatientValidator.AGE_GATES
+    _ADULT_AGE_GATES: dict[str, tuple[int, int | None]] = {
+        "adhd": (48, None),
+        "anxiety": (36, None),
+        "depression": (72, None),
+        "asthma": (12, None),
+        "bronchiolitis": (0, 24),
+        "prediabetes": (120, None),
+        "type_2_diabetes": (120, None),
+        "learning_disorder": (60, None),
+        "enuresis": (60, None),
+        "obesity": (24, None),
+        "obstructive_sleep_apnea": (24, None),
+    }
+
+    @classmethod
+    def _age_gate_key_for(cls, display_name: str) -> str | None:
+        """Map a condition display_name to its age-gate key (if any)."""
+        if not display_name:
+            return None
+        name = display_name.lower().strip()
+        candidates = [name, name.replace(" ", "_"), name.replace("-", "_")]
+        alias_map = {
+            "attention deficit hyperactivity disorder": "adhd",
+            "attention-deficit hyperactivity disorder": "adhd",
+            "type 2 diabetes mellitus": "type_2_diabetes",
+            "type 1 diabetes mellitus": "type_1_diabetes",
+            "obstructive sleep apnea": "obstructive_sleep_apnea",
+            "osa": "obstructive_sleep_apnea",
+            "major depressive disorder": "depression",
+            "generalized anxiety disorder": "anxiety",
+        }
+        if name in alias_map:
+            candidates.append(alias_map[name])
+        for c in candidates:
+            if c in cls._ADULT_AGE_GATES:
+                return c
+        return None
+
+    def _validate_and_fix_age_gates(self, patient: Patient) -> Patient:
+        """
+        Walk patient.problem_list; clamp any condition whose onset_date
+        violates its age gate using age AT ONSET (not current patient age).
+        """
+        from dateutil.relativedelta import relativedelta
+
+        dob = patient.demographics.date_of_birth
+        today = date.today()
+
+        for cond in patient.problem_list:
+            if cond.onset_date is None:
+                continue
+            gate_key = self._age_gate_key_for(cond.display_name)
+            if gate_key is None:
+                continue
+            min_months, max_months = self._ADULT_AGE_GATES[gate_key]
+            age_at_onset_months = (cond.onset_date - dob).days / 30.44
+
+            if age_at_onset_months < min_months:
+                new_onset = dob + relativedelta(months=min_months) + timedelta(days=1)
+                if new_onset > today:
+                    new_onset = today
+                cond.onset_date = new_onset
+            elif max_months is not None and age_at_onset_months > max_months:
+                new_onset = dob + relativedelta(months=max_months) - timedelta(days=1)
+                if new_onset < dob:
+                    new_onset = dob
+                cond.onset_date = new_onset
+
         return patient
 
     def _generate_immunizations(

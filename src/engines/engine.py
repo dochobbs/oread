@@ -337,6 +337,69 @@ class PedsEngine(BaseEngine):
         # No age gate found - no restrictions
         return 0, None
 
+    def _clamp_onset_to_gate(
+        self,
+        condition_name: str,
+        onset_date: date,
+        dob: date,
+    ) -> date:
+        """
+        Clamp an onset_date so it satisfies the condition's age gate.
+
+        Computes age_at_onset in months from (onset_date - dob).days / 30.44
+        (matching how the validator measures it). If it violates the min or
+        max gate, returns the appropriate boundary date computed via
+        relativedelta (calendar-accurate). Otherwise returns onset_date
+        unchanged.
+        """
+        min_months, max_months = self._get_condition_age_limits(condition_name)
+        if onset_date is None:
+            return onset_date
+
+        age_at_onset_months = (onset_date - dob).days / 30.44
+
+        if age_at_onset_months < min_months:
+            # Push to one extra day past min to absorb 30.44-day rounding,
+            # then clamp to today so we never produce a future date.
+            new_onset = self._months_to_date(dob, min_months) + timedelta(days=1)
+            today = date.today()
+            if new_onset > today:
+                new_onset = today
+            return new_onset
+
+        if max_months is not None and age_at_onset_months > max_months:
+            # Pull back one day before max for the same rounding-safety reason.
+            new_onset = self._months_to_date(dob, max_months) - timedelta(days=1)
+            if new_onset < dob:
+                new_onset = dob
+            return new_onset
+
+        return onset_date
+
+    def _validate_and_fix_age_gates(self, patient: Patient) -> Patient:
+        """
+        Post-generation pass that walks patient.problem_list and ensures every
+        condition's onset_date satisfies its age gate using age AT ONSET (not
+        current patient age).
+
+        Fixes violations in-place by clamping onset_date to the minimum (or
+        maximum) valid onset rather than removing the condition. This catches
+        bugs where prior code paths produced an onset_date that bypassed the
+        gate-filtering logic in _generate_life_arc — e.g. _fix_temporal_issue
+        setting onset to dob + 30 days, or disease-arc / encounter resolution
+        paths assigning onset_date via raw arithmetic.
+        """
+        dob = patient.demographics.date_of_birth
+        for cond in patient.problem_list:
+            if cond.onset_date is None:
+                continue
+            new_onset = self._clamp_onset_to_gate(
+                cond.display_name, cond.onset_date, dob
+            )
+            if new_onset != cond.onset_date:
+                cond.onset_date = new_onset
+        return patient
+
     def _build_immunization_lookups(self):
         """Build lookup tables from immunization schedule."""
         # Vaccine definitions with CVX codes
@@ -1494,6 +1557,11 @@ Examples:
         # Ensure chronic conditions have maintenance medications (Bug 4 fix)
         self._ensure_chronic_treatment(patient)
 
+        # Age-gate enforcement (W1.1 fix) - clamp any condition whose
+        # onset_date violates its hardcoded age gate. Must run BEFORE the
+        # validator so it never sees an age-gate violation under normal flow.
+        patient = self._validate_and_fix_age_gates(patient)
+
         # Post-generation validation
         validation_result = self.validator.validate(patient)
 
@@ -1560,6 +1628,7 @@ Examples:
             "temporal": self._fix_temporal_issue,
             "coding": self._fix_coding_issue,
             "medication": self._fix_medication_issue,
+            "age_gate": self._fix_age_gate_issue,
         }
 
         for issue in result.issues:
@@ -1590,13 +1659,39 @@ Examples:
         elif "problem_list" in path:
             idx = self._extract_list_index(path, "problem_list")
             if idx is not None and idx < len(patient.problem_list):
-                patient.problem_list[idx].onset_date = dob + timedelta(days=30)
+                # Default to dob + 30 days (an "around birth" placeholder),
+                # then clamp to the condition's age gate so we never produce
+                # an onset_date that violates min/max age (W1.1 fix).
+                cond = patient.problem_list[idx]
+                fallback_onset = dob + timedelta(days=30)
+                cond.onset_date = self._clamp_onset_to_gate(
+                    cond.display_name, fallback_onset, dob
+                )
 
         elif "immunization_record" in path:
             idx = self._extract_list_index(path, "immunization_record")
             if idx is not None and idx < len(patient.immunization_record):
                 patient.immunization_record[idx].date = dob
 
+        return patient
+
+    def _fix_age_gate_issue(self, patient: Patient, issue) -> Patient:
+        """
+        Fix an age-gate violation by clamping the offending condition's
+        onset_date to the valid range.
+        """
+        idx = self._extract_list_index(issue.path or "", "problem_list")
+        if idx is None or idx >= len(patient.problem_list):
+            return patient
+
+        cond = patient.problem_list[idx]
+        if cond.onset_date is None:
+            return patient
+
+        dob = patient.demographics.date_of_birth
+        cond.onset_date = self._clamp_onset_to_gate(
+            cond.display_name, cond.onset_date, dob
+        )
         return patient
 
     def _fix_coding_issue(self, patient: Patient, issue) -> Patient:

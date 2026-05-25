@@ -53,6 +53,23 @@ class PatientValidator:
     "kawasaki disease": ["aspirin"],
   }
 
+  # Hardcoded age gates for conditions (in months at ONSET).
+  # Mirrors PedsEngine._hardcoded_age_gates so the validator is self-contained.
+  # Format: condition_key -> (min_months, max_months_or_None)
+  AGE_GATES: dict[str, tuple[int, int | None]] = {
+    "adhd": (48, None),
+    "anxiety": (36, None),
+    "depression": (72, None),
+    "asthma": (12, None),
+    "bronchiolitis": (0, 24),
+    "prediabetes": (120, None),
+    "type_2_diabetes": (120, None),
+    "learning_disorder": (60, None),
+    "enuresis": (60, None),
+    "obesity": (24, None),
+    "obstructive_sleep_apnea": (24, None),
+  }
+
   # Conditions that require labs at chronic follow-up
   CONDITIONS_REQUIRING_LABS = {
     "leukemia": ["cbc", "complete blood count", "metabolic panel", "cmp"],
@@ -73,6 +90,7 @@ class PatientValidator:
 
     # Run all validators
     issues.extend(self._validate_temporal_consistency(patient))
+    issues.extend(self._validate_age_gates(patient))
     issues.extend(self._validate_icd10_codes(patient))
     issues.extend(self._validate_condition_medications(patient))
     issues.extend(self._validate_chronic_condition_labs(patient))
@@ -128,6 +146,97 @@ class PatientValidator:
           severity=ValidationSeverity.CRITICAL,
           message=f"Immunization '{imm.display_name}' dated {imm.date} before DOB {dob}",
           path=f"immunization_record[{i}].date",
+          auto_fixable=True,
+        ))
+
+    return issues
+
+  def _gate_key_for(self, condition: "Condition") -> str | None:
+    """
+    Map a Condition to its age-gate key, if one exists.
+
+    Tries the display_name (normalized) and a few common aliases so that
+    "Type 2 Diabetes", "type_2_diabetes" and "Type 2 Diabetes Mellitus" all
+    map to the same gate.
+    """
+    if not condition or not condition.display_name:
+      return None
+
+    name = condition.display_name.lower().strip()
+    candidates = [
+      name,
+      name.replace(" ", "_"),
+      name.replace("-", "_"),
+    ]
+
+    # Common aliases / longer-form display names
+    alias_map = {
+      "attention deficit hyperactivity disorder": "adhd",
+      "attention-deficit hyperactivity disorder": "adhd",
+      "type 2 diabetes mellitus": "type_2_diabetes",
+      "type 1 diabetes mellitus": "type_1_diabetes",
+      "obstructive sleep apnea": "obstructive_sleep_apnea",
+      "osa": "obstructive_sleep_apnea",
+      "major depressive disorder": "depression",
+      "generalized anxiety disorder": "anxiety",
+    }
+    if name in alias_map:
+      candidates.append(alias_map[name])
+
+    for c in candidates:
+      if c in self.AGE_GATES:
+        return c
+    return None
+
+  def _validate_age_gates(self, patient: Patient) -> list[ValidationIssue]:
+    """
+    Ensure each condition's onset_date satisfies its hardcoded age gate.
+
+    Uses age AT ONSET (not current patient age) — fixes the W1.1 bug
+    where a 5-year-old could carry asthma with onset at 11.8mo, or a
+    4-year-old could carry ADHD with onset at 18mo.
+    """
+    issues: list[ValidationIssue] = []
+    dob = patient.demographics.date_of_birth
+
+    for i, cond in enumerate(patient.problem_list):
+      gate_key = self._gate_key_for(cond)
+      if gate_key is None or cond.onset_date is None:
+        continue
+
+      min_months, max_months = self.AGE_GATES[gate_key]
+      age_at_onset_months = (cond.onset_date - dob).days / 30.44
+
+      if age_at_onset_months < min_months:
+        issues.append(ValidationIssue(
+          type=ValidationType.AGE_GATE,
+          severity=ValidationSeverity.CRITICAL,
+          message=(
+            f"Condition '{cond.display_name}' onset at "
+            f"{age_at_onset_months:.1f}mo violates min age gate "
+            f"({min_months}mo)"
+          ),
+          path=f"problem_list[{i}].onset_date",
+          suggested_fix=(
+            f"Clamp onset_date to dob + {min_months} months "
+            f"(min for {gate_key})"
+          ),
+          auto_fixable=True,
+        ))
+      elif max_months is not None and age_at_onset_months > max_months:
+        issues.append(ValidationIssue(
+          type=ValidationType.AGE_GATE,
+          severity=ValidationSeverity.CRITICAL,
+          message=(
+            f"Condition '{cond.display_name}' onset at "
+            f"{age_at_onset_months:.1f}mo violates max age gate "
+            f"({max_months}mo)"
+          ),
+          path=f"problem_list[{i}].onset_date",
+          suggested_fix=(
+            f"Clamp onset_date to dob + {max_months} months "
+            f"(max for {gate_key})"
+          ),
           auto_fixable=True,
         ))
 

@@ -21,6 +21,7 @@ class ValidationType(str, Enum):
   IMMUNIZATION = "immunization"
   NARRATIVE = "narrative"
   CONSISTENCY = "consistency"
+  AGE_GATE = "age_gate"
 
 
 class ValidationIssue(BaseModel):

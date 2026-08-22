@@ -4,8 +4,9 @@ Condition Knowledge Service.
 Provides unified access to condition definitions from multiple sources:
 1. Curated YAML (authoritative, no network calls)
 2. Disk cache (previously retrieved conditions)
-3. Web search (grounded retrieval for unknown conditions)
-4. LLM knowledge (fallback when web search unavailable)
+3. Athena knowledge service (curated remote knowledge, port 9105)
+4. Web search (grounded retrieval for unknown conditions)
+5. LLM knowledge (fallback when web search unavailable)
 
 The service handles the complexity of multi-source retrieval so the
 rest of the system can just call `get_condition(name)`.
@@ -65,6 +66,7 @@ from .models import (
   ExamFinding,
 )
 from .cache import ConditionCache
+from .athena_source import athena_condition_to_definition, fetch_condition_from_athena
 
 if TYPE_CHECKING:
   from src.llm.client import LLMClient
@@ -110,12 +112,18 @@ class ConditionKnowledgeService:
     cache_dir: Path,
     web_search_fn: WebSearchFn | None = None,
     web_fetch_fn: WebFetchFn | None = None,
+    athena_lookup: Callable[[str], Any] | None = None,
+    athena_specialty: str = "pediatrics",
   ):
     self.yaml_conditions = yaml_conditions
     self.llm = llm_client
     self.cache = ConditionCache(cache_dir)
     self.web_search = web_search_fn
     self.web_fetch = web_fetch_fn
+    # Optional Athena knowledge-service lookup (see athena_source.py).
+    # Injectable for tests; defaults to the live HTTP lookup.
+    self._athena_lookup = athena_lookup
+    self.athena_specialty = athena_specialty
 
     # Build lookup index from YAML
     self._name_to_key: dict[str, str] = {}
@@ -142,6 +150,20 @@ class ConditionKnowledgeService:
   def _normalize_name(self, name: str) -> str:
     """Normalize a condition name for lookup."""
     return name.lower().strip()
+
+  def _lookup_athena(self, normalized_name: str) -> dict | None:
+    """Query the Athena knowledge service for a condition by key.
+
+    Returns raw Athena payload or None (unreachable / unknown / disabled).
+    """
+    try:
+      if self._athena_lookup is not None:
+        return self._athena_lookup(normalized_name)
+      return fetch_condition_from_athena(
+        normalized_name, specialty=self.athena_specialty
+      )
+    except Exception:
+      return None
 
   def get_condition(self, name: str) -> ConditionLookupResult:
     """
@@ -181,6 +203,23 @@ class ConditionKnowledgeService:
         )
       except Exception:
         pass  # Invalid cache entry, continue to retrieval
+
+    # Layer 2.5: Athena knowledge service (curated remote knowledge).
+    # Fills gaps in local YAML (e.g. IM conditions) before falling back
+    # to ungrounded web search / LLM retrieval.
+    athena_data = self._lookup_athena(normalized)
+    if athena_data:
+      try:
+        definition = athena_condition_to_definition(athena_data)
+        self.cache.set(normalized, definition.model_dump())
+        return ConditionLookupResult(
+          found=True,
+          definition=definition,
+          source="athena",
+          cached=False,
+        )
+      except Exception:
+        pass  # Mapping failure: fall through to web search
 
     # Layer 3: Web search + LLM (if web search available and LLM available)
     if self.web_search and self.llm:
@@ -566,6 +605,8 @@ def create_condition_service(
   cache_dir: Path,
   web_search_fn: WebSearchFn | None = None,
   web_fetch_fn: WebFetchFn | None = None,
+  athena_lookup: Callable[[str], Any] | None = None,
+  athena_specialty: str = "pediatrics",
 ) -> ConditionKnowledgeService:
   """Factory function to create a ConditionKnowledgeService."""
   return ConditionKnowledgeService(
@@ -574,4 +615,6 @@ def create_condition_service(
     cache_dir=cache_dir,
     web_search_fn=web_search_fn,
     web_fetch_fn=web_fetch_fn,
+    athena_lookup=athena_lookup,
+    athena_specialty=athena_specialty,
   )

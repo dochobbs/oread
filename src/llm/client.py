@@ -18,24 +18,45 @@ from pydantic import BaseModel
 
 T = TypeVar("T", bound=BaseModel)
 
+# Bounded so a slow/unreachable API can never hang generation indefinitely.
+LLM_TIMEOUT_SECONDS = 60.0
+LLM_MAX_RETRIES = 2
+
+
+def llm_enabled() -> bool:
+    """Check whether live LLM calls are enabled.
+
+    Set OREAD_DISABLE_LLM=1 to force rule-based generation (used by tests
+    and offline development).
+    """
+    return os.environ.get("OREAD_DISABLE_LLM", "").strip().lower() not in {
+        "1", "true", "yes", "on",
+    }
+
 
 class LLMClient:
     """
     Client for Claude API with structured output support.
     """
-    
+
     def __init__(
         self,
         api_key: str | None = None,
         model: str = "claude-haiku-4-5-20251001",
         cache_dir: Path | None = None,
         enable_cache: bool = True,
+        timeout: float = LLM_TIMEOUT_SECONDS,
+        max_retries: int = LLM_MAX_RETRIES,
     ):
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not self.api_key:
             raise ValueError("ANTHROPIC_API_KEY not set")
-        
-        self.client = Anthropic(api_key=self.api_key)
+
+        self.client = Anthropic(
+            api_key=self.api_key,
+            timeout=timeout,
+            max_retries=max_retries,
+        )
         self.model = model
         self.cache_dir = cache_dir or Path.home() / ".oread" / "cache"
         self.enable_cache = enable_cache
@@ -223,8 +244,14 @@ class PromptBuilder:
 _client: LLMClient | None = None
 
 
-def get_client() -> LLMClient:
-    """Get the singleton LLM client."""
+def get_client() -> LLMClient | None:
+    """Get the singleton LLM client.
+
+    Returns None when OREAD_DISABLE_LLM is set, so callers fall back to
+    rule-based generation.
+    """
+    if not llm_enabled():
+        return None
     global _client
     if _client is None:
         _client = LLMClient()

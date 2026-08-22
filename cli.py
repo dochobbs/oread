@@ -45,6 +45,9 @@ def parse_patient_description(description: str) -> dict:
     except (ValueError, Exception):
         # No API key, fall back to regex parsing
         return _parse_description_regex(description)
+    if llm is None:
+        # LLM disabled (OREAD_DISABLE_LLM), fall back to regex parsing
+        return _parse_description_regex(description)
 
     prompt = f'''Extract patient parameters from this description. Return valid JSON only.
 

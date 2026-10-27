@@ -249,7 +249,6 @@ def test_peds_requested_age(peds):
         pytest.fail("\n".join(report), pytrace=False)
 
 
-@xfail("A adult DOB = age*365 days ignores leap days")
 def test_adult_requested_age():
     """Adult DOB yields the requested age, across enough seeds to hit leap-day drift."""
     engine = AdultEngine(use_llm=False)
@@ -342,12 +341,10 @@ def test_peds_encounter_vitals(peds):
     _assert_none(peds, inv.check_encounter_vitals)
 
 
-@xfail("A vitals= kwarg silently dropped (field is vital_signs)")
 def test_adult_encounter_vitals(adults):
     _assert_none(adults, inv.check_encounter_vitals)
 
 
-@xfail("A history_of_present_illness= kwarg silently dropped (field is hpi)")
 def test_adult_encounter_hpi(adults):
     _assert_none(adults, inv.check_encounter_hpi)
 

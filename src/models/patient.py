@@ -12,12 +12,50 @@ from enum import Enum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, computed_field, model_validator
 
 
 def generate_id() -> str:
     """Generate a unique identifier."""
     return str(uuid4())[:8]
+
+
+# Validation context flag for loading records saved by an older Oread build.
+LEGACY_LOAD = "legacy_load"
+
+
+class ClinicalModel(BaseModel):
+    """Base for patient-record models: unknown fields are an error.
+
+    A misspelled kwarg (``vitals=`` for ``vital_signs``) used to vanish
+    silently and leave the chart without vitals. ``extra="forbid"`` turns
+    that into a ValidationError at the call site.
+
+    Two kinds of input are still accepted:
+
+    * Computed fields (``full_name``, ``age_years``, ``is_active`` ...) are
+      emitted by ``model_dump`` and dropped on the way back in, so a dumped
+      record round-trips.
+    * Records loaded with ``context={LEGACY_LOAD: True}`` (see
+      ``Patient.from_stored``) drop any unknown key, so stored charts written
+      by an older schema still load.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_non_input_keys(cls, data: Any, info: ValidationInfo) -> Any:
+        if not isinstance(data, dict):
+            return data
+        legacy = bool(info.context and info.context.get(LEGACY_LOAD))
+        computed = cls.model_computed_fields
+        if legacy:
+            allowed = set(cls.model_fields)
+            return {k: v for k, v in data.items() if k in allowed}
+        if computed and any(k in data for k in computed):
+            return {k: v for k, v in data.items() if k not in computed}
+        return data
 
 
 # =============================================================================
@@ -483,7 +521,7 @@ class ConditionDefinition(BaseModel):
 # =============================================================================
 
 
-class Address(BaseModel):
+class Address(ClinicalModel):
     """Physical address."""
     line1: str
     line2: str | None = None
@@ -502,7 +540,7 @@ class Address(BaseModel):
         return "\n".join(parts)
 
 
-class Contact(BaseModel):
+class Contact(ClinicalModel):
     """Contact information for a person."""
     name: str
     relationship: str | None = None
@@ -511,7 +549,7 @@ class Contact(BaseModel):
     address: Address | None = None
 
 
-class HouseholdMember(BaseModel):
+class HouseholdMember(ClinicalModel):
     """A member of the patient's household."""
     name: str
     relationship: str
@@ -520,7 +558,7 @@ class HouseholdMember(BaseModel):
     health_notes: str | None = None
 
 
-class SubstanceUse(BaseModel):
+class SubstanceUse(ClinicalModel):
     """Substance use history."""
     substance: str
     status: Literal["never", "former", "current", "unknown"]
@@ -531,7 +569,7 @@ class SubstanceUse(BaseModel):
     notes: str | None = None
 
 
-class Demographics(BaseModel):
+class Demographics(ClinicalModel):
     """Patient demographics."""
     given_names: list[str] = Field(min_length=1)
     family_name: str
@@ -572,7 +610,7 @@ class Demographics(BaseModel):
         return max(0, months)
 
 
-class SocialHistory(BaseModel):
+class SocialHistory(ClinicalModel):
     """Social history and SDOH."""
     # Living situation
     living_situation: str = Field(description="e.g., 'Lives with parents', 'Independent'")
@@ -616,7 +654,7 @@ class SocialHistory(BaseModel):
     screen_time: str | None = None
 
 
-class FamilyHistoryEntry(BaseModel):
+class FamilyHistoryEntry(ClinicalModel):
     """Family medical history entry."""
     id: str = Field(default_factory=generate_id)
     relationship: str = Field(description="e.g., 'mother', 'father', 'maternal grandmother'")
@@ -633,7 +671,7 @@ class FamilyHistoryEntry(BaseModel):
 # =============================================================================
 
 
-class Condition(BaseModel):
+class Condition(ClinicalModel):
     """A medical condition/diagnosis."""
     id: str = Field(default_factory=generate_id)
     code: CodeableConcept
@@ -664,7 +702,7 @@ class Condition(BaseModel):
         return self.clinical_status == ConditionStatus.ACTIVE
 
 
-class DoseChange(BaseModel):
+class DoseChange(ClinicalModel):
     """Record of a medication dose change."""
     date: date
     previous_dose: str
@@ -673,7 +711,7 @@ class DoseChange(BaseModel):
     encounter_id: str | None = None
 
 
-class Medication(BaseModel):
+class Medication(ClinicalModel):
     """A medication on the patient's list."""
     id: str = Field(default_factory=generate_id)
     code: CodeableConcept
@@ -706,13 +744,13 @@ class Medication(BaseModel):
     discontinuation_reason: str | None = None
 
 
-class AllergyReaction(BaseModel):
+class AllergyReaction(ClinicalModel):
     """A reaction manifestation for an allergy."""
     manifestation: str
     severity: AllergySeverity | None = None
 
 
-class Allergy(BaseModel):
+class Allergy(ClinicalModel):
     """An allergy or intolerance."""
     id: str = Field(default_factory=generate_id)
     code: CodeableConcept | None = None
@@ -735,7 +773,7 @@ class Allergy(BaseModel):
     notes: str | None = None
 
 
-class Immunization(BaseModel):
+class Immunization(ClinicalModel):
     """An immunization record."""
     id: str = Field(default_factory=generate_id)
     vaccine_code: CodeableConcept
@@ -765,7 +803,7 @@ class Immunization(BaseModel):
     notes: str | None = None
 
 
-class Procedure(BaseModel):
+class Procedure(ClinicalModel):
     """A procedure performed on the patient."""
     id: str = Field(default_factory=generate_id)
     code: CodeableConcept
@@ -789,7 +827,7 @@ class Procedure(BaseModel):
     notes: str | None = None
 
 
-class Surgery(BaseModel):
+class Surgery(ClinicalModel):
     """Surgical history entry (a type of procedure with more detail)."""
     id: str = Field(default_factory=generate_id)
     code: CodeableConcept | None = None
@@ -816,7 +854,7 @@ class Surgery(BaseModel):
 # =============================================================================
 
 
-class Observation(BaseModel):
+class Observation(ClinicalModel):
     """A clinical observation (vital sign, lab result, etc.)."""
     id: str = Field(default_factory=generate_id)
     category: Literal["vital-signs", "laboratory", "social-history", "imaging", "exam", "survey"]
@@ -858,7 +896,7 @@ class Observation(BaseModel):
         return "N/A"
 
 
-class VitalSigns(BaseModel):
+class VitalSigns(ClinicalModel):
     """A set of vital signs taken together."""
     id: str = Field(default_factory=generate_id)
     date: datetime
@@ -883,7 +921,7 @@ class VitalSigns(BaseModel):
     notes: str | None = None
 
 
-class GrowthMeasurement(BaseModel):
+class GrowthMeasurement(ClinicalModel):
     """A growth measurement for pediatric patients."""
     id: str = Field(default_factory=generate_id)
     date: date
@@ -909,7 +947,7 @@ class GrowthMeasurement(BaseModel):
     bmi_z: float | None = None
 
 
-class DevelopmentalMilestone(BaseModel):
+class DevelopmentalMilestone(ClinicalModel):
     """A developmental milestone assessment."""
     id: str = Field(default_factory=generate_id)
     domain: Literal["gross-motor", "fine-motor", "language", "social-emotional", "cognitive"]
@@ -927,7 +965,7 @@ class DevelopmentalMilestone(BaseModel):
 # =============================================================================
 
 
-class Provider(BaseModel):
+class Provider(ClinicalModel):
     """A healthcare provider."""
     id: str = Field(default_factory=generate_id)
     name: str
@@ -937,7 +975,7 @@ class Provider(BaseModel):
     organization: str | None = None
 
 
-class Location(BaseModel):
+class Location(ClinicalModel):
     """A healthcare location."""
     id: str = Field(default_factory=generate_id)
     name: str
@@ -946,7 +984,7 @@ class Location(BaseModel):
     phone: str | None = None
 
 
-class ReviewOfSystems(BaseModel):
+class ReviewOfSystems(ClinicalModel):
     """Review of systems findings."""
     constitutional: str | None = None
     heent: str | None = None
@@ -963,7 +1001,7 @@ class ReviewOfSystems(BaseModel):
     allergic_immunologic: str | None = None
 
 
-class PhysicalExam(BaseModel):
+class PhysicalExam(ClinicalModel):
     """Physical examination findings."""
     general: str | None = None
     heent: str | None = None
@@ -985,7 +1023,7 @@ class PhysicalExam(BaseModel):
     tanner_stage: str | None = None
 
 
-class Assessment(BaseModel):
+class Assessment(ClinicalModel):
     """Clinical assessment/diagnosis for an encounter."""
     condition_id: str | None = None
     diagnosis: str
@@ -994,14 +1032,14 @@ class Assessment(BaseModel):
     is_primary: bool = False
 
 
-class PlanItem(BaseModel):
+class PlanItem(ClinicalModel):
     """An item in the treatment plan."""
     category: Literal["medication", "order", "referral", "education", "follow-up", "procedure", "other"]
     description: str
     details: str | None = None
 
 
-class Order(BaseModel):
+class Order(ClinicalModel):
     """A clinical order (lab, imaging, etc.)."""
     id: str = Field(default_factory=generate_id)
     type: Literal["laboratory", "imaging", "procedure", "referral", "other"]
@@ -1021,7 +1059,7 @@ class Order(BaseModel):
     ordering_provider: str | None = None
 
 
-class LabResult(BaseModel):
+class LabResult(ClinicalModel):
     """A laboratory test result."""
     id: str = Field(default_factory=generate_id)
     order_id: str | None = None
@@ -1046,7 +1084,7 @@ class LabResult(BaseModel):
     notes: str | None = None
 
 
-class LabPanel(BaseModel):
+class LabPanel(ClinicalModel):
     """A panel of lab results."""
     id: str = Field(default_factory=generate_id)
     order_id: str | None = None
@@ -1061,7 +1099,7 @@ class LabPanel(BaseModel):
     encounter_id: str | None = None
 
 
-class ImagingResult(BaseModel):
+class ImagingResult(ClinicalModel):
     """An imaging study result."""
     id: str = Field(default_factory=generate_id)
     order_id: str | None = None
@@ -1084,7 +1122,7 @@ class ImagingResult(BaseModel):
     encounter_id: str | None = None
 
 
-class Referral(BaseModel):
+class Referral(ClinicalModel):
     """A referral to another provider/service."""
     id: str = Field(default_factory=generate_id)
     specialty: str
@@ -1106,7 +1144,7 @@ class Referral(BaseModel):
     outcome: str | None = None
 
 
-class GrowthPercentiles(BaseModel):
+class GrowthPercentiles(ClinicalModel):
     """Growth percentiles for a pediatric encounter."""
     weight_percentile: float | None = None
     height_percentile: float | None = None
@@ -1115,7 +1153,7 @@ class GrowthPercentiles(BaseModel):
     weight_for_length_percentile: float | None = None
 
 
-class DevelopmentalScreen(BaseModel):
+class DevelopmentalScreen(ClinicalModel):
     """Developmental screening results."""
     tool: str = Field(description="e.g., 'ASQ-3', 'M-CHAT-R', 'PEDS'")
     date: date
@@ -1125,7 +1163,7 @@ class DevelopmentalScreen(BaseModel):
     notes: str | None = None
 
 
-class BillingCodes(BaseModel):
+class BillingCodes(ClinicalModel):
     """Billing and coding information."""
     cpt_codes: list[str] = Field(default_factory=list)
     icd_codes: list[str] = Field(default_factory=list)
@@ -1133,7 +1171,7 @@ class BillingCodes(BaseModel):
     e_m_level: str | None = None
 
 
-class Encounter(BaseModel):
+class Encounter(ClinicalModel):
     """A clinical encounter/visit."""
     id: str = Field(default_factory=generate_id)
     date: datetime
@@ -1196,7 +1234,7 @@ class Encounter(BaseModel):
 # =============================================================================
 
 
-class Coverage(BaseModel):
+class Coverage(ClinicalModel):
     """Insurance coverage."""
     id: str = Field(default_factory=generate_id)
     type: Literal["primary", "secondary", "tertiary"]
@@ -1210,7 +1248,7 @@ class Coverage(BaseModel):
     termination_date: date | None = None
 
 
-class CareTeamMember(BaseModel):
+class CareTeamMember(ClinicalModel):
     """A member of the patient's care team."""
     id: str = Field(default_factory=generate_id)
     name: str
@@ -1224,7 +1262,7 @@ class CareTeamMember(BaseModel):
     start_date: date | None = None
 
 
-class CareGap(BaseModel):
+class CareGap(ClinicalModel):
     """An identified care gap."""
     id: str = Field(default_factory=generate_id)
     type: str
@@ -1240,7 +1278,7 @@ class CareGap(BaseModel):
 # =============================================================================
 
 
-class PatientMessage(BaseModel):
+class PatientMessage(ClinicalModel):
     """
     Patient-provider message (portal, phone, etc.).
 
@@ -1287,7 +1325,7 @@ class PatientMessage(BaseModel):
 # =============================================================================
 
 
-class Patient(BaseModel):
+class Patient(ClinicalModel):
     """
     Complete patient record.
     
@@ -1356,6 +1394,16 @@ class Patient(BaseModel):
         """Get all active medications."""
         return [m for m in self.medication_list if m.status == MedicationStatus.ACTIVE]
     
+    @classmethod
+    def from_stored(cls, record: dict[str, Any]) -> "Patient":
+        """Load a stored patient record, tolerating keys from older schemas.
+
+        Fresh construction forbids unknown fields; a record persisted by an
+        older build may still carry fields that have since been removed or
+        renamed. Those are dropped here rather than failing the load.
+        """
+        return cls.model_validate(record, context={LEGACY_LOAD: True})
+
     def get_encounter_by_id(self, encounter_id: str) -> Encounter | None:
         """Get an encounter by its ID."""
         for enc in self.encounters:
@@ -1441,14 +1489,14 @@ class ArcStageStatus(str, Enum):
     RESOLVED = "resolved"
 
 
-class MedicationChange(BaseModel):
+class MedicationChange(ClinicalModel):
     """Record of a medication change at a point in time."""
     type: MedicationChangeType
     medication: str
     details: str | None = None
 
 
-class DecisionPoint(BaseModel):
+class DecisionPoint(ClinicalModel):
     """A clinical decision point in the patient's history."""
     id: str = Field(default_factory=generate_id)
     age_months: int
@@ -1459,7 +1507,7 @@ class DecisionPoint(BaseModel):
     outcome: str | None = None  # What happened as a result
 
 
-class TimeSnapshot(BaseModel):
+class TimeSnapshot(ClinicalModel):
     """Patient clinical state at a specific point in time."""
     age_months: int
     date: date
@@ -1483,7 +1531,7 @@ class TimeSnapshot(BaseModel):
     event_description: str | None = None
 
 
-class ArcStage(BaseModel):
+class ArcStage(ClinicalModel):
     """One stage in a disease arc progression."""
     condition_key: str
     display_name: str
@@ -1496,7 +1544,7 @@ class ArcStage(BaseModel):
     transition_triggers: list[str] = Field(default_factory=list)  # What causes progression
 
 
-class DiseaseArc(BaseModel):
+class DiseaseArc(ClinicalModel):
     """A tracked progression of related conditions over time."""
     id: str = Field(default_factory=generate_id)
     name: str  # e.g., "Atopic March"

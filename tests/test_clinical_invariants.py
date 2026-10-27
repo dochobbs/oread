@@ -187,7 +187,6 @@ GATE_BOUNDARIES = [("adhd", 48), ("anxiety_disorder", 36), ("depression", 72),
                    ("learning_disorder", 60)]
 
 
-@xfail("P gate-boundary crash: onset clamp vs validator day/30.44 rounding")
 def test_gate_boundary_ages_generate():
     """A condition requested at exactly its minimum age generates without error."""
     engine = PedsEngine(use_llm=False)
@@ -285,27 +284,25 @@ def test_annual_flu(peds):
 # Medications                                                                 #
 # --------------------------------------------------------------------------- #
 
-@xfail("P AOM amox + amox-clav together; SSRI x2; A duplicate statins")
+# P side (AOM amox + amox-clav, SSRI x2) fixed; adult duplicate statins remain and
+# only surface in the full cohort.
+@pytest.mark.xfail(FULL, strict=True, reason="known: A duplicate statins")
 def test_no_duplicate_therapy(generated):
     _assert_none(generated, inv.check_duplicate_therapy)
 
 
-@xfail("P chronic meds fixed doses, no weight/age check")
 def test_chronic_doses_in_range(peds):
     _assert_none(peds, inv.check_chronic_doses)
 
 
-@xfail("P ondansetron has no age_min_months; given at 4mo")
 def test_med_minimum_ages(peds):
     _assert_none(peds, inv.check_med_min_age)
 
 
-@xfail("P T1D glargine only; T2D no metformin; food allergy no epinephrine")
 def test_required_meds(peds):
     _assert_none(peds, inv.check_required_meds)
 
 
-@xfail("P T1D glargine dosed 'per sliding scale'")
 def test_basal_insulin_not_sliding_scale(peds):
     _assert_none(peds, inv.check_sliding_scale_basal)
 
@@ -314,7 +311,6 @@ def test_basal_insulin_not_sliding_scale(peds):
 # Conditions / coding / labs                                                  #
 # --------------------------------------------------------------------------- #
 
-@xfail("P conditions never resolve")
 def test_self_limited_conditions_resolve(peds):
     _assert_none(peds, inv.check_self_limited_resolve)
 
@@ -324,7 +320,6 @@ def test_no_placeholder_codes(generated):
     _assert_none(generated, inv.check_no_placeholder_codes)
 
 
-@xfail("P no lab fix handler: diabetics have no A1c")
 def test_diabetes_has_a1c(peds):
     _assert_none(peds, inv.check_diabetes_a1c)
 
@@ -347,7 +342,6 @@ def test_adult_encounter_hpi(adults):
     _assert_none(adults, inv.check_encounter_hpi)
 
 
-@xfail("P new: no-LLM (standalone) path emits no HPI on problem visits")
 def test_peds_encounter_hpi(peds):
     _assert_none(peds, inv.check_encounter_hpi)
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
+from .age import calendar_months_between, meets_min_age, within_max_age
 from .models import ValidationIssue, ValidationResult, ValidationSeverity, ValidationType
 
 if TYPE_CHECKING:
@@ -41,6 +42,7 @@ class PatientValidator:
   CONDITIONS_REQUIRING_MEDS = {
     "leukemia": ["mercaptopurine", "methotrexate", "vincristine", "chemotherapy", "6-mp"],
     "lymphoma": ["chemotherapy", "rituximab", "prednisone"],
+    # ADA Standards of Care 2026 S14: basal + rapid-acting insulin, glucagon.
     "type 1 diabetes": ["insulin"],
     "type 2 diabetes": ["metformin", "insulin", "glipizide", "jardiance"],
     "hypothyroidism": ["levothyroxine", "synthroid"],
@@ -48,7 +50,10 @@ class PatientValidator:
     "seizure": ["levetiracetam", "keppra", "valproic", "lamotrigine", "phenobarbital"],
     "epilepsy": ["levetiracetam", "keppra", "valproic", "lamotrigine", "phenobarbital"],
     "asthma": ["albuterol", "fluticasone", "budesonide", "montelukast"],
-    "adhd": ["methylphenidate", "adderall", "vyvanse", "strattera", "guanfacine"],
+    # ADHD is intentionally absent: AAP ADHD CPG 2019 (KAS 5a) makes behavior
+    # therapy first-line at ages 4-5, so an unmedicated preschooler is correct.
+    # AAP 2017 epinephrine clinical report: every food-allergic child carries one.
+    "food allergy": ["epinephrine"],
     "kawasaki": ["aspirin"],
     "kawasaki disease": ["aspirin"],
   }
@@ -74,8 +79,11 @@ class PatientValidator:
   CONDITIONS_REQUIRING_LABS = {
     "leukemia": ["cbc", "complete blood count", "metabolic panel", "cmp"],
     "lymphoma": ["cbc", "complete blood count", "metabolic panel"],
-    "type 1 diabetes": ["hemoglobin a1c", "hba1c", "glucose"],
-    "type 2 diabetes": ["hemoglobin a1c", "hba1c", "glucose", "lipid"],
+    # ADA Standards of Care 2026 S6/S14: HbA1c every 3 months in youth with
+    # diabetes; at least annually with prediabetes.
+    "type 1 diabetes": ["hemoglobin a1c", "hba1c"],
+    "type 2 diabetes": ["hemoglobin a1c", "hba1c"],
+    "prediabetes": ["hemoglobin a1c", "hba1c"],
     "hypothyroidism": ["tsh", "thyroid"],
     "chronic kidney disease": ["creatinine", "bun", "gfr", "cmp"],
   }
@@ -179,6 +187,7 @@ class PatientValidator:
       "osa": "obstructive_sleep_apnea",
       "major depressive disorder": "depression",
       "generalized anxiety disorder": "anxiety",
+      "anxiety disorder": "anxiety",
     }
     if name in alias_map:
       candidates.append(alias_map[name])
@@ -205,15 +214,16 @@ class PatientValidator:
         continue
 
       min_months, max_months = self.AGE_GATES[gate_key]
-      age_at_onset_months = (cond.onset_date - dob).days / 30.44
+      # Calendar months, same arithmetic as PedsEngine._clamp_onset_to_gate.
+      age_at_onset_months = calendar_months_between(dob, cond.onset_date)
 
-      if age_at_onset_months < min_months:
+      if not meets_min_age(dob, cond.onset_date, min_months):
         issues.append(ValidationIssue(
           type=ValidationType.AGE_GATE,
           severity=ValidationSeverity.CRITICAL,
           message=(
             f"Condition '{cond.display_name}' onset at "
-            f"{age_at_onset_months:.1f}mo violates min age gate "
+            f"{age_at_onset_months}mo violates min age gate "
             f"({min_months}mo)"
           ),
           path=f"problem_list[{i}].onset_date",
@@ -223,13 +233,13 @@ class PatientValidator:
           ),
           auto_fixable=True,
         ))
-      elif max_months is not None and age_at_onset_months > max_months:
+      elif max_months is not None and not within_max_age(dob, cond.onset_date, max_months):
         issues.append(ValidationIssue(
           type=ValidationType.AGE_GATE,
           severity=ValidationSeverity.CRITICAL,
           message=(
             f"Condition '{cond.display_name}' onset at "
-            f"{age_at_onset_months:.1f}mo violates max age gate "
+            f"{age_at_onset_months}mo violates max age gate "
             f"({max_months}mo)"
           ),
           path=f"problem_list[{i}].onset_date",

@@ -336,7 +336,9 @@ def check_chronic_doses(patient: Patient) -> list[str]:
     for m in _all_meds(patient):
         name = m.display_name.lower()
         mg = _mg(m)
-        n = _per_day(m.frequency or "")
+        freq = (m.frequency or "").lower()
+        # "divided BID" means dose_quantity is the daily total split in two.
+        n = 1 if freq.startswith("divided") else _per_day(freq)
         if mg is None or n is None:
             continue
         daily = mg * n

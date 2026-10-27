@@ -538,6 +538,10 @@ IMM_SECTION = "2.16.840.1.113883.10.20.22.2.2.1"
 RESULTS_SECTION = "2.16.840.1.113883.10.20.22.2.3.1"
 PROBLEM_SECTION = "2.16.840.1.113883.10.20.22.2.5.1"
 RESULT_ORGANIZER = "2.16.840.1.113883.10.20.22.4.1"
+MED_SECTION = "2.16.840.1.113883.10.20.22.2.1.1"
+VITAL_OBS = "2.16.840.1.113883.10.20.22.4.27"
+IMM_REFUSAL = "2.16.840.1.113883.10.20.22.4.53"
+XSI = "http://www.w3.org/2001/XMLSchema-instance"
 VALID_LENGTH_UCUM = {"cm", "m", "[in_i]", "mm"}
 
 
@@ -611,8 +615,58 @@ def check_ccda_structure(xml: str, patient: Patient) -> list[str]:
     if with_high < resolved:
         out.append(f"{resolved} resolved problems, {with_high} with effectiveTime/high")
 
+    # Identifiers use OID/UUID roots, never ad-hoc URNs
+    bad_roots = {i.get("root") for i in root.iter(f"{{{ns['c']}}}id")
+                 if (i.get("root") or "").startswith("urn:")}
+    if bad_roots:
+        out.append(f"non-OID/UUID id roots: {sorted(bad_roots)}")
+
+    # Vital sign observations (incl. growth) carry an effectiveTime value
+    for obs in root.iter(f"{{{ns['c']}}}observation"):
+        if any(t.get("root") == VITAL_OBS for t in obs.findall("c:templateId", ns)):
+            eff = obs.find("c:effectiveTime", ns)
+            if eff is None or not eff.get("value"):
+                out.append("vital sign observation without effectiveTime")
+                break
+
+    # Refused immunizations carry a refusal reason
+    for sa in root.iter(f"{{{ns['c']}}}substanceAdministration"):
+        if sa.get("negationInd") == "true" and not any(
+                t.get("root") == IMM_REFUSAL
+                for t in sa.iter(f"{{{ns['c']}}}templateId")):
+            out.append("negated immunization without an Immunization Refusal Reason")
+            break
+
+    # PRN meds: a precondition and no fixed PIVL period (C-CDA Medication
+    # Activity; "q4-6h PRN" is not "every 4 hours").
+    med_acts = [sa for sec in _section(root, MED_SECTION)
+                for sa in sec.findall("c:entry/c:substanceAdministration", ns)]
+    prn_model = sum(1 for m in patient.medication_list
+                    if m.prn or re.search(r"\bprn\b|as needed", (m.frequency or "").lower()))
+    prn_ccda = 0
+    for sa in med_acts:
+        if sa.find("c:precondition", ns) is None:
+            continue
+        prn_ccda += 1
+        for eff in sa.findall("c:effectiveTime", ns):
+            if eff.get(f"{{{XSI}}}type") == "PIVL_TS":
+                out.append("PRN medication encoded with a fixed PIVL period")
+                break
+    if prn_ccda != prn_model:
+        out.append(f"{prn_model} PRN meds, {prn_ccda} with a precondition in C-CDA")
+
+    # doseQuantity is numeric
+    for dq in root.iter(f"{{{ns['c']}}}doseQuantity"):
+        vals = [dq.get("value")] + [b.get("value") for b in dq]
+        for v in filter(None, vals):
+            if not re.fullmatch(r"\d+(\.\d+)?", v):
+                out.append(f"non-numeric doseQuantity '{v}'")
+                break
+
     # Medication frequency: a BID med is not encoded as a 24h period
-    bid_meds = [m for m in _all_meds(patient) if _per_day(m.frequency or "") == 2]
+    # (PRN meds are excluded: they carry a precondition, not a fixed period.)
+    bid_meds = [m for m in patient.medication_list if _per_day(m.frequency or "") == 2
+                and not (m.prn or re.search(r"\bprn\b|as needed", (m.frequency or "").lower()))]
     if bid_meds:
         periods = [p.get("value") + (p.get("unit") or "")
                    for p in root.iter(f"{{{ns['c']}}}period")]
@@ -641,6 +695,17 @@ def check_format_parity(patient: Patient, bundle: dict, xml: str, markdown: str)
                          if i.status != ImmunizationStatus.COMPLETED)
     if fhir_not_done != model_not_done:
         out.append(f"FHIR not-done {fhir_not_done} != model {model_not_done}")
+    resources = [e["resource"] for e in bundle.get("entry", [])]
+    if any(r["resourceType"] == "Immunization" and r.get("status") == "not-done"
+           and not r.get("statusReason") for r in resources):
+        out.append("FHIR not-done Immunization without statusReason")
+    model_prn = sum(1 for m in patient.medication_list
+                    if m.prn or re.search(r"\bprn\b|as needed", (m.frequency or "").lower()))
+    fhir_prn = sum(1 for r in resources if r["resourceType"] == "MedicationStatement"
+                   and any("asNeededBoolean" in d or "asNeededCodeableConcept" in d
+                           for d in r.get("dosage", [])))
+    if fhir_prn != model_prn:
+        out.append(f"FHIR asNeeded meds {fhir_prn} != model PRN meds {model_prn}")
     if model_not_done and not re.search(r"not given|refused|declined|not done", markdown, re.I):
         out.append(f"{model_not_done} refused vaccines but Markdown never says so")
     return out

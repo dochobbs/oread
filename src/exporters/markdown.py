@@ -6,10 +6,10 @@ Exports patient data as human-readable Markdown documentation.
 
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
 
-from src.models import Patient, Encounter, EncounterType
+from src.exporters.sig import build_sig
+from src.models import Patient, EncounterType, ImmunizationStatus
 
 
 def export_markdown(
@@ -59,7 +59,7 @@ def export_markdown(
     lines.append(f"- **Phone:** {d.phone}")
     if d.email:
         lines.append(f"- **Email:** {d.email}")
-    lines.append(f"- **Address:**")
+    lines.append("- **Address:**")
     lines.append(f"  {d.address.line1}")
     if d.address.line2:
         lines.append(f"  {d.address.line2}")
@@ -116,6 +116,8 @@ def export_markdown(
                 code_system = "SNOMED" if "snomed" in condition.code.system.lower() else "ICD-10"
                 lines.append(f"  - {code_system}: {condition.code.code}")
             lines.append(f"  - Onset: {condition.onset_date.strftime('%Y-%m-%d')}")
+            if condition.abatement_date:
+                lines.append(f"  - Resolved: {condition.abatement_date.strftime('%Y-%m-%d')}")
             if condition.notes:
                 lines.append(f"  - Notes: {condition.notes}")
     else:
@@ -137,7 +139,7 @@ def export_markdown(
                 rxnorm_str = ""
                 if med.code and "rxnorm" in med.code.system.lower():
                     rxnorm_str = f" (RxNorm: {med.code.code})"
-                lines.append(f"- **{med.display_name}**{rxnorm_str} {med.dose_quantity} {med.dose_unit} {med.frequency}")
+                lines.append(f"- **{med.display_name}**{rxnorm_str}: {build_sig(med).text}")
                 if med.indication:
                     lines.append(f"  - Indication: {med.indication}")
                 lines.append(f"  - Started: {med.start_date.strftime('%Y-%m-%d')}")
@@ -181,8 +183,25 @@ def export_markdown(
             by_vaccine[name].append(imm)
         
         for vaccine, doses in sorted(by_vaccine.items()):
-            dose_dates = [f"#{d.dose_number or i+1}: {d.date.strftime('%Y-%m-%d')}" for i, d in enumerate(sorted(doses, key=lambda x: x.date))]
-            lines.append(f"- **{vaccine}**: {', '.join(dose_dates)}")
+            given = [d for d in sorted(doses, key=lambda x: x.date)
+                     if d.status == ImmunizationStatus.COMPLETED]
+            dose_dates = [f"#{d.dose_number or i+1}: {d.date.strftime('%Y-%m-%d')}"
+                          for i, d in enumerate(given)]
+            if dose_dates:
+                lines.append(f"- **{vaccine}**: {', '.join(dose_dates)}")
+
+        # Refused / not-given doses are listed separately so they are never
+        # read as administered.
+        not_given = sorted((i for i in patient.immunization_record
+                            if i.status == ImmunizationStatus.NOT_DONE), key=lambda x: x.date)
+        if not_given:
+            lines.append("")
+            lines.append("### Not Given (refused or deferred)")
+            lines.append("")
+            for imm in not_given:
+                reason = f": {imm.status_reason}" if imm.status_reason else ""
+                lines.append(f"- **{imm.display_name}** {imm.date.strftime('%Y-%m-%d')}: "
+                             f"NOT GIVEN{reason}")
     else:
         lines.append("*No immunization records*")
     lines.append("")
@@ -291,9 +310,18 @@ def export_markdown(
         
         # Immunizations
         if enc.immunizations_given:
-            imm_names = [i.display_name for i in enc.immunizations_given]
-            lines.append(f"**Immunizations Given:** {', '.join(imm_names)}")
-            lines.append("")
+            given = [i.display_name for i in enc.immunizations_given
+                     if i.status == ImmunizationStatus.COMPLETED]
+            refused = [i for i in enc.immunizations_given
+                       if i.status == ImmunizationStatus.NOT_DONE]
+            if given:
+                lines.append(f"**Immunizations Given:** {', '.join(given)}")
+                lines.append("")
+            if refused:
+                parts = [i.display_name + (f" ({i.status_reason})" if i.status_reason else "")
+                         for i in refused]
+                lines.append(f"**Immunizations Not Given:** {', '.join(parts)}")
+                lines.append("")
         
         # Full narrative note
         if include_full_notes and enc.narrative_note:

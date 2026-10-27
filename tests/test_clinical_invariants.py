@@ -232,8 +232,7 @@ def test_seed_messiness_drives_hesitancy():
     for seed in range(5):
         p = engine.generate(GenerationSeed(age_months=96, messiness_level=5, random_seed=seed))
         refused += sum(1 for i in p.immunization_record if i.status.value == "not-done")
-    if refused == 0:
-        pytest.xfail("known: P hesitancy reads engine messiness, ignores seed.messiness_level")
+    assert refused > 0, "seed.messiness_level=5 produced no vaccine refusals"
 
 
 def test_cohort_has_refusals(generated):
@@ -266,22 +265,18 @@ def test_adult_requested_age():
 # Immunizations                                                               #
 # --------------------------------------------------------------------------- #
 
-@xfail("P immunizations: no prior doses passed; nearest-age matching skips dose 3")
 def test_vaccine_series_complete_for_age(peds):
     _assert_none(peds, inv.check_vaccine_series)
 
 
-@xfail("P immunizations: 12mo visit at 11.8mo gives MMR/VAR/HepA early; no RV max age")
 def test_vaccine_min_max_ages(peds):
     _assert_none(peds, inv.check_vaccine_ages)
 
 
-@xfail("P immunizations: catch-up gives 'DTaP #1' after doses 2 and 3")
 def test_vaccine_dose_numbers_ordered(peds):
     _assert_none(peds, inv.check_vaccine_dose_numbers)
 
 
-@xfail("P immunizations: influenza deduped on (name, dose) so only one ever")
 def test_annual_flu(peds):
     _assert_none(peds, inv.check_annual_flu)
 

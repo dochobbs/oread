@@ -401,52 +401,16 @@ class PedsEngine(BaseEngine):
         return patient
 
     def _build_immunization_lookups(self):
-        """Build lookup tables from immunization schedule."""
-        # Vaccine definitions with CVX codes
-        self._vaccines = self._immunization_schedule.get('vaccines', {})
+        """Build product and CVX lookups from the AAP schedule YAML.
 
-        # Build age-based vaccine schedule from YAML
-        # Maps age_months -> list of (vaccine_key, dose_number)
-        self._vaccines_by_age = {}
-
-        schedule = self._immunization_schedule.get('schedule', {})
-        age_key_to_months = {
-            'birth': 0,
-            '1_month': 1,
-            '2_months': 2,
-            '4_months': 4,
-            '6_months': 6,
-            '12_months': 12,
-            '15_months': 15,
-            '18_months': 18,
-            '4_years': 48,
-            '11_years': 132,
-            '12_years': 144,
-            '16_years': 192,
+        Due-dose rules live in src/engines/immunizations.py; the YAML holds the
+        products the engine records and the CVX -> antigen map.
+        """
+        self._vaccine_antigens = self._immunization_schedule.get('antigens', {})
+        self._cvx_antigens = {
+            str(cvx): set(groups)
+            for cvx, groups in self._immunization_schedule.get('cvx_antigens', {}).items()
         }
-
-        for age_key, vaccines in schedule.items():
-            age_months = age_key_to_months.get(age_key)
-            if age_months is None:
-                continue
-
-            self._vaccines_by_age[age_months] = []
-            for vax in vaccines:
-                vaccine_key = vax.get('vaccine')
-                dose_number = vax.get('dose_number', 1)
-                vaccine_def = self._vaccines.get(vaccine_key, {})
-                cvx_code = vaccine_def.get('cvx_code', '')
-                vaccine_name = vaccine_def.get('name', vaccine_key)
-
-                self._vaccines_by_age[age_months].append({
-                    'key': vaccine_key,
-                    'name': vaccine_name,
-                    'cvx_code': cvx_code,
-                    'dose_number': dose_number,
-                    'window_start': vax.get('window_start_months', age_months),
-                    'window_end': vax.get('window_end_months', age_months + 2),
-                    'notes': vax.get('notes'),
-                })
 
     def _get_condition_key(self, reason: str) -> str | None:
         """Map a display name or reason text to a condition key.
@@ -559,11 +523,15 @@ Examples:
             return round(dose_mg / 50) * 50
 
     def _dedupe_immunizations(self, immunizations: list) -> list:
-        """Deduplicate immunizations by vaccine name and dose number."""
+        """Drop exact duplicate immunization records and sort by date.
+
+        Keyed on (CVX, dose number, date, status): annual influenza doses and a
+        refusal followed by a later catch-up dose are distinct records.
+        """
         seen = set()
         deduped = []
-        for imm in immunizations:
-            key = (imm.display_name, imm.dose_number)
+        for imm in sorted(immunizations, key=lambda i: i.date):
+            key = (imm.vaccine_code.code, imm.dose_number, imm.date, imm.status)
             if key not in seen:
                 deduped.append(imm)
                 seen.add(key)
@@ -1372,6 +1340,7 @@ Examples:
                 seed=seed,
                 encounter_index=idx,
                 timeline_position=timeline_position,
+                prior_immunizations=immunizations,
             )
             encounters.append(encounter)
             
@@ -2299,6 +2268,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         seed: GenerationSeed,
         encounter_index: int = 0,
         timeline_position: str = "middle",
+        prior_immunizations: list[Immunization] | None = None,
     ) -> Encounter:
         """Generate a full encounter from a stub."""
         from src.models import (
@@ -2446,10 +2416,18 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                     description="Return in 3-6 months or sooner if symptoms worsen",
                 ))
         
-        # Generate immunizations for well visits
+        # Generate immunizations for well visits: what is due as of this visit,
+        # given every dose already on record.
         immunizations = []
         if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN):
-            immunizations = self._generate_immunizations(age_months, stub.date)
+            immunizations = self._generate_immunizations(
+                demographics.date_of_birth,
+                stub.date,
+                prior_immunizations,
+                messiness_level=self._hesitancy_messiness(seed),
+                weight_kg=latest_growth.weight_kg if latest_growth else None,
+                is_newborn=stub.type == EncounterType.NEWBORN,
+            )
 
         # Generate developmental screening for well-child visits
         developmental_screen = None
@@ -2521,135 +2499,278 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         "Parental religious exemption",
     ]
 
-    def _generate_immunizations(
-        self,
-        age_months: int,
-        visit_date: date,
-        existing_immunizations: list[Immunization] | None = None,
-        include_catchup: bool = True,
-    ) -> list[Immunization]:
-        """Generate age-appropriate immunizations using AAP schedule from YAML.
+    # Engine realism parameter, not clinical: refusal probability per offered
+    # dose is 5% per messiness level, from level 2 up.
+    HESITANCY_RATE_PER_LEVEL = 0.05
+    HESITANCY_MIN_LEVEL = 2
 
-        Args:
-            age_months: Patient's age in months
-            visit_date: Date of the visit
-            existing_immunizations: Previously administered vaccines (for catch-up calc)
-            include_catchup: Whether to include catch-up vaccines for missed doses
+    def _hesitancy_messiness(self, seed: GenerationSeed | None) -> int:
+        """Messiness level that drives vaccine hesitancy.
 
-        Returns:
-            List of Immunization objects (both completed and refused)
+        GenerationSeed.messiness_level wins when the caller set it explicitly;
+        otherwise the engine constructor's level applies.
         """
+        if seed is not None and "messiness_level" in seed.model_fields_set:
+            return seed.messiness_level
+        return self.messiness_level
+
+    def _imm_rng(self):
+        """Per-engine RNG when the engine has one, else the random module."""
+        return getattr(self, "rng", None) or random
+
+    def _imm_today(self) -> date:
+        """Engine 'today' when injectable, else the real date."""
+        return getattr(self, "today", None) or date.today()
+
+    def _vaccine_product(
+        self,
+        antigen: str,
+        on: date,
+        weight_kg: float | None = None,
+    ) -> dict | None:
+        """Product (CVX) for an antigen on a date, from the schedule YAML eras."""
+        for product in self._vaccine_antigens.get(antigen, {}).get("products", []):
+            start = product.get("from")
+            end = product.get("until")
+            if start and on < date.fromisoformat(str(start)):
+                continue
+            if end and on >= date.fromisoformat(str(end)):
+                continue
+            if weight_kg is not None:
+                if "max_weight_kg" in product and weight_kg >= product["max_weight_kg"]:
+                    continue
+                if "min_weight_kg" in product and weight_kg < product["min_weight_kg"]:
+                    continue
+            elif "min_weight_kg" in product:
+                continue
+            return product
+        return None
+
+    def _make_immunization(
+        self,
+        antigen: str,
+        dose_number: int,
+        on: date,
+        notes: str | None = None,
+        weight_kg: float | None = None,
+    ) -> Immunization | None:
+        """Build a completed Immunization record for an antigen dose."""
         from src.models import CodeableConcept, ImmunizationStatus
 
-        immunizations = []
-        existing_immunizations = existing_immunizations or []
+        product = self._vaccine_product(antigen, on, weight_kg)
+        if product is None:
+            return None
+        spec = self._vaccine_antigens.get(antigen, {})
+        return Immunization(
+            vaccine_code=CodeableConcept(
+                system="http://hl7.org/fhir/sid/cvx",
+                code=str(product["cvx"]),
+                display=product.get("description", antigen),
+            ),
+            display_name=spec.get("name", antigen),
+            date=on,
+            dose_number=dose_number,
+            series_doses=spec.get("series_doses"),
+            manufacturer=None,
+            status=ImmunizationStatus.COMPLETED,
+            notes=notes,
+        )
 
-        # Build set of already-received vaccines for catch-up calculation
-        received_vaccines = set()
-        for imm in existing_immunizations:
-            received_vaccines.add((imm.display_name, imm.dose_number))
+    def _antigens_for(self, imm: Immunization) -> set[str]:
+        return self._cvx_antigens.get(str(imm.vaccine_code.code), set())
 
-        # Get vaccines due at this age from YAML-based schedule
-        if not self._vaccines_by_age:
-            return immunizations
+    def _immunization_history(self, immunizations: list[Immunization]) -> dict[str, list[date]]:
+        """Antigen -> sorted dates of completed doses (combination vaccines count
+        toward each component)."""
+        from src.models import ImmunizationStatus
 
-        # Find the closest age match
-        closest_age = min(self._vaccines_by_age.keys(), key=lambda x: abs(x - age_months))
+        history: dict[str, set[date]] = {}
+        for imm in immunizations:
+            if imm.status != ImmunizationStatus.COMPLETED:
+                continue
+            for antigen in self._antigens_for(imm):
+                history.setdefault(antigen, set()).add(imm.date)
+        return {k: sorted(v) for k, v in history.items()}
 
-        if abs(closest_age - age_months) <= 2:  # Within 2 months
-            for vax in self._vaccines_by_age.get(closest_age, []):
-                vaccine_key = (vax['name'], vax['dose_number'])
-
-                # Skip if already received
-                if vaccine_key in received_vaccines:
-                    continue
-
-                immunizations.append(Immunization(
-                    vaccine_code=CodeableConcept(
-                        system="http://hl7.org/fhir/sid/cvx",
-                        code=vax['cvx_code'],
-                        display=vax['key'],
-                    ),
-                    display_name=vax['name'],
-                    date=visit_date,
-                    dose_number=vax['dose_number'],
-                    status=ImmunizationStatus.COMPLETED,
-                    notes=vax.get('notes'),
-                ))
-
-        # Calculate catch-up vaccines if requested
-        if include_catchup and age_months > 6:
-            catchup = self._calculate_catchup_vaccines(age_months, existing_immunizations)
-            for vax_info in catchup:
-                vaccine_key = (vax_info['name'], vax_info['dose_number'])
-                if vaccine_key not in received_vaccines:
-                    immunizations.append(Immunization(
-                        vaccine_code=CodeableConcept(
-                            system="http://hl7.org/fhir/sid/cvx",
-                            code=vax_info['cvx_code'],
-                            display=vax_info['key'],
-                        ),
-                        display_name=vax_info['name'],
-                        date=visit_date,
-                        dose_number=vax_info['dose_number'],
-                        status=ImmunizationStatus.COMPLETED,
-                        notes="Catch-up dose",
-                    ))
-
-        # Apply hesitancy if messiness level warrants it
-        if self.messiness_level >= 2:
-            immunizations = self._inject_vaccine_hesitancy(immunizations)
-
-        return immunizations
-
-    def _calculate_catchup_vaccines(
+    def _generate_immunizations(
         self,
-        age_months: int,
-        existing_immunizations: list[Immunization],
-    ) -> list[dict]:
-        """Calculate which vaccines are overdue for catch-up.
+        date_of_birth: date,
+        visit_date: date,
+        prior_immunizations: list[Immunization] | None = None,
+        *,
+        messiness_level: int | None = None,
+        weight_kg: float | None = None,
+        is_newborn: bool = False,
+    ) -> list[Immunization]:
+        """Doses given (or refused) at a well visit, from what is due as of that visit.
 
-        Returns list of vaccine info dicts for missed doses that should be caught up.
+        Each antigen's next dose is decided from the doses already given, the
+        minimum age, minimum interval and maximum age (src/engines/immunizations.py,
+        AAP 2026 schedule). Catch-up follows the same rules, so dose numbers
+        strictly increase and a dose number is never repeated once given.
+
+        Doses that happen outside this encounter are appended to
+        `prior_immunizations` in place, so they enter the patient record without
+        being listed as given at this visit: the birth-hospital HepB dose (and
+        RSV antibody for infants born in season), the second flu or COVID-19 dose
+        at a nurse visit 4+ weeks later, and influenza doses from a flu clinic for
+        seasons with no in-season well visit.
+
+        Args:
+            date_of_birth: Patient DOB.
+            visit_date: Date of the well visit.
+            prior_immunizations: Every immunization record so far (any status).
+                Mutated: out-of-encounter doses are appended.
+            messiness_level: Level driving vaccine hesitancy (defaults to the
+                engine's level).
+            weight_kg: Weight at the visit (RSV antibody product by weight).
+            is_newborn: True for the newborn visit (adds birth-hospital doses).
+
+        Returns:
+            Immunizations given or refused at this encounter.
         """
-        catchup = []
+        from src.engines import immunizations as imz
+        from src.models import ImmunizationStatus
 
-        # Build set of received doses
-        received = {}  # vaccine_name -> set of dose_numbers
-        for imm in existing_immunizations:
-            if imm.display_name not in received:
-                received[imm.display_name] = set()
-            if imm.dose_number:
-                received[imm.display_name].add(imm.dose_number)
+        prior = prior_immunizations if prior_immunizations is not None else []
+        level = self.messiness_level if messiness_level is None else messiness_level
+        today = self._imm_today()
+        rng = self._imm_rng()
+        dob = date_of_birth
+        extras: list[Immunization] = []
 
-        # Check all schedule milestones before current age
-        for schedule_age, vaccines in sorted(self._vaccines_by_age.items()):
-            if schedule_age >= age_months:
-                break  # Only look at past milestones
+        def offer(imms: list[Immunization]) -> list[Immunization]:
+            imms = [i for i in imms if i is not None]
+            if level >= self.HESITANCY_MIN_LEVEL:
+                imms = self._inject_vaccine_hesitancy(imms, messiness_level=level)
+            return imms
 
-            for vax in vaccines:
-                vaccine_name = vax['name']
-                dose_number = vax['dose_number']
+        def completed(imm: Immunization) -> bool:
+            return imm.status == ImmunizationStatus.COMPLETED
 
-                # Check if this dose was missed
-                if vaccine_name not in received or dose_number not in received[vaccine_name]:
-                    # Only add one catch-up dose per vaccine (the next needed dose)
-                    existing_catchup_names = [c['name'] for c in catchup]
-                    if vaccine_name not in existing_catchup_names:
-                        catchup.append(vax)
+        # (antigen, dose number) pairs refused earlier: a later dose is catch-up.
+        refused = {(a, i.dose_number) for i in prior if not completed(i)
+                   for a in self._antigens_for(i)}
 
-        # Limit catch-up to 2 vaccines per visit to be realistic
-        return catchup[:2]
+        # Birth-hospital doses, dated at birth. AAP 2026 Notes/HepB: birth dose
+        # within 24 h; Notes/RSV: born in season, antibody within 1 week of birth,
+        # ideally during the birth hospitalization.
+        if is_newborn:
+            history = self._immunization_history(prior)
+            birth = []
+            if "HepB" not in history:
+                birth.append(self._make_immunization("HepB", 1, dob, notes="Birth hospital"))
+            if "RSVmAb" not in history and imz.rsv_mab_due(dob, dob, []):
+                birth.append(self._make_immunization("RSVmAb", 1, dob, notes="Birth hospital",
+                                                     weight_kg=weight_kg))
+            extras += offer(birth)
+
+        # Influenza seasons since 6 months with no flu record and no in-season
+        # well visit: recorded as flu-clinic doses.
+        extras += self._backfill_flu(dob, visit_date, prior + extras, today, rng, offer)
+
+        history = self._immunization_history(prior + extras)
+        given: list[Immunization] = []
+        for antigen, dose_number in imz.due_series_doses(dob, visit_date, history):
+            note = "Catch-up dose" if (antigen, dose_number) in refused else None
+            given.append(self._make_immunization(antigen, dose_number, visit_date, notes=note))
+
+        flu_n = imz.flu_dose_due(dob, visit_date, history.get("Flu", []))
+        if flu_n is not None:
+            given.append(self._make_immunization("Flu", flu_n, visit_date))
+
+        covid_n = imz.covid_dose_due(dob, visit_date, history.get("COVID19", []))
+        if covid_n is not None:
+            given.append(self._make_immunization("COVID19", covid_n, visit_date))
+
+        if imz.rsv_mab_due(dob, visit_date, history.get("RSVmAb", [])):
+            given.append(self._make_immunization("RSVmAb", 1, visit_date, weight_kg=weight_kg))
+
+        given = offer(given)
+
+        # Second doses at a nurse visit. AAP 2026 Notes/Influenza: 2 doses
+        # >= 4 weeks apart when needed; Notes/COVID-19: dose 2 at 4-8 weeks.
+        # The 0-14 day spread past the minimum is scheduling realism.
+        followups = []
+        for imm in given:
+            if not completed(imm) or imm.dose_number != 1:
+                continue
+            antigens = self._antigens_for(imm)
+            if "Flu" in antigens:
+                season = imz.flu_season(visit_date)
+                prior_flu = history.get("Flu", [])
+                if imz.flu_doses_needed(dob, season, visit_date, prior_flu) == 2:
+                    d2 = visit_date + timedelta(days=28 + rng.randint(0, 14))
+                    if d2 <= min(date(season + 1, 6, 30), today):
+                        followups.append(self._make_immunization(
+                            "Flu", 2, d2, notes="Nurse visit"))
+            elif "COVID19" in antigens:
+                d2 = visit_date + timedelta(days=28 + rng.randint(0, 14))
+                if d2 <= today:
+                    followups.append(self._make_immunization("COVID19", 2, d2, notes="Nurse visit"))
+        extras += offer(followups)
+
+        prior.extend(extras)
+        return given
+
+    def _backfill_flu(
+        self,
+        dob: date,
+        visit_date: date,
+        records: list[Immunization],
+        today: date,
+        rng,
+        offer,
+    ) -> list[Immunization]:
+        """Flu-clinic doses for past seasons with no influenza record.
+
+        Annual well visits often fall outside flu season (vaccine is not given
+        in July). AAP recommends annual vaccination from 6 months, ideally by the
+        end of October (AAP 2026-27 influenza policy), so a season with no record
+        gets a clinic dose dated mid-September through October. A season with a
+        refusal on record is left alone.
+        """
+        from dateutil.relativedelta import relativedelta
+
+        from src.engines import immunizations as imz
+
+        six_months = dob + relativedelta(months=6)
+        current = imz.flu_season(visit_date)
+        last = current if not imz.flu_available(visit_date) else current - 1
+        flu_records = [i for i in records if "Flu" in self._antigens_for(i)]
+        out: list[Immunization] = []
+        for season in range(imz.flu_season(six_months), last + 1):
+            if any(imz.flu_season(i.date) == season for i in flu_records + out):
+                continue
+            latest = min(date(season + 1, 6, 30), visit_date - timedelta(days=1), today)
+            start = max(date(season, 9, 15), six_months)
+            stop = min(max(date(season, 10, 31), start), latest)
+            if start > stop:
+                continue
+            d1 = start + timedelta(days=rng.randint(0, (stop - start).days))
+            prior_flu = sorted(i.date for i in flu_records + out
+                               if i.status.value == "completed")
+            need = imz.flu_doses_needed(dob, season, d1, prior_flu)
+            first = offer([self._make_immunization("Flu", 1, d1, notes="Influenza clinic")])
+            out += first
+            if need == 2 and first and first[0].status.value == "completed":
+                d2 = d1 + timedelta(days=28 + rng.randint(0, 14))
+                if d2 <= latest:
+                    out += offer([self._make_immunization("Flu", 2, d2, notes="Influenza clinic")])
+        return out
 
     def _inject_vaccine_hesitancy(
         self,
         immunizations: list[Immunization],
         hesitancy_rate: float | None = None,
+        messiness_level: int | None = None,
     ) -> list[Immunization]:
         """Mark some vaccines as NOT_DONE with realistic refusal reasons.
 
         Args:
             immunizations: List of immunizations to potentially modify
             hesitancy_rate: Probability of hesitancy per vaccine (default based on messiness)
+            messiness_level: Level to derive the rate from (defaults to the engine's)
 
         Returns:
             Modified list with some vaccines marked as refused
@@ -2657,23 +2778,19 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         from src.models import ImmunizationStatus
 
         if hesitancy_rate is None:
-            # Higher messiness = more hesitancy
-            hesitancy_rate = 0.05 * self.messiness_level  # 5% per level
+            level = self.messiness_level if messiness_level is None else messiness_level
+            hesitancy_rate = self.HESITANCY_RATE_PER_LEVEL * level
 
+        rng = self._imm_rng()
         result = []
         for imm in immunizations:
-            if random.random() < hesitancy_rate:
-                # Mark as refused
-                reason = random.choice(self.HESITANCY_REASONS)
-                result.append(Immunization(
-                    vaccine_code=imm.vaccine_code,
-                    display_name=imm.display_name,
-                    date=imm.date,
-                    dose_number=imm.dose_number,
-                    status=ImmunizationStatus.NOT_DONE,
-                    status_reason=reason,
-                    notes=f"Vaccine not administered: {reason}",
-                ))
+            if rng.random() < hesitancy_rate:
+                reason = rng.choice(self.HESITANCY_REASONS)
+                result.append(imm.model_copy(update={
+                    "status": ImmunizationStatus.NOT_DONE,
+                    "status_reason": reason,
+                    "notes": f"Vaccine not administered: {reason}",
+                }))
             else:
                 result.append(imm)
 
@@ -4485,6 +4602,7 @@ VITAL SIGNS:
             provider=provider,
             location=location,
             seed=GenerationSeed(),
+            prior_immunizations=list(patient.immunization_record),
         )
 
         # Apply difficulty-specific modifications

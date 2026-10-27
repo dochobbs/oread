@@ -2874,7 +2874,8 @@
 
             try {
                 const response = await fetch(`/api/patients/${selectedPatientId}`, {
-                    method: 'DELETE'
+                    method: 'DELETE',
+                    headers: authHeaders()
                 });
 
                 if (response.ok) {
@@ -2897,7 +2898,7 @@
         
         async function loadPatients() {
             try {
-                const response = await fetch('/api/patients?limit=50');
+                const response = await fetch('/api/patients?limit=50', { headers: authHeaders() });
                 const data = await response.json();
                 patients = data.patients;
                 renderPatientsList();
@@ -2914,7 +2915,7 @@
 
             try {
                 // Start the async generation job
-                const response = await fetch('/api/generate/quick', { method: 'POST' });
+                const response = await fetch('/api/generate/quick', { method: 'POST', headers: authHeaders() });
                 const job = await response.json();
                 const jobId = job.job_id;
 
@@ -2925,14 +2926,14 @@
 
                 const poll = async () => {
                     try {
-                        const statusResp = await fetch(`/api/jobs/${jobId}`);
+                        const statusResp = await fetch(`/api/jobs/${jobId}`, { headers: authHeaders() });
                         const status = await statusResp.json();
 
                         if (status.status === 'completed') {
                             // Success! Load the patient
                             quickGenerateBtn.innerHTML = '<i data-lucide="check" class="icon"></i> Done!';
                             lucide.createIcons();
-                            const patientResp = await fetch(`/api/patients/${status.patient_id}`);
+                            const patientResp = await fetch(`/api/patients/${status.patient_id}`, { headers: authHeaders() });
                             const patientSummary = {
                                 id: status.patient_id,
                                 name: status.patient_name,
@@ -3026,7 +3027,7 @@
             try {
                 const response = await fetch('/api/generate', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', ...authHeaders() },
                     body: JSON.stringify(requestBody)
                 });
                 const patient = await response.json();
@@ -3088,7 +3089,7 @@
             selectedPatientId = patientId;
             
             try {
-                const response = await fetch(`/api/patients/${patientId}`);
+                const response = await fetch(`/api/patients/${patientId}`, { headers: authHeaders() });
                 const patient = await response.json();
                 
                 // Update header
@@ -3213,7 +3214,7 @@
                 }
 
                 // Load markdown for full record
-                const mdResponse = await fetch(`/api/patients/${patientId}?format=markdown`);
+                const mdResponse = await fetch(`/api/patients/${patientId}?format=markdown`, { headers: authHeaders() });
                 const mdData = await mdResponse.json();
                 document.getElementById('markdown-content').innerHTML = renderMarkdown(mdData.markdown);
 
@@ -3237,7 +3238,26 @@
         
         async function exportPatient(format) {
             if (!selectedPatientId) return;
-            window.open(`/api/patients/${selectedPatientId}/export/${format}`, '_blank');
+            // fetch, not window.open: a new tab can't carry the bearer token
+            try {
+                const response = await fetch(
+                    `/api/patients/${selectedPatientId}/export/${format}`,
+                    { headers: authHeaders() }
+                );
+                if (!response.ok) throw new Error(`Export failed (${response.status})`);
+                const disposition = response.headers.get('Content-Disposition') || '';
+                const match = disposition.match(/filename="?([^";]+)"?/);
+                const url = URL.createObjectURL(await response.blob());
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = match ? match[1] : `${selectedPatientId}.${format}`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('Failed to export patient:', error);
+            }
         }
         
         // Utility functions
@@ -3976,7 +3996,7 @@
 
             // Load markdown for full record
             try {
-                const mdResponse = await fetch(`/api/patients/${patient.id}?format=markdown`);
+                const mdResponse = await fetch(`/api/patients/${patient.id}?format=markdown`, { headers: authHeaders() });
                 const mdData = await mdResponse.json();
                 document.getElementById('markdown-content').innerHTML = renderMarkdown(mdData.markdown);
             } catch (e) {

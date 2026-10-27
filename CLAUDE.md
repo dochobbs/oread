@@ -352,6 +352,20 @@ pytest --cov=src tests/
 pytest tests/test_engine.py
 ```
 
+## Runtime Modes (October 2026)
+
+`src/runtime_config.py` picks the mode; defaults to `platform` when Supabase is configured, else `standalone`.
+
+| | Standalone | Platform |
+|---|---|---|
+| Auth | None (single local user) | Bearer token on every patient route; Metis sends one |
+| Bind | Loopback only; refuses `0.0.0.0` | Any |
+| Accounts/panels | 501 | Supabase-backed, queries run as the caller (RLS) |
+
+Env: `OREAD_MODE`, `OREAD_HOST`, `OREAD_PORT`, `OREAD_CORS_ORIGINS` (comma list, no `*`), `OREAD_MAX_PATIENTS`, `OREAD_MAX_JOBS`, `OREAD_MAX_CONCURRENT_GENERATIONS`, `OREAD_GENERATION_QUEUE_TIMEOUT`.
+
+Generated patients live in an in-memory, owner-scoped LRU store (`src/store.py`); a restart loses them. Never sign in on the shared Supabase client: use `new_anon_client()` for auth flows and `user.db()` for per-user queries.
+
 ## Environment
 
 - Python 3.11+

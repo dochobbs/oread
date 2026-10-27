@@ -35,7 +35,7 @@ if str(project_root) not in sys.path:
 from src import runtime_config
 from src.models import GenerationSeed, Sex, ComplexityTier, Patient
 from src.engines import PedsEngine
-from adult.adult_engine import AdultEngine as AdultEngineImpl
+from adult.adult_engine import AdultEngine as AdultEngineImpl, infer_age_from_description
 from src.exporters import export_json, export_json_summary, export_markdown, export_fhir, export_ccda, patient_to_context
 from src.auth import AuthenticatedUser, require_platform_user, require_user
 from src.db.client import new_anon_client, is_configured as db_configured
@@ -241,6 +241,18 @@ def generate_patient(request: GenerateRequest, user: AuthenticatedUser = Depends
 
     Returns the patient summary immediately. Use /api/patients/{id} to get full data.
     Sync handler: runs in the threadpool so generation never blocks the event loop.
+
+    Routing: AdultEngine for specialty internal_medicine; family_practice at
+    18+; any request aged 22+; and a request with no age whose description
+    implies an adult ("a 67-year-old", "elderly", "middle-aged", "adult").
+    Everything else goes to PedsEngine.
+
+    use_llm is honored by PedsEngine only. AdultEngine is template-driven and
+    ignores it (no LLM calls, no API key needed for adults).
+
+    Adult condition requests are checked before generation: an unknown
+    condition, or one impossible for the requested sex/age (PCOS in a male,
+    BPH at 25), returns 422.
     """
     # Build generation seed
     seed_params = {}
@@ -268,6 +280,11 @@ def generate_patient(request: GenerateRequest, user: AuthenticatedUser = Depends
 
     # Route to appropriate engine based on age and specialty
     age_months = request.age_months or (request.age * 12 if request.age else None)
+    desc_adult, desc_age = (False, None)
+    if age_months is None and request.description:
+      desc_adult, desc_age = infer_age_from_description(request.description)
+      if desc_age is not None:
+        age_months = desc_age * 12
     use_adult = False
     if request.specialty == "internal_medicine":
       use_adult = True
@@ -275,8 +292,19 @@ def generate_patient(request: GenerateRequest, user: AuthenticatedUser = Depends
       use_adult = True
     elif age_months and age_months >= 264:  # > 22 years, auto-route to adult
       use_adult = True
+    elif desc_adult:  # "elderly", "middle-aged", "adult" with no number
+      use_adult = True
 
     if use_adult:
+      if request.conditions:
+        age_years = request.age if request.age is not None else (
+          request.age_months // 12 if request.age_months is not None else None)
+        try:
+          keys = AdultEngineImpl.resolve_conditions(request.conditions)
+          AdultEngineImpl.validate_conditions(keys, request.sex, age_years)
+        except ValueError as exc:
+          # Our own validation message about the request, not an internal error.
+          raise HTTPException(status_code=422, detail=str(exc))
       engine = AdultEngineImpl(use_llm=request.use_llm, messiness_level=request.messiness_level)
     else:
       engine = PedsEngine(use_llm=request.use_llm, messiness_level=request.messiness_level)
@@ -1094,7 +1122,7 @@ def generate_encounter(
 
     # Reconstruct Patient object from stored record
     try:
-        patient = Patient(**db_patient["full_record"])
+        patient = Patient.from_stored(db_patient["full_record"])
     except Exception:
         logger.exception("Stored patient %s failed to load", patient_id)
         raise HTTPException(status_code=500, detail="Failed to load patient record")
@@ -1316,7 +1344,7 @@ def get_patient_timeline(
     full_record = db_patient.get("full_record", {})
     try:
         from src.models import Patient
-        patient = Patient(**full_record)
+        patient = Patient.from_stored(full_record)
     except Exception:
         logger.exception("Stored patient %s failed to load", patient_id)
         raise HTTPException(status_code=500, detail="Error loading patient")
@@ -1399,7 +1427,7 @@ def get_snapshot_at_age(
     full_record = db_patient.get("full_record", {})
     try:
         from src.models import Patient
-        patient = Patient(**full_record)
+        patient = Patient.from_stored(full_record)
     except Exception:
         logger.exception("Stored patient %s failed to load", patient_id)
         raise HTTPException(status_code=500, detail="Error loading patient")

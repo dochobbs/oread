@@ -8,9 +8,15 @@
 #   display: Human-readable name
 #   prevalence: Relative weight 0.01-0.50 (higher = more common)
 #   onset_age: [min, max] typical age range for onset
-#   sex: null | male | female (sex restriction)
+#   sex: null | male | female. Anatomic restriction only (BPH, ED, PCOS,
+#        menopause, endometriosis). A request that violates it is rejected.
+#   sex_predominance: null | male | female. Epidemiologic skew (e.g.
+#        hypothyroidism, gout). Weights random selection; never excludes.
+#   min_age: Optional hard minimum age (years) for the diagnosis to be valid.
 #   risk_factors: Conditions that increase likelihood (for clustering)
-#   meds: List of "drug dose" strings
+#   meds: List of "drug dose" strings. Each drug must have an entry in
+#         adult_medications.yaml (RxNorm code, route, frequency).
+#   first_line: Optional drug names (table keys) preferred for the first pick.
 #   labs: Monitoring tests ordered
 #   visits: annual | biannual | quarterly | monthly | quarterly_then_annual
 #
@@ -65,6 +71,8 @@ cardiovascular:
     onset_age: [30, 70]
     sex: null
     risk_factors: [obesity, type2_diabetes, hypothyroidism]
+    # ACC/AHA 2018 cholesterol guideline: statin first; ezetimibe is add-on.
+    first_line: [atorvastatin, rosuvastatin, simvastatin, pravastatin]
     meds:
       - atorvastatin 10mg
       - atorvastatin 20mg
@@ -158,6 +166,8 @@ metabolic:
     onset_age: [30, 70]
     sex: null
     risk_factors: [obesity, prediabetes, hypertension, hyperlipidemia]
+    # ADA Standards of Care 2026 sec. 9: metformin is the usual initial agent.
+    first_line: [metformin]
     meds:
       - metformin 500mg
       - metformin 1000mg
@@ -206,7 +216,8 @@ metabolic:
     display: Hypothyroidism, unspecified
     prevalence: 0.12
     onset_age: [25, 70]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: []
     meds:
       - levothyroxine 25mcg
@@ -222,7 +233,8 @@ metabolic:
     display: Thyrotoxicosis, unspecified
     prevalence: 0.02
     onset_age: [20, 60]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: []
     meds:
       - methimazole 5mg
@@ -237,7 +249,8 @@ metabolic:
     display: Gout, unspecified
     prevalence: 0.04
     onset_age: [35, 70]
-    sex: male
+    sex: null
+    sex_predominance: male
     risk_factors: [ckd, hypertension, obesity, type2_diabetes]
     meds:
       - allopurinol 100mg
@@ -285,6 +298,8 @@ respiratory:
     onset_age: [18, 55]
     sex: null
     risk_factors: [allergic_rhinitis, eczema]
+    # GINA 2024: every adult with asthma gets an ICS-containing controller (no SABA-only).
+    first_line: [budesonide/formoterol, fluticasone]
     meds:
       - fluticasone 44mcg
       - fluticasone 110mcg
@@ -300,7 +315,8 @@ respiratory:
     display: Obstructive sleep apnea
     prevalence: 0.15
     onset_age: [30, 70]
-    sex: male
+    sex: null
+    sex_predominance: male
     risk_factors: [obesity, hypertension]
     meds: []
     labs: [sleep_study]
@@ -329,7 +345,8 @@ mental_health:
     display: Major depressive disorder, single episode, unspecified
     prevalence: 0.08
     onset_age: [18, 65]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: [anxiety]
     meds:
       - sertraline 25mg
@@ -355,7 +372,8 @@ mental_health:
     display: Generalized anxiety disorder
     prevalence: 0.07
     onset_age: [18, 55]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: [depression]
     meds:
       - sertraline 50mg
@@ -412,7 +430,8 @@ mental_health:
     display: Attention-deficit hyperactivity disorder, unspecified
     prevalence: 0.05
     onset_age: [18, 45]
-    sex: male
+    sex: null
+    sex_predominance: male
     risk_factors: [anxiety, depression]
     meds:
       - amphetamine/dextroamphetamine 10mg
@@ -453,7 +472,8 @@ mental_health:
     display: Alcohol dependence, uncomplicated
     prevalence: 0.06
     onset_age: [20, 60]
-    sex: male
+    sex: null
+    sex_predominance: male
     risk_factors: [depression, anxiety]
     meds:
       - naltrexone 50mg
@@ -503,7 +523,8 @@ musculoskeletal:
     display: Rheumatoid arthritis, unspecified
     prevalence: 0.01
     onset_age: [25, 65]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: []
     meds:
       - methotrexate 7.5mg
@@ -521,7 +542,9 @@ musculoskeletal:
     display: Age-related osteoporosis without current pathological fracture
     prevalence: 0.10
     onset_age: [50, 80]
-    sex: female
+    min_age: 50  # M81.0 is age-related osteoporosis; ICD-10-CM M81.0
+    sex: null
+    sex_predominance: female
     risk_factors: [hypothyroidism]
     meds:
       - alendronate 70mg
@@ -554,7 +577,8 @@ musculoskeletal:
     display: Fibromyalgia
     prevalence: 0.02
     onset_age: [25, 60]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: [depression, anxiety, insomnia]
     meds:
       - duloxetine 30mg
@@ -608,7 +632,8 @@ gastrointestinal:
     display: Irritable bowel syndrome without diarrhea
     prevalence: 0.10
     onset_age: [20, 55]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: [anxiety, depression]
     meds:
       - dicyclomine 10mg
@@ -626,7 +651,8 @@ gastrointestinal:
     display: Constipation, unspecified
     prevalence: 0.12
     onset_age: [35, 80]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: [hypothyroidism]
     meds:
       - polyethylene glycol 17g
@@ -660,7 +686,6 @@ gastrointestinal:
     meds:
       - mesalamine 800mg
       - budesonide 9mg
-      - prednisone 40mg
       - azathioprine 50mg
       - adalimumab 40mg
       - infliximab 5mg/kg
@@ -679,7 +704,6 @@ gastrointestinal:
       - mesalamine 800mg
       - mesalamine 2.4g
       - budesonide 9mg
-      - prednisone 40mg
       - adalimumab 40mg
       - infliximab 5mg/kg
       - vedolizumab 300mg
@@ -710,7 +734,6 @@ renal:
       - lisinopril 10mg
       - losartan 50mg
       - sodium_bicarbonate 650mg
-      - sevelamer 800mg
     labs: [cmp, cbc, pth, phosphorus, gfr]
     visits: quarterly
 
@@ -719,7 +742,8 @@ renal:
     display: Calculus of kidney
     prevalence: 0.05
     onset_age: [25, 65]
-    sex: male
+    sex: null
+    sex_predominance: male
     risk_factors: [gout, obesity]
     meds:
       - potassium_citrate 10mEq
@@ -734,7 +758,8 @@ neurologic:
     display: Migraine, unspecified, not intractable, without status migrainosus
     prevalence: 0.12
     onset_age: [18, 50]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: [depression, anxiety]
     meds:
       - sumatriptan 50mg
@@ -777,7 +802,8 @@ neurologic:
     display: Parkinson's disease
     prevalence: 0.01
     onset_age: [55, 80]
-    sex: male
+    sex: null
+    sex_predominance: male
     risk_factors: []
     meds:
       - carbidopa/levodopa 25/100
@@ -848,6 +874,7 @@ genitourinary:
     display: Benign prostatic hyperplasia without lower urinary tract symptoms
     prevalence: 0.25
     onset_age: [45, 80]
+    min_age: 40  # Berry 1984 J Urol autopsy series: BPH rare before age 40
     sex: male
     risk_factors: [obesity]
     meds:
@@ -864,7 +891,8 @@ genitourinary:
     display: Overactive bladder
     prevalence: 0.12
     onset_age: [40, 80]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: [obesity, type2_diabetes]
     meds:
       - oxybutynin 5mg
@@ -881,6 +909,7 @@ genitourinary:
     display: Menopausal and female climacteric states
     prevalence: 0.10
     onset_age: [45, 58]
+    min_age: 40  # ACOG CO 605: menopause before 40 is primary ovarian insufficiency
     sex: female
     risk_factors: []
     meds:
@@ -921,7 +950,7 @@ genitourinary:
       - metformin 1000mg
       - spironolactone 50mg
       - spironolactone 100mg
-      - oral_contraceptive
+      - norgestimate/ethinyl_estradiol 0.25/0.035
     labs: [testosterone, dheas, fsh, lh, hba1c]
     visits: biannual
 
@@ -965,7 +994,8 @@ dermatologic:
     display: Rosacea, unspecified
     prevalence: 0.05
     onset_age: [30, 60]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: []
     meds:
       - metronidazole gel
@@ -1004,7 +1034,7 @@ infectious:
     risk_factors: []
     meds:
       - bictegravir/emtricitabine/tenofovir
-      - dolutegravir 50mg
+      - dolutegravir/lamivudine
       - elvitegravir/cobicistat/emtricitabine/tenofovir
     labs: [cd4, viral_load, cmp, cbc, lipid_panel]
     visits: quarterly
@@ -1041,7 +1071,8 @@ other_chronic:
     display: Anemia, unspecified
     prevalence: 0.08
     onset_age: [25, 80]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: [ckd_stage3, crohns_disease, ulcerative_colitis]
     meds:
       - ferrous_sulfate 325mg
@@ -1073,7 +1104,8 @@ other_chronic:
     display: Other fatigue
     prevalence: 0.05
     onset_age: [25, 60]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: [depression, hypothyroidism, sleep_apnea]
     meds: []
     labs: [cbc, cmp, tsh, iron_panel, vitamin_d, b12]
@@ -2823,6 +2855,7 @@ chronic_additional:
     display: Unspecified macular degeneration
     prevalence: 0.05
     onset_age: [60, 90]
+    min_age: 50  # AAO Preferred Practice Pattern AMD 2019: onset after 50
     sex: null
     risk_factors: [hypertension, smoking]
     meds:
@@ -2846,7 +2879,8 @@ chronic_additional:
     display: Restless legs syndrome
     prevalence: 0.07
     onset_age: [30, 70]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: [anemia, ckd_stage3]
     meds:
       - gabapentin 300mg
@@ -2861,7 +2895,8 @@ chronic_additional:
     display: Interstitial cystitis (chronic) without hematuria
     prevalence: 0.02
     onset_age: [25, 55]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: [fibromyalgia, ibs]
     meds:
       - pentosan polysulfate 100mg
@@ -2878,7 +2913,7 @@ chronic_additional:
     sex: female
     risk_factors: []
     meds:
-      - oral_contraceptive
+      - norgestimate/ethinyl_estradiol 0.25/0.035
       - medroxyprogesterone 10mg
       - leuprolide depot
       - norethindrone 5mg
@@ -2890,7 +2925,8 @@ chronic_additional:
     display: Pelvic and perineal pain
     prevalence: 0.04
     onset_age: [25, 55]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: [endometriosis, ibs, interstitial_cystitis]
     meds:
       - ibuprofen 600mg
@@ -2920,7 +2956,8 @@ chronic_additional:
     display: Barrett's esophagus without dysplasia
     prevalence: 0.02
     onset_age: [40, 70]
-    sex: male
+    sex: null
+    sex_predominance: male
     risk_factors: [gerd, obesity]
     meds:
       - omeprazole 40mg
@@ -2944,7 +2981,8 @@ chronic_additional:
     display: Multiple sclerosis
     prevalence: 0.003
     onset_age: [20, 50]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: []
     meds:
       - interferon beta-1a
@@ -2959,7 +2997,8 @@ chronic_additional:
     display: Systemic lupus erythematosus, unspecified
     prevalence: 0.002
     onset_age: [15, 45]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: []
     meds:
       - hydroxychloroquine 200mg
@@ -2974,7 +3013,8 @@ chronic_additional:
     display: Sicca syndrome, unspecified
     prevalence: 0.004
     onset_age: [40, 60]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: [rheumatoid_arthritis, lupus]
     meds:
       - pilocarpine 5mg
@@ -3016,7 +3056,8 @@ chronic_additional:
     display: Hidradenitis suppurativa
     prevalence: 0.01
     onset_age: [18, 40]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: [obesity, smoking]
     meds:
       - doxycycline 100mg
@@ -3030,7 +3071,8 @@ chronic_additional:
     display: Other urticaria
     prevalence: 0.02
     onset_age: [20, 50]
-    sex: female
+    sex: null
+    sex_predominance: female
     risk_factors: []
     meds:
       - cetirizine 10mg
@@ -3062,6 +3104,5 @@ chronic_additional:
     risk_factors: [hypothyroidism]
     meds:
       - tacrolimus ointment
-      - phototherapy
     labs: [tsh]
     visits: annual

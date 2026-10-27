@@ -5440,7 +5440,6 @@ VITAL SIGNS:
                             code=icd10,
                             display=stage_name,
                         ),
-                        snomed_code=snomed,
                         clinical_status=ConditionStatus.ACTIVE,
                         onset_date=self._months_to_date(patient.demographics.date_of_birth, start_age),
                     )

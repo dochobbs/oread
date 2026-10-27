@@ -37,6 +37,7 @@ VERIFIED: dict[str, str] = {
     "41126": "fluticasone",
     "4832": "glucagon",
     "5492": "hydrocortisone",
+    "5640": "ibuprofen",
     "274783": "insulin glargine",
     "86009": "insulin lispro",
     "114477": "levetiracetam",

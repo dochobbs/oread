@@ -73,14 +73,20 @@ def test_extended_bmi_above_95th():
 
 
 def test_no_3_to_97_clamp():
-  traj = g.GrowthTrajectory("male", weight_percentile=96, pattern="obesity",
-                            pattern_onset_age=24, rng=random.Random(1))
-  pcts = []
-  for age in range(24, 200, 12):
-    traj.generate_measurement(age)
-    pcts.append(traj.weight_percentile)
-  assert max(pcts) > 97
-  assert all(g.PERCENTILE_FLOOR <= p <= g.PERCENTILE_CEILING for p in pcts)
+  # Obesity is defined on BMI-for-age, which the obesity pattern drives; with
+  # no 3-97 clamp, BMI percentiles above 97 must be reachable, and once the
+  # 6-month ramp is done the child stays >= 95th.
+  bmi_pcts = []
+  for seed in range(1, 6):
+    traj = g.GrowthTrajectory("male", weight_percentile=96, pattern="obesity",
+                              pattern_onset_age=24, rng=random.Random(seed))
+    for age in range(30, 200, 12):
+      w, h, _, bmi = traj.generate_measurement(age)
+      pct = g.calculate_bmi_percentile(bmi, age, "male").percentile
+      bmi_pcts.append(pct)
+      assert pct >= 95, (seed, age, pct)
+      assert g.PERCENTILE_FLOOR <= traj.weight_percentile <= g.PERCENTILE_CEILING
+  assert max(bmi_pcts) > 97
 
 
 def test_trajectory_reproducible_with_rng():

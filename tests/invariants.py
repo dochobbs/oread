@@ -12,7 +12,7 @@ no uncited dose or age numbers.
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from xml.etree import ElementTree as ET
 
 from dateutil.relativedelta import relativedelta
@@ -172,35 +172,39 @@ def check_vaccine_series(patient: Patient) -> list[str]:
     return out
 
 
-# Minimum and maximum age (days) per antigen dose. Uses the 4-day grace period.
+# Minimum and maximum ages per antigen dose, as calendar spans from DOB (ACIP
+# ages are calendar ages: "6 months" is DOB + 6 months, 181-184 days). The
+# 4-day grace period applies to minimums.
 # Source: CDC/ACIP General Best Practice Guidelines, Table 3-1 (min ages);
 # rotavirus max ages from AAP Red Book (dose 1 by 14w6d, last dose by 8m0d).
-_GRACE = 4
-MIN_AGE_DAYS: dict[str, int] = {
-    "DTaP": 42, "IPV": 42, "Hib": 42, "PCV": 42, "RV": 42,
-    "MMR": 365, "VAR": 365, "HepA": 365, "Flu": 182, "HPV": 9 * 365,
+_GRACE = timedelta(days=4)
+MIN_AGE: dict[str, relativedelta] = {
+    "DTaP": relativedelta(weeks=6), "IPV": relativedelta(weeks=6),
+    "Hib": relativedelta(weeks=6), "PCV": relativedelta(weeks=6), "RV": relativedelta(weeks=6),
+    "MMR": relativedelta(months=12), "VAR": relativedelta(months=12),
+    "HepA": relativedelta(months=12), "Flu": relativedelta(months=6),
+    "HPV": relativedelta(years=9),
 }
-RV_FIRST_DOSE_MAX_DAYS = 14 * 7 + 6
-RV_LAST_DOSE_MAX_DAYS = 8 * 30 + 1  # 8 months 0 days
+RV_FIRST_DOSE_MAX = relativedelta(weeks=14, days=6)
+RV_LAST_DOSE_MAX = relativedelta(months=8)
 
 
 def check_vaccine_ages(patient: Patient) -> list[str]:
     """No dose given before its minimum age or (rotavirus) after its maximum."""
+    dob = patient.demographics.date_of_birth
     out = []
-    for group, min_days in MIN_AGE_DAYS.items():
+    for group, span in MIN_AGE.items():
         for imm in _doses(patient, group):
-            age = _age_days(patient, imm.date)
-            if age < min_days - _GRACE:
-                out.append(f"{group} given at {age}d, minimum {min_days}d")
+            if _d(imm.date) < dob + span - _GRACE:
+                out.append(f"{group} given at {_age_days(patient, imm.date)}d, "
+                           f"minimum {(dob + span - dob).days}d")
     rv = _doses(patient, "RV")
     if rv:
-        first = _age_days(patient, rv[0].date)
-        if first > RV_FIRST_DOSE_MAX_DAYS:
-            out.append(f"RV dose 1 at {first}d, max {RV_FIRST_DOSE_MAX_DAYS}d")
+        if _d(rv[0].date) > dob + RV_FIRST_DOSE_MAX:
+            out.append(f"RV dose 1 at {_age_days(patient, rv[0].date)}d, max 14w6d")
         for imm in rv:
-            age = _age_days(patient, imm.date)
-            if age > RV_LAST_DOSE_MAX_DAYS:
-                out.append(f"RV given at {age}d, max {RV_LAST_DOSE_MAX_DAYS}d")
+            if _d(imm.date) > dob + RV_LAST_DOSE_MAX:
+                out.append(f"RV given at {_age_days(patient, imm.date)}d, max 8m0d")
     return out
 
 
@@ -717,3 +721,114 @@ def check_format_parity(patient: Patient, bundle: dict, xml: str, markdown: str)
     if model_not_done and not re.search(r"not given|refused|declined|not done", markdown, re.I):
         out.append(f"{model_not_done} refused vaccines but Markdown never says so")
     return out
+
+
+# --------------------------------------------------------------------------- #
+# Found by the 2026-10-27 peds stress sweep                                   #
+# --------------------------------------------------------------------------- #
+
+def _messy(patient: Patient) -> bool:
+    """Messiness > 0 injects deliberate chart errors (duplicates, kg/lb mixups)."""
+    return (patient.generation_seed or {}).get("messiness_level", 0) > 0
+
+
+def check_growth_monotonic(patient: Patient) -> list[str]:
+    """Height and head circumference never decrease (0.5 cm measurement slack)."""
+    out = []
+    g = sorted(patient.growth_data, key=lambda m: m.date)
+    for a, b in zip(g, g[1:]):
+        if a.height_cm and b.height_cm and b.height_cm < a.height_cm - 0.5:
+            out.append(f"height {a.height_cm} -> {b.height_cm} ({a.date} -> {b.date})")
+        if a.head_circumference_cm and b.head_circumference_cm and \
+                b.head_circumference_cm < a.head_circumference_cm - 0.5:
+            out.append(f"HC {a.head_circumference_cm} -> {b.head_circumference_cm}")
+    return out
+
+
+def check_obesity_bmi(patient: Patient) -> list[str]:
+    """Active obesity: latest BMI-for-age >= 95th (CDC definition); percentile recorded."""
+    if _messy(patient) or not _has_condition(patient, "obesity"):
+        return []
+    g = [m for m in patient.growth_data if m.bmi is not None]
+    if not g:
+        return []
+    last = max(g, key=lambda m: m.date)
+    if last.bmi_percentile is None:
+        return ["obesity, growth record has no BMI percentile"]
+    if last.bmi_percentile < 94.5:
+        return [f"obesity but latest BMI {last.bmi_percentile:.0f}th"]
+    return []
+
+
+# Allergen -> drug-name fragments it rules out (mirrors PedsEngine._ALLERGY_AVOID)
+_ALLERGY_AVOID = {
+    "penicillin": ("penicillin", "amoxicillin", "ampicillin"),
+    "amoxicillin": ("penicillin", "amoxicillin", "ampicillin"),
+    "sulfonamide": ("sulfamethoxazole",), "sulfa": ("sulfamethoxazole",),
+    "cephalosporin": ("ceph", "cef"),
+    "ibuprofen": ("ibuprofen", "naproxen"),
+}
+
+
+def check_allergy_conflicts(patient: Patient) -> list[str]:
+    """Nothing prescribed after an allergy to it was on record."""
+    out = []
+    for a in patient.allergy_list:
+        if a.category.value != "medication" or a.clinical_status != "active":
+            continue
+        known = a.recorded_date or a.onset_date
+        if not known:
+            continue
+        substance = a.display_name.lower().removesuffix(" allergy").strip()
+        avoid = _ALLERGY_AVOID.get(substance, (substance,))
+        for m in _all_meds(patient):
+            if _d(m.start_date) > known and any(x in m.display_name.lower() for x in avoid):
+                out.append(f"{m.display_name} on {m.start_date} after {a.display_name} ({known})")
+    return sorted(set(out))
+
+
+def check_no_same_day_duplicates(patient: Patient) -> list[str]:
+    """One visit per type per day (messiness injects duplicates on purpose)."""
+    if _messy(patient):
+        return []
+    from collections import Counter
+    c = Counter((_d(e.date), e.type.value) for e in patient.encounters)
+    return [f"{n} {t} visits on {d}" for (d, t), n in c.items() if n > 1]
+
+
+def check_developmental_screens(patient: Patient) -> list[str]:
+    """AAP: general screen at 9, 18, 30 mo; M-CHAT at 18 and 24 mo (at those well visits)."""
+    out = []
+    dob = patient.demographics.date_of_birth
+    for e in patient.encounters:
+        if e.type.value != "well-child":
+            continue
+        age = (_d(e.date) - dob).days / 30.4375
+        tools = [s.tool for s in (e.developmental_screens or
+                                  ([e.developmental_screen] if e.developmental_screen else []))]
+        for target, need in ((9, "ASQ"), (18, "ASQ"), (18, "M-CHAT"), (24, "M-CHAT"), (30, "ASQ")):
+            if abs(age - target) <= 0.75 and not any(need in t for t in tools):
+                out.append(f"{target}-month visit without {need} (tools: {tools})")
+    return out
+
+
+def check_display_text(patient: Patient) -> list[str]:
+    """No snake_case condition keys in chief complaints or problem names."""
+    out = []
+    pat = re.compile(r"\b[a-z]+_[a-z_]+\b")
+    for e in patient.encounters:
+        if pat.search(e.chief_complaint or ""):
+            out.append(f"chief complaint '{e.chief_complaint}'")
+            break
+    for c in patient.problem_list:
+        if "_" in c.display_name:
+            out.append(f"problem '{c.display_name}'")
+    return out
+
+
+def check_food_allergy_listed(patient: Patient) -> list[str]:
+    """A food-allergy problem has a food allergen in the allergy list."""
+    if _has_condition(patient, "food allerg") and \
+            not any(a.category.value == "food" for a in patient.allergy_list):
+        return ["food allergy problem, no food allergen in allergy_list"]
+    return []

@@ -317,6 +317,19 @@ def calculate_bmi(weight_kg: float, height_cm: float) -> float:
     return round(weight_kg / (height_m * height_m), 1)
 
 
+def bmi_at_percentile(percentile: float, age_months: float, sex: Sex) -> float:
+    """BMI value at a BMI-for-age percentile (24+ months).
+
+    Inverse of calculate_bmi_percentile: LMS up to the 95th, CDC 2022 extended
+    method above it (percentile = 90 + 10 * Phi((BMI - P95) / sigma)).
+    """
+    L, M, S, sigma, p95 = _bmi_extended(age_months, sex)
+    if percentile <= 95:
+        return _value_from_lms_z(_z_from_percentile(percentile), L, M, S)
+    q = min((percentile - 90) / 10, 0.9999)
+    return p95 + sigma * float(stats.norm.ppf(q))
+
+
 def _value_at_percentile(measure: str, percentile: float, age_months: float, sex: Sex) -> float:
     L, M, S = _lms(measure, age_months, sex)
     return _value_from_lms_z(_z_from_percentile(percentile), L, M, S)
@@ -452,6 +465,20 @@ class GrowthTrajectory:
         else:
             self._corrected_age_offset = 0
 
+        # Each child's channel: the percentile it tracks. Random noise reverts
+        # toward it; a growth pattern's bias moves the channel itself, so
+        # obesity / FTT still cross percentiles while normal kids track.
+        self._channel = {
+            "weight": self.weight_percentile,
+            "height": self.height_percentile,
+            "hc": self.hc_percentile,
+        }
+        self._last_height: float | None = None
+        self._last_hc: float | None = None
+        # Obesity pattern: the BMI percentile this child settles at (chosen on
+        # first use, so it comes from the seeded rng)
+        self._obesity_bmi_target: float | None = None
+
         # Track history
         self._measurements: list[tuple[float, float, float, float | None]] = []
 
@@ -472,9 +499,13 @@ class GrowthTrajectory:
 
         elif self.pattern == "obesity":
             if age_months >= self.pattern_onset_age:
-                # Weight drifts up, height stays normal
+                # Steer the weight channel toward the obese range: CDC defines
+                # obesity as BMI >= 95th percentile for age and sex. Converges
+                # over a few visits instead of a fixed nudge that could stall
+                # below the 95th.
                 time_factor = min(1.0, (age_months - self.pattern_onset_age) / 24)
-                return (2.0 * (0.5 + time_factor), 0.0)
+                gap = max(0.0, self.OBESITY_TARGET_PERCENTILE - self._channel["weight"])
+                return (gap * (0.35 + 0.65 * time_factor), 0.0)
             return (0.0, 0.0)
 
         elif self.pattern == "preterm_catchup":
@@ -498,20 +529,34 @@ class GrowthTrajectory:
 
         return (0.0, 0.0)  # Normal pattern
 
+    # Pull toward the channel per measurement, and noise SD (percentile points
+    # per unit variance). Infants cross percentiles more than older children,
+    # who track their channel (Bright Futures; Mei et al., Pediatrics 2004).
+    # Above the 95th cut-off with room for visit-to-visit noise
+    OBESITY_TARGET_PERCENTILE = 98.5
+    _REVERSION = 0.4
+    _NOISE_UNDER_2Y = 15.0
+    _NOISE_OVER_2Y = {"weight": 8.0, "height": 4.0, "hc": 4.0}
+
     def _drift_percentile(
         self,
         current: float,
         variance: float,
         bias: float = 0.0,
+        metric: str = "weight",
+        age_months: float = 0.0,
     ) -> float:
-        """Apply random walk to a percentile with optional directional bias."""
-        # Scale variance to percentile points - increased multiplier for more variation
-        drift = self._rng.gauss(bias, variance * 15)
-        new = current + drift
-        # Blend new (85%) with current (15%) for channel tracking. Only
-        # numerical bounds apply: no 3rd-97th clamp, so severe obesity and
-        # true failure to thrive can be generated.
-        return max(PERCENTILE_FLOOR, min(PERCENTILE_CEILING, new * 0.85 + current * 0.15))
+        """Mean-reverting walk around the child's channel; bias moves the channel.
+
+        Only numerical bounds apply (no 3rd-97th clamp), so severe obesity and
+        true failure to thrive can still be generated.
+        """
+        channel = self._channel.get(metric, current) + bias
+        channel = max(PERCENTILE_FLOOR, min(PERCENTILE_CEILING, channel))
+        self._channel[metric] = channel
+        noise = self._NOISE_UNDER_2Y if age_months < 24 else self._NOISE_OVER_2Y.get(metric, 8.0)
+        new = current + self._REVERSION * (channel - current) + self._rng.gauss(0, variance * noise)
+        return max(PERCENTILE_FLOOR, min(PERCENTILE_CEILING, new))
     
     def generate_measurement(
         self,
@@ -533,10 +578,12 @@ class GrowthTrajectory:
 
         # Apply drift to percentiles with pattern-aware bias
         self.weight_percentile = self._drift_percentile(
-            self.weight_percentile, self.variance, bias=weight_bias
+            self.weight_percentile, self.variance, bias=weight_bias,
+            metric="weight", age_months=age_months,
         )
         self.height_percentile = self._drift_percentile(
-            self.height_percentile, self.variance, bias=height_bias
+            self.height_percentile, self.variance, bias=height_bias,
+            metric="height", age_months=age_months,
         )
 
         # Generate measurements
@@ -546,6 +593,10 @@ class GrowthTrajectory:
         height = generate_height_at_percentile(
             self.height_percentile, age_months, self.sex
         )
+        # Children don't shrink: never report less than the last height
+        if self._last_height is not None and height < self._last_height:
+            height = self._last_height
+        self._last_height = height
 
         # Head circumference (only for 0-36 months)
         hc = None
@@ -553,11 +604,32 @@ class GrowthTrajectory:
             include_hc = age_months <= 36
         if include_hc and age_months <= 36:
             self.hc_percentile = self._drift_percentile(
-                self.hc_percentile, self.variance
+                self.hc_percentile, self.variance, metric="hc", age_months=age_months,
             )
             hc = generate_hc_at_percentile(
                 self.hc_percentile, age_months, self.sex
             )
+            if self._last_hc is not None and hc < self._last_hc:
+                hc = self._last_hc
+            self._last_hc = hc
+
+        # Obesity is defined by BMI-for-age >= 95th (CDC), so drive BMI rather
+        # than weight: ramp to this child's target over the 6 months after the
+        # pattern starts (which the engine sets 6 months before diagnosis),
+        # then derive weight from BMI and height.
+        start = max(24.0, float(self.pattern_onset_age))
+        if self.pattern == "obesity" and age_months >= start:
+            if self._obesity_bmi_target is None:
+                self._obesity_bmi_target = self._rng.uniform(96.5, 99.5)
+            natural = calculate_bmi_percentile(calculate_bmi(weight, height), age_months, self.sex).percentile
+            frac = min(1.0, (age_months - start) / 6.0)
+            pct = natural + frac * max(0.0, self._obesity_bmi_target - natural)
+            weight = round(bmi_at_percentile(pct, age_months, self.sex) * (height / 100) ** 2, 2)
+            if age_months <= 240:
+                self.weight_percentile = max(PERCENTILE_FLOOR, min(
+                    PERCENTILE_CEILING,
+                    calculate_weight_percentile(weight, age_months, self.sex).percentile))
+            self._channel["weight"] = self.weight_percentile
 
         # BMI (only for 24+ months)
         bmi = None

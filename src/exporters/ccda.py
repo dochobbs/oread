@@ -1990,8 +1990,10 @@ class CCDAExporter:
         # Collect developmental screens from encounters (well-child visits)
         developmental_screens = []
         for enc in patient.encounters:
-            if enc.developmental_screen:
-                developmental_screens.append((enc.date, enc.developmental_screen))
+            screens = enc.developmental_screens or (
+                [enc.developmental_screen] if enc.developmental_screen else [])
+            for screen in screens:
+                developmental_screens.append((enc.date, screen))
 
         # Combine patient-level milestones and encounter-based screens
         has_data = patient.developmental_milestones or developmental_screens

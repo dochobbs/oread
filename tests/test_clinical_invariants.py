@@ -344,6 +344,105 @@ def test_exam_age_appropriate(peds):
 
 
 # --------------------------------------------------------------------------- #
+# Found by the 2026-10-27 peds stress sweep                                   #
+# --------------------------------------------------------------------------- #
+
+def test_growth_never_shrinks(peds):
+    _assert_none(peds, inv.check_growth_monotonic)
+
+
+def test_obesity_bmi_at_least_95th(peds):
+    _assert_none(peds, inv.check_obesity_bmi)
+
+
+def test_no_prescription_after_allergy(peds):
+    _assert_none(peds, inv.check_allergy_conflicts)
+
+
+def test_no_same_day_duplicate_visits(peds):
+    _assert_none(peds, inv.check_no_same_day_duplicates)
+
+
+def test_developmental_screens_at_aap_ages(peds):
+    _assert_none(peds, inv.check_developmental_screens)
+
+
+def test_display_text_not_snake_case(peds):
+    _assert_none(peds, inv.check_display_text)
+
+
+def test_food_allergy_in_allergy_list(peds):
+    _assert_none(peds, inv.check_food_allergy_listed)
+
+
+def test_allergy_aware_selection():
+    """A recorded penicillin allergy removes the penicillin class; azithromycin
+    substitutes for non-urinary infections; a later allergy changes nothing."""
+    from datetime import date as _date
+    engine = PedsEngine(use_llm=False)
+    engine._discovered_allergies = [{"substance": "Penicillin", "discovery_date": _date(2024, 1, 1)}]
+    meds = [
+        {"agent": "Amoxicillin", "rxnorm": "723", "indication": "first-line for AOM",
+         "choice_group": "antibiotic"},
+        {"agent": "Amoxicillin-Clavulanate", "rxnorm": "19711", "indication": "AOM failure",
+         "choice_group": "antibiotic", "use_when": {"recent_class_days": 30}},
+        {"agent": "Ibuprofen", "rxnorm": "5640", "prn": True, "indication": "pain"},
+    ]
+    after = [m["agent"] for m in engine._select_acute_meds(meds, _date(2025, 1, 1))]
+    assert "Amoxicillin" not in after and "Amoxicillin-Clavulanate" not in after
+    assert "Azithromycin" in after and "Ibuprofen" in after
+    before = [m["agent"] for m in engine._select_acute_meds(meds, _date(2023, 6, 1))]
+    assert "Amoxicillin" in before
+
+    uti = [{"agent": "Cephalexin", "rxnorm": "2231", "indication": "UTI",
+            "choice_group": "antibiotic"}]
+    engine._discovered_allergies = [{"substance": "Cephalosporin", "discovery_date": _date(2024, 1, 1)}]
+    assert engine._select_acute_meds(uti, _date(2025, 1, 1)) == []  # no macrolide for UTI
+
+
+def test_every_disease_arc_stage_is_codable():
+    """Timeline snapshots code arc stages; an uncodable stage name crashes them."""
+    import yaml
+    engine = PedsEngine(use_llm=False)
+    arcs = yaml.safe_load((ROOT / "knowledge/conditions/disease_arcs.yaml").read_text())
+    stages = set()
+
+    def walk(node):
+        if isinstance(node, dict):
+            for key, val in node.items():
+                if key == "stages" and isinstance(val, list):
+                    for st in val:
+                        if isinstance(st, dict):
+                            stages.add(st.get("display_name") or st.get("name") or st.get("condition_key"))
+                walk(val)
+        elif isinstance(node, list):
+            for x in node:
+                walk(x)
+    walk(arcs)
+    stages.discard(None)
+    assert stages, "found no arc stages; the YAML layout changed"
+    bad = []
+    for name in sorted(stages):
+        try:
+            engine._resolve_icd10(name)
+        except ValueError:
+            bad.append(name)
+    assert not bad, f"uncodable arc stages: {bad}"
+
+
+def test_snapshot_at_every_age_does_not_crash():
+    """Regression: arc stages older than the child gave randint(min > max)."""
+    engine = PedsEngine(use_llm=False)
+    for age, conds, seed in ((13, ["food_allergy", "anxiety_disorder"], 1),
+                             (30, ["eczema", "food_allergy"], 2),
+                             (60, ["otitis_media", "asthma"], 3)):
+        p = engine.generate(GenerationSeed(age_months=age, conditions=conds, random_seed=seed))
+        engine.generate_timeline(patient=p)
+        for a in range(0, p.demographics.age_months + 1):
+            engine.get_snapshot_at_age(patient=p, age_months=a)
+
+
+# --------------------------------------------------------------------------- #
 # Exports                                                                     #
 # --------------------------------------------------------------------------- #
 

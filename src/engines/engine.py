@@ -83,6 +83,9 @@ class EncounterStub(BaseModel):
     conditions_to_address: list[str]
     is_new_condition_diagnosis: bool = False
     new_condition: str | None = None
+    # Well visits: the Bright Futures visit age (e.g. 18), independent of the
+    # jittered visit date. Drives age-specific screening.
+    scheduled_age_months: int | None = None
 
 
 class BaseEngine(ABC):
@@ -1398,7 +1401,8 @@ Examples:
         height_pct = max(5, min(95, height_pct))
 
         # Select growth pattern based on conditions
-        pattern, pattern_kwargs = self._select_growth_pattern(life_arc.major_conditions)
+        pattern, pattern_kwargs = self._select_growth_pattern(
+            life_arc.major_conditions, life_arc.condition_onset_ages)
 
         growth = GrowthTrajectory(
             sex=sex,
@@ -1471,6 +1475,14 @@ Examples:
             encounters.append(encounter)
             if growth_data and growth_data[-1].date == stub.date and growth_data[-1].encounter_id is None:
                 growth_data[-1].encounter_id = encounter.id
+                # Percentiles are computed on the encounter; keep the growth
+                # record (what charts and exports read) in sync with them
+                gp = encounter.growth_percentiles
+                if gp:
+                    growth_data[-1].weight_percentile = gp.weight_percentile
+                    growth_data[-1].height_percentile = gp.height_percentile
+                    growth_data[-1].hc_percentile = gp.hc_percentile
+                    growth_data[-1].bmi_percentile = gp.bmi_percentile
             
             # Collect immunizations
             immunizations.extend(encounter.immunizations_given)
@@ -2221,6 +2233,7 @@ Examples:
                 type=EncounterType.NEWBORN if visit_age == 0 else EncounterType.WELL_CHILD,
                 reason=f"Well-child visit - {self._age_to_description(visit_age)}",
                 conditions_to_address=[],
+                scheduled_age_months=visit_age,
             )
             stubs.append(stub)
         
@@ -2276,11 +2289,12 @@ Examples:
 
             # Self-limited conditions (bronchiolitis, AOM, ...) are a single
             # acute visit with an acute plan, not a chronic follow-up series.
+            ykey = self._get_condition_key(condition) or condition
+            display = (self._conditions.get(ykey) or {}).get(
+                'display_name', condition.replace('_', ' ').title())
+
             if self._abatement_for(condition, diagnosis_date) is not None or \
                     self._is_acute_condition(condition):
-                ykey = self._get_condition_key(condition) or condition
-                display = (self._conditions.get(ykey) or {}).get(
-                    'display_name', condition.replace('_', ' ').title())
                 stubs.append(EncounterStub(
                     date=diagnosis_date,
                     type=EncounterType.ACUTE_ILLNESS,
@@ -2294,7 +2308,7 @@ Examples:
             stubs.append(EncounterStub(
                 date=diagnosis_date,
                 type=EncounterType.CHRONIC_FOLLOWUP,
-                reason=f"Evaluation for {condition.lower()} symptoms",
+                reason=f"Evaluation for {display.lower()} symptoms",
                 conditions_to_address=[condition],
                 is_new_condition_diagnosis=True,
                 new_condition=condition,
@@ -2308,7 +2322,7 @@ Examples:
                     stubs.append(EncounterStub(
                         date=fu_date,
                         type=EncounterType.CHRONIC_FOLLOWUP,
-                        reason=f"{condition} follow-up",
+                        reason=f"{display} follow-up",
                         conditions_to_address=[condition],
                     ))
                 follow_up_age += self.rng.randint(3, 6)
@@ -2322,6 +2336,7 @@ Examples:
 
         # Sort by date
         stubs.sort(key=lambda s: s.date)
+        stubs = self._consolidate_same_day_stubs(stubs, dob, today)
 
         # Limit to requested count if specified
         if seed.encounter_count:
@@ -2331,6 +2346,56 @@ Examples:
         self._discovered_allergies = discovered_allergies
 
         return stubs
+
+    def _consolidate_same_day_stubs(
+        self, stubs: list[EncounterStub], dob: date, today: date
+    ) -> list[EncounterStub]:
+        """No two visits of the same kind on one day.
+
+        Chronic follow-ups on the same day become one visit addressing every
+        condition (a new diagnosis keeps its own visit). A second acute or
+        injury visit on a day moves to a later free day (a separate illness),
+        or is dropped if no day fits before today.
+        """
+        out: list[EncounterStub] = []
+        taken: set[tuple[date, EncounterType]] = set()
+        followups: dict[date, EncounterStub] = {}
+        for stub in stubs:
+            if stub.type == EncounterType.CHRONIC_FOLLOWUP and not stub.is_new_condition_diagnosis:
+                existing = followups.get(stub.date)
+                if existing is not None:
+                    for cond in stub.conditions_to_address:
+                        if cond not in existing.conditions_to_address:
+                            existing.conditions_to_address.append(cond)
+                    existing.reason = self._followup_reason(existing.conditions_to_address)
+                    continue
+                followups[stub.date] = stub
+            key = (stub.date, stub.type)
+            if key in taken and stub.type in (EncounterType.ACUTE_ILLNESS,
+                                              EncounterType.ACUTE_INJURY,
+                                              EncounterType.CHRONIC_FOLLOWUP):
+                for shift in range(self.rng.randint(5, 10), 45):
+                    candidate = stub.date + timedelta(days=shift)
+                    if candidate > today:
+                        break
+                    if (candidate, stub.type) not in taken:
+                        stub.date = candidate
+                        key = (candidate, stub.type)
+                        break
+                if key in taken:
+                    continue  # nowhere to put it
+            taken.add(key)
+            out.append(stub)
+        out.sort(key=lambda s: s.date)
+        return out
+
+    def _followup_reason(self, conditions: list[str]) -> str:
+        names = []
+        for cond in conditions:
+            ykey = self._get_condition_key(cond) or cond
+            names.append((self._conditions.get(ykey) or {}).get(
+                "display_name", cond.replace("_", " ").title()))
+        return f"{' and '.join(names)} follow-up"
 
     def _generate_life_events(
         self,
@@ -2710,9 +2775,10 @@ Examples:
             )
 
         # Generate developmental screening for well-child visits
-        developmental_screen = None
+        developmental_screens: list[DevelopmentalScreen] = []
         if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN):
-            developmental_screen = self._generate_developmental_screen(age_months, stub.date)
+            screen_age = stub.scheduled_age_months if stub.scheduled_age_months is not None else age_months
+            developmental_screens = self._generate_developmental_screens(screen_age, stub.date)
 
         # Generate lab results for acute illness encounters
         lab_results = self._generate_labs(condition_key, stub.date, stub.type)
@@ -2752,7 +2818,8 @@ Examples:
             hpi=self._template_hpi(stub, demographics, age_months, condition_key,
                                    vitals.temperature_f),
             anticipatory_guidance=self._generate_anticipatory_guidance_list(age_months) if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN) else [],
-            developmental_screen=developmental_screen,
+            developmental_screen=developmental_screens[0] if developmental_screens else None,
+            developmental_screens=developmental_screens,
         )
         
         # Note: Narrative generation is now done in parallel after all encounters are created
@@ -3072,11 +3139,14 @@ Examples:
     def _select_growth_pattern(
         self,
         conditions: list[str],
+        onset_ages: dict[str, int] | None = None,
     ) -> tuple[str, dict]:
         """Select a growth pattern based on patient conditions.
 
         Args:
             conditions: List of condition names (display names or keys)
+            onset_ages: Condition name -> onset age in months (life arc), used to
+                start an obesity pattern ahead of the obesity diagnosis
 
         Returns:
             Tuple of (pattern_name, pattern_kwargs dict)
@@ -3100,9 +3170,14 @@ Examples:
             "metabolic syndrome", "insulin resistance",
         ]
         for obesity_cond in obesity_conditions:
-            for cond in conditions_lower:
-                if obesity_cond in cond:
-                    return "obesity", {"pattern_onset_age": self.rng.randint(36, 72)}
+            for cond, cond_lower in zip(conditions, conditions_lower):
+                if obesity_cond in cond_lower:
+                    # BMI must already be >= 95th when obesity is diagnosed, so
+                    # weight gain starts ahead of the diagnosis (never before 2 y,
+                    # when BMI-for-age begins).
+                    onset = (onset_ages or {}).get(cond)
+                    start = max(24, onset - 6) if onset is not None else self.rng.randint(36, 72)
+                    return "obesity", {"pattern_onset_age": start}
 
         # Check for prematurity
         preterm_conditions = [
@@ -3129,7 +3204,23 @@ Examples:
         # Default to normal growth
         return "normal", {}
 
-    def _generate_developmental_screen(self, age_months: int, visit_date: date) -> DevelopmentalScreen | None:
+    def _generate_developmental_screens(self, age_months: int, visit_date: date) -> list[DevelopmentalScreen]:
+        """Screens for a well visit at a scheduled age.
+
+        AAP (Bright Futures; Lipkin & Macias, Pediatrics 2020): general
+        developmental screening at 9, 18 and 30 months; autism-specific
+        screening (M-CHAT-R/F) at 18 and 24 months. At 18 months both are done.
+        """
+        if age_months == 18:
+            screens = [self._generate_developmental_screen(18, visit_date, forced_tool="ASQ-3"),
+                       self._generate_developmental_screen(18, visit_date, forced_tool="M-CHAT-R/F")]
+        else:
+            screens = [self._generate_developmental_screen(age_months, visit_date)]
+        return [s for s in screens if s]
+
+    def _generate_developmental_screen(
+        self, age_months: int, visit_date: date, forced_tool: str | None = None
+    ) -> DevelopmentalScreen | None:
         """Generate age-appropriate developmental screening for well-child visits."""
         # AAP recommends developmental screening at 9, 18, and 30 months
         # Autism screening (M-CHAT-R) at 18 and 24 months
@@ -3145,10 +3236,13 @@ Examples:
             domains = ["gross-motor", "fine-motor", "communication", "problem-solving", "personal-social"]
         elif age_months <= 24:
             if age_months in [18, 24]:
-                tool = self.rng.choice(["ASQ-3", "M-CHAT-R/F"])
+                tool = forced_tool or ("M-CHAT-R/F" if age_months == 24 else "ASQ-3")
             else:
                 tool = "Developmental Surveillance"
-            domains = ["gross-motor", "fine-motor", "language", "social-emotional", "cognitive"]
+            if tool.startswith("M-CHAT"):
+                domains = ["social-communication", "joint-attention", "restricted-repetitive"]
+            else:
+                domains = ["gross-motor", "fine-motor", "language", "social-emotional", "cognitive"]
         elif age_months <= 36:
             tool = "ASQ-3" if age_months == 30 else "Developmental Surveillance"
             domains = ["gross-motor", "fine-motor", "language", "social-emotional", "cognitive"]
@@ -3185,6 +3279,9 @@ Examples:
                 "social-emotional": ["limited eye contact", "not responding to name", "difficulty with transitions"],
                 "cognitive": ["not imitating actions", "limited problem-solving", "short attention span"],
                 "communication": ["limited babbling", "not pointing", "no words"],
+                "social-communication": ["limited response to name", "rarely brings objects to show"],
+                "joint-attention": ["does not point to show interest", "does not follow a point"],
+                "restricted-repetitive": ["repetitive hand movements", "unusual sensory interests"],
             }
             for domain in domains:
                 if domain in possible_concerns and self.rng.random() < 0.3:
@@ -3815,6 +3912,14 @@ VITAL SIGNS:
     # problem-list name; the second element is the ICD-10 descriptor.
     _ICD10_FALLBACK: dict[str, tuple[str, str]] = {
         "asthma": ("J45.20", "Mild intermittent asthma, uncomplicated"),
+        # Disease-arc stage names (knowledge/conditions/disease_arcs.yaml).
+        # Codes checked on NLM Clinical Tables 2026-10-27. P78.83: perinatal
+        # codes may be used while the condition persists (ICD-10-CM I.C.16).
+        "infant reflux": ("P78.83", "Newborn esophageal reflux"),
+        "first aom episode": ("H66.90", "Otitis media, unspecified, unspecified ear"),
+        "tympanostomy tubes": ("Z96.22", "Myringotomy tube(s) status"),
+        # No specific code for functional abdominal pain; nearest symptom code
+        "functional abdominal pain": ("R10.84", "Generalized abdominal pain"),
         "adhd": ("F90.2", "Attention-deficit hyperactivity disorder, combined type"),
         "eczema": ("L20.9", "Atopic dermatitis, unspecified"),
         "allergic rhinitis": ("J30.9", "Allergic rhinitis, unspecified"),
@@ -4107,8 +4212,14 @@ VITAL SIGNS:
         groups: dict[str, list[dict]] = {}
         order: list[str] = []
         selected_prn: list[dict] = []
+        excluded_groups: dict[str, list[dict]] = {}
         for med in medications:
             if not isinstance(med, dict):
+                continue
+            if self._allergic_to(med.get("agent", ""), encounter_date):
+                indication = med.get("indication") or "primary"
+                gkey = med.get("choice_group") or indication.lower().split(",")[0].strip()
+                excluded_groups.setdefault(gkey, []).append(med)
                 continue
             if med.get("prn", False):
                 selected_prn.append(med)
@@ -4132,7 +4243,75 @@ VITAL SIGNS:
                     pick = alt
                     break
             chosen.append(pick)
+
+        # A whole antibiotic choice was excluded by a beta-lactam allergy:
+        # substitute azithromycin where it is a guideline alternative.
+        for gkey, removed in excluded_groups.items():
+            if gkey in groups:
+                continue  # a non-allergenic option in the same group was kept
+            alt = self._macrolide_alternative(removed, encounter_date)
+            if alt:
+                chosen.append(alt)
         return chosen + selected_prn
+
+    # Drugs to avoid for each recorded medication allergy. Penicillin or
+    # amoxicillin allergy avoids the penicillin class (AAP AOM CPG 2013;
+    # IDSA GAS pharyngitis 2012); sulfonamide antibiotic allergy avoids
+    # sulfamethoxazole; cephalosporin allergy avoids the cephalosporins;
+    # ibuprofen allergy avoids NSAIDs.
+    _ALLERGY_AVOID = {
+        "penicillin": ("penicillin", "amoxicillin", "ampicillin"),
+        "amoxicillin": ("penicillin", "amoxicillin", "ampicillin"),
+        "sulfonamide": ("sulfamethoxazole",),
+        "sulfa": ("sulfamethoxazole",),
+        "cephalosporin": ("ceph", "cef"),
+        "ibuprofen": ("ibuprofen", "naproxen"),
+    }
+
+    def _allergic_to(self, agent: str, on_date: date | None) -> bool:
+        """True if a medication allergy recorded before on_date covers agent."""
+        if not agent or on_date is None:
+            return False
+        name = agent.lower()
+        for allergy in getattr(self, "_discovered_allergies", []):
+            found = allergy.get("discovery_date")
+            if not found or found >= on_date:
+                continue
+            substance = (allergy.get("substance") or "").lower()
+            avoid = self._ALLERGY_AVOID.get(substance, (substance,) if substance else ())
+            if any(a in name for a in avoid):
+                return True
+        return False
+
+    def _macrolide_alternative(self, removed: list[dict], on_date: date | None) -> dict | None:
+        """Azithromycin in place of an allergy-excluded beta-lactam, or None.
+
+        Not for urinary infections (azithromycin is not a UTI agent).
+        Regimens: GAS pharyngitis 12 mg/kg once daily x5 days, max 500 mg
+        (IDSA 2012); otherwise 10 mg/kg day 1 then 5 mg/kg days 2-5, max 500 mg
+        (AAP AOM CPG 2013 / IDSA pediatric CAP 2011).
+        """
+        names = " ".join(m.get("agent", "") for m in removed).lower()
+        text = " ".join(m.get("indication", "") or "" for m in removed).lower()
+        if not any(k in names for k in ("penicillin", "amoxicillin", "ceph", "cef")):
+            return None
+        if any(k in text for k in ("urinary", "uti", "pyelo", "cystitis")):
+            return None
+        if self._allergic_to("Azithromycin", on_date):
+            return None
+        strep = "strep" in text or "pharyng" in text
+        return {
+            "agent": "Azithromycin",
+            "rxnorm": "18631",
+            "dose_mg_kg": 12 if strep else 10,
+            "max_dose_mg": 500,
+            "frequency": "once daily" if strep else "once daily day 1, then 5mg/kg days 2-5",
+            "duration_days": 5,
+            "route": "oral",
+            "indication": "penicillin/cephalosporin allergy alternative",
+            "choice_group": "antibiotic",
+            "drug_class": "macrolide",
+        }
 
     def _recent_class_rx(self, drug_class: str | None, on: date, days: int) -> bool:
         if not drug_class:
@@ -4992,6 +5171,12 @@ VITAL SIGNS:
         age_months = demographics.age_months
         sex = "male" if demographics.sex_at_birth == Sex.MALE else "female"
         self._current_dob = demographics.date_of_birth
+        # Prescribing checks this patient's allergies, not the last generated one's
+        self._discovered_allergies = [
+            {"substance": a.display_name.removesuffix(" allergy"),
+             "discovery_date": a.recorded_date or a.onset_date or demographics.date_of_birth}
+            for a in patient.allergy_list if a.category.value == "medication"
+        ]
         self.today = self._today_override or date.today()
         # Prior prescriptions inform class-aware choices (e.g. AOM after
         # recent amoxicillin gets amoxicillin-clavulanate).
@@ -5399,6 +5584,9 @@ VITAL SIGNS:
             for i, stage in enumerate(arc.stages):
                 # Determine when this stage activates
                 min_age, max_age = stage.typical_age_range
+
+                if min_age > current_age_months:
+                    break  # Too young to have reached this stage (or later ones)
 
                 # Use middle of range as activation age
                 if cumulative_age < min_age:

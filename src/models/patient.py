@@ -1222,6 +1222,9 @@ class Encounter(ClinicalModel):
     # Pediatric-specific
     growth_percentiles: GrowthPercentiles | None = None
     developmental_screen: DevelopmentalScreen | None = None
+    # Every screen done at the visit (18 mo: ASQ-3 and M-CHAT-R/F).
+    # developmental_screen is the first of these, kept for older readers.
+    developmental_screens: list[DevelopmentalScreen] = Field(default_factory=list)
     anticipatory_guidance: list[str] = Field(default_factory=list)
     
     # Follow-up

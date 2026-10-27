@@ -3,6 +3,7 @@ Growth chart calculations.
 """
 
 from .cdc_2000 import (
+    age_in_months,
     calculate_weight_percentile,
     calculate_height_percentile,
     calculate_hc_percentile,
@@ -18,6 +19,7 @@ from .cdc_2000 import (
 )
 
 __all__ = [
+    "age_in_months",
     "calculate_weight_percentile",
     "calculate_height_percentile",
     "calculate_hc_percentile",

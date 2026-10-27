@@ -46,26 +46,34 @@ def _all_meds(patient: Patient):
 
 # CVX code -> antigen group. Combination vaccines count toward each component.
 # Source: CDC CVX table, https://www2a.cdc.gov/vaccines/iis/iisstandards/vaccines.asp
+# (retrieved 2026-10-27). Keep in sync with knowledge/immunizations/aap_schedule.yaml.
 CVX_GROUPS: dict[str, set[str]] = {
     "08": {"HepB"}, "43": {"HepB"}, "44": {"HepB"}, "45": {"HepB"},
     "116": {"RV"}, "119": {"RV"}, "122": {"RV"},
     "20": {"DTaP"}, "106": {"DTaP"}, "107": {"DTaP"},
     "17": {"Hib"}, "46": {"Hib"}, "47": {"Hib"}, "48": {"Hib"}, "49": {"Hib"},
-    "133": {"PCV"}, "152": {"PCV"}, "215": {"PCV"}, "216": {"PCV"},
+    "100": {"PCV"}, "133": {"PCV"}, "152": {"PCV"}, "215": {"PCV"}, "216": {"PCV"},
     "10": {"IPV"}, "89": {"IPV"},
     "03": {"MMR"}, "94": {"MMR", "VAR"},
     "21": {"VAR"},
     "83": {"HepA"}, "85": {"HepA"},
     "62": {"HPV"}, "165": {"HPV"},
     "114": {"MenACWY"}, "136": {"MenACWY"}, "147": {"MenACWY"}, "203": {"MenACWY"},
+    "162": {"MenB"}, "163": {"MenB"}, "164": {"MenB"},
     "115": {"Tdap"},
-    "88": {"Flu"}, "140": {"Flu"}, "141": {"Flu"}, "150": {"Flu"}, "158": {"Flu"},
+    "88": {"Flu"}, "111": {"Flu"}, "140": {"Flu"}, "141": {"Flu"}, "150": {"Flu"},
+    "153": {"Flu"}, "155": {"Flu"}, "158": {"Flu"},
     "161": {"Flu"}, "171": {"Flu"}, "186": {"Flu"}, "320": {"Flu"},
+    "311": {"COVID19"}, "312": {"COVID19"},
+    # RSV monoclonal antibody: its own group, never counted in series floors.
+    "306": {"RSVmAb"}, "307": {"RSVmAb"}, "332": {"RSVmAb"},
     # Combinations
     "110": {"DTaP", "HepB", "IPV"},       # Pediarix
     "120": {"DTaP", "Hib", "IPV"},        # Pentacel
     "130": {"DTaP", "IPV"},               # Kinrix / Quadracel
     "146": {"DTaP", "IPV", "Hib", "HepB"},  # Vaxelis
+    "316": {"MenACWY", "MenB"},           # Penbraya
+    "328": {"MenACWY", "MenB"},           # Penmenvy
 }
 
 

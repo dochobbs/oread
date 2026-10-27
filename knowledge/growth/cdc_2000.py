@@ -1,228 +1,134 @@
 """
-CDC 2000 Growth Chart calculations using the LMS method.
+Pediatric growth references using the LMS method.
 
-Reference: https://www.cdc.gov/growthcharts/
+Reference by age band (CDC recommendation since 2010: WHO growth standards
+for children under 2 years, CDC 2000 growth charts from 2 years):
 
-The LMS method expresses growth as:
-- L (lambda): Box-Cox power transformation
-- M (mu): Median
-- S (sigma): Coefficient of variation
+- 0 to < 24 months: WHO Child Growth Standards (2006) weight-for-age,
+  length-for-age and head circumference-for-age. LMS tables as published by
+  CDC: https://www.cdc.gov/growthcharts/who-data-files.htm
+  (files from https://ftp.cdc.gov/pub/Health_Statistics/NCHS/growthcharts/,
+  retrieved 2026-10-27).
+- 24 to 240 months: CDC 2000 growth charts weight-for-age (wtage.csv) and
+  stature-for-age (statage.csv). https://www.cdc.gov/growthcharts/
+  (data from https://www.cdc.gov/growthcharts/data/zscore/, retrieved
+  2026-10-27).
+- Head circumference 24 to 36 months: CDC 2000 infant head circumference-
+  for-age (hcageinf.csv); WHO HC tables used here stop at 24 months.
+- BMI-for-age 24 to 240 months: CDC extended BMI-for-age charts (2022),
+  bmi-age-2022.csv, https://www.cdc.gov/growthcharts/extended-bmi-data-files.htm
+  (retrieved 2026-10-27). At or below the 95th percentile the LMS parameters
+  apply. Above the 95th percentile (Wei R et al., Ann Hum Biol
+  2020;47(6):514-521):
+      percentile = 90 + 10 * Phi((BMI - P95) / sigma)
+      BMI = P95 + sigma * Phi^-1((percentile - 90) / 10)
+      z = Phi^-1(percentile / 100)
 
-Z-score = ((value/M)^L - 1) / (L * S)  when L ≠ 0
-Z-score = ln(value/M) / S              when L = 0
+The CSVs in knowledge/growth/data/ are the unmodified source files.
 
-Percentile = Φ(Z-score) where Φ is the standard normal CDF
+The LMS method:
+    Z = ((value/M)^L - 1) / (L * S)   when L != 0
+    Z = ln(value/M) / S               when L == 0
+    Percentile = Phi(Z)
+
+Ages are fractional months. Tables are interpolated linearly between rows.
 """
 
 from __future__ import annotations
 
+import csv
 import math
+import random as _random
+from bisect import bisect_left
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from scipy import stats
 
-# LMS parameters for CDC 2000 growth charts
-# Format: age_months -> (L, M, S)
-# These are sampled key points; in production you'd interpolate
+DATA_DIR = Path(__file__).parent / "data"
 
-# Weight-for-age (kg), Males, 0-240 months
-WEIGHT_FOR_AGE_MALE: dict[int, tuple[float, float, float]] = {
-    0: (-0.3053, 3.530, 0.1514),
-    1: (0.0977, 4.470, 0.1359),
-    2: (0.1890, 5.380, 0.1296),
-    3: (0.1346, 6.123, 0.1256),
-    6: (-0.0171, 7.934, 0.1215),
-    9: (-0.1667, 9.180, 0.1182),
-    12: (-0.2714, 10.15, 0.1149),
-    18: (-0.3823, 11.47, 0.1127),
-    24: (-0.4242, 12.59, 0.1139),
-    36: (-0.4669, 14.34, 0.1198),
-    48: (-0.5614, 16.33, 0.1307),
-    60: (-0.7159, 18.62, 0.1441),
-    72: (-0.8876, 20.93, 0.1555),
-    84: (-1.0100, 23.39, 0.1644),
-    96: (-1.0682, 25.94, 0.1722),
-    108: (-1.0708, 28.58, 0.1803),
-    120: (-1.0240, 31.44, 0.1893),
-    132: (-0.9476, 34.77, 0.1979),
-    144: (-0.8693, 38.91, 0.2044),
-    156: (-0.8237, 43.87, 0.2082),
-    168: (-0.8247, 49.49, 0.2091),
-    180: (-0.8659, 55.38, 0.2070),
-    192: (-0.9402, 60.98, 0.2016),
-    204: (-1.0346, 65.89, 0.1934),
-    216: (-1.1413, 70.11, 0.1837),
-    228: (-1.2545, 73.71, 0.1737),
-    240: (-1.3686, 76.78, 0.1642),
-}
+# Average days per month, used to convert age in days to fractional months
+# (WHO Anthro convention: 365.25 / 12).
+DAYS_PER_MONTH = 30.4375
 
-# Weight-for-age (kg), Females, 0-240 months
-WEIGHT_FOR_AGE_FEMALE: dict[int, tuple[float, float, float]] = {
-    0: (-0.3821, 3.399, 0.1433),
-    1: (0.1744, 4.187, 0.1319),
-    2: (0.3421, 5.030, 0.1253),
-    3: (0.3181, 5.720, 0.1216),
-    6: (0.0813, 7.351, 0.1192),
-    9: (-0.0810, 8.475, 0.1175),
-    12: (-0.1887, 9.363, 0.1162),
-    18: (-0.3076, 10.67, 0.1165),
-    24: (-0.3523, 11.91, 0.1202),
-    36: (-0.3964, 13.86, 0.1294),
-    48: (-0.4995, 16.06, 0.1411),
-    60: (-0.6602, 18.48, 0.1522),
-    72: (-0.8193, 20.93, 0.1612),
-    84: (-0.9386, 23.53, 0.1691),
-    96: (-0.9953, 26.31, 0.1774),
-    108: (-0.9883, 29.34, 0.1868),
-    120: (-0.9237, 32.78, 0.1970),
-    132: (-0.8150, 36.90, 0.2068),
-    144: (-0.6885, 41.74, 0.2141),
-    156: (-0.5772, 47.00, 0.2173),
-    168: (-0.5079, 52.11, 0.2163),
-    180: (-0.4868, 56.56, 0.2116),
-    192: (-0.5076, 60.08, 0.2042),
-    204: (-0.5573, 62.68, 0.1954),
-    216: (-0.6252, 64.52, 0.1865),
-    228: (-0.7040, 65.81, 0.1784),
-    240: (-0.7893, 66.75, 0.1714),
-}
+# CDC recommends WHO standards below 24 months, CDC 2000 charts from 24 months.
+WHO_MAX_AGE_MONTHS = 24.0
 
-# Height/Length-for-age (cm), Males, 0-240 months
-HEIGHT_FOR_AGE_MALE: dict[int, tuple[float, float, float]] = {
-    0: (0.3487, 49.99, 0.0379),
-    1: (0.1550, 54.72, 0.0370),
-    2: (0.0093, 58.42, 0.0365),
-    3: (-0.0928, 61.43, 0.0363),
-    6: (-0.2623, 67.62, 0.0358),
-    9: (-0.3040, 72.03, 0.0356),
-    12: (-0.2847, 75.75, 0.0356),
-    18: (-0.1884, 82.39, 0.0357),
-    24: (-0.0554, 87.78, 0.0363),
-    36: (0.1957, 96.10, 0.0393),
-    48: (0.2708, 102.9, 0.0417),
-    60: (0.2204, 109.2, 0.0432),
-    72: (0.1080, 115.1, 0.0445),
-    84: (-0.0168, 120.8, 0.0457),
-    96: (-0.1368, 126.2, 0.0468),
-    108: (-0.2427, 131.5, 0.0479),
-    120: (-0.3254, 136.8, 0.0490),
-    132: (-0.3816, 142.4, 0.0500),
-    144: (-0.4097, 148.7, 0.0505),
-    156: (-0.4134, 155.5, 0.0502),
-    168: (-0.3994, 162.2, 0.0489),
-    180: (-0.3757, 168.1, 0.0465),
-    192: (-0.3502, 172.7, 0.0437),
-    204: (-0.3295, 175.8, 0.0412),
-    216: (-0.3173, 177.6, 0.0396),
-    228: (-0.3134, 178.6, 0.0386),
-    240: (-0.3155, 179.1, 0.0382),
-}
+Sex = Literal["male", "female"]
+LmsRow = tuple[float, float, float, float]  # (age_months, L, M, S)
 
-# Height/Length-for-age (cm), Females, 0-240 months
-HEIGHT_FOR_AGE_FEMALE: dict[int, tuple[float, float, float]] = {
-    0: (0.3809, 49.29, 0.0379),
-    1: (0.1700, 53.69, 0.0369),
-    2: (0.0178, 57.07, 0.0365),
-    3: (-0.0858, 59.80, 0.0361),
-    6: (-0.2777, 65.73, 0.0353),
-    9: (-0.3379, 70.11, 0.0350),
-    12: (-0.3433, 73.96, 0.0349),
-    18: (-0.2962, 80.80, 0.0352),
-    24: (-0.2046, 86.40, 0.0362),
-    36: (0.0047, 94.86, 0.0399),
-    48: (0.0884, 101.8, 0.0428),
-    60: (0.0696, 108.4, 0.0449),
-    72: (-0.0049, 114.6, 0.0467),
-    84: (-0.0919, 120.6, 0.0484),
-    96: (-0.1759, 126.4, 0.0502),
-    108: (-0.2483, 132.0, 0.0519),
-    120: (-0.3033, 137.5, 0.0537),
-    132: (-0.3380, 143.3, 0.0553),
-    144: (-0.3547, 149.4, 0.0560),
-    156: (-0.3600, 155.0, 0.0556),
-    168: (-0.3607, 159.5, 0.0540),
-    180: (-0.3608, 162.5, 0.0518),
-    192: (-0.3616, 164.2, 0.0498),
-    204: (-0.3632, 165.0, 0.0484),
-    216: (-0.3655, 165.4, 0.0477),
-    228: (-0.3684, 165.6, 0.0474),
-    240: (-0.3718, 165.7, 0.0473),
-}
 
-# Head circumference (cm), Males, 0-36 months
-HC_FOR_AGE_MALE: dict[int, tuple[float, float, float]] = {
-    0: (1.8758, 34.71, 0.0369),
-    1: (1.3893, 37.31, 0.0349),
-    2: (1.0199, 39.21, 0.0338),
-    3: (0.7459, 40.56, 0.0331),
-    6: (0.2426, 43.34, 0.0318),
-    9: (-0.0100, 45.19, 0.0311),
-    12: (-0.1532, 46.55, 0.0308),
-    18: (-0.2902, 48.15, 0.0304),
-    24: (-0.3510, 49.27, 0.0303),
-    36: (-0.3934, 50.65, 0.0305),
-}
+def age_in_months(age_days: int | float) -> float:
+    """Fractional age in months from age in days."""
+    return age_days / DAYS_PER_MONTH
 
-# Head circumference (cm), Females, 0-36 months
-HC_FOR_AGE_FEMALE: dict[int, tuple[float, float, float]] = {
-    0: (2.1539, 33.88, 0.0359),
-    1: (1.5817, 36.42, 0.0341),
-    2: (1.1416, 38.22, 0.0331),
-    3: (0.8108, 39.53, 0.0324),
-    6: (0.2618, 42.17, 0.0312),
-    9: (-0.0362, 43.93, 0.0306),
-    12: (-0.2078, 45.23, 0.0304),
-    18: (-0.3685, 46.76, 0.0303),
-    24: (-0.4463, 47.84, 0.0304),
-    36: (-0.5101, 49.13, 0.0308),
-}
 
-# BMI-for-age, Males, 24-240 months (BMI only meaningful after 2 years)
-BMI_FOR_AGE_MALE: dict[int, tuple[float, float, float]] = {
-    24: (-0.7766, 16.42, 0.0861),
-    36: (-1.2236, 15.79, 0.0823),
-    48: (-1.4997, 15.48, 0.0839),
-    60: (-1.6315, 15.34, 0.0885),
-    72: (-1.6623, 15.32, 0.0950),
-    84: (-1.6293, 15.44, 0.1024),
-    96: (-1.5635, 15.72, 0.1102),
-    108: (-1.4867, 16.15, 0.1178),
-    120: (-1.4143, 16.72, 0.1250),
-    132: (-1.3563, 17.44, 0.1311),
-    144: (-1.3159, 18.30, 0.1360),
-    156: (-1.2932, 19.27, 0.1394),
-    168: (-1.2865, 20.29, 0.1413),
-    180: (-1.2926, 21.29, 0.1417),
-    192: (-1.3074, 22.21, 0.1407),
-    204: (-1.3268, 23.02, 0.1388),
-    216: (-1.3467, 23.69, 0.1364),
-    228: (-1.3651, 24.22, 0.1339),
-    240: (-1.3815, 24.63, 0.1317),
-}
+@lru_cache(maxsize=None)
+def _load_who(measure: str, sex: Sex) -> tuple[LmsRow, ...]:
+    who_sex = "Boys" if sex == "male" else "Girls"
+    path = DATA_DIR / f"WHO-{who_sex}-{measure}-for-age-Percentiles.csv"
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        rows = [(float(r["Month"]), float(r["L"]), float(r["M"]), float(r["S"]))
+                for r in csv.DictReader(f)]
+    return tuple(sorted(rows))
 
-# BMI-for-age, Females, 24-240 months
-BMI_FOR_AGE_FEMALE: dict[int, tuple[float, float, float]] = {
-    24: (-0.6075, 16.13, 0.0917),
-    36: (-0.9803, 15.58, 0.0890),
-    48: (-1.1963, 15.29, 0.0903),
-    60: (-1.2959, 15.17, 0.0942),
-    72: (-1.3224, 15.17, 0.0997),
-    84: (-1.3064, 15.32, 0.1063),
-    96: (-1.2716, 15.59, 0.1132),
-    108: (-1.2353, 16.00, 0.1200),
-    120: (-1.2062, 16.53, 0.1264),
-    132: (-1.1882, 17.20, 0.1319),
-    144: (-1.1814, 18.00, 0.1361),
-    156: (-1.1839, 18.88, 0.1389),
-    168: (-1.1929, 19.79, 0.1401),
-    180: (-1.2053, 20.66, 0.1399),
-    192: (-1.2183, 21.43, 0.1388),
-    204: (-1.2301, 22.07, 0.1373),
-    216: (-1.2399, 22.56, 0.1358),
-    228: (-1.2475, 22.93, 0.1346),
-    240: (-1.2531, 23.20, 0.1338),
-}
+
+@lru_cache(maxsize=None)
+def _load_cdc(filename: str, sex: Sex) -> tuple[tuple[float, ...], ...]:
+    """CDC LMS file rows for one sex: (agemos, L, M, S[, sigma, P95])."""
+    code = "1" if sex == "male" else "2"
+    with open(DATA_DIR / filename, encoding="utf-8-sig", newline="") as f:
+        out = []
+        for r in csv.DictReader(f):
+            r = {k.strip().lower(): v for k, v in r.items()}
+            if r["sex"].strip() != code:
+                continue
+            row = [float(r["agemos"]), float(r["l"]), float(r["m"]), float(r["s"])]
+            if "sigma" in r:
+                row += [float(r["sigma"]), float(r["p95"])]
+            out.append(tuple(row))
+    return tuple(sorted(out))
+
+
+def _interpolate(rows: tuple[tuple[float, ...], ...], age_months: float) -> tuple[float, ...]:
+    """Linear interpolation of every column after age; clamps to table range."""
+    ages = [r[0] for r in rows]
+    if age_months <= ages[0]:
+        return rows[0][1:]
+    if age_months >= ages[-1]:
+        return rows[-1][1:]
+    i = bisect_left(ages, age_months)
+    if ages[i] == age_months:
+        return rows[i][1:]
+    lo, hi = rows[i - 1], rows[i]
+    t = (age_months - lo[0]) / (hi[0] - lo[0])
+    return tuple(a + t * (b - a) for a, b in zip(lo[1:], hi[1:]))
+
+
+def _lms(measure: str, age_months: float, sex: Sex) -> tuple[float, float, float]:
+    """LMS for a measure at a fractional age, choosing the reference by age."""
+    if measure == "weight":
+        rows = _load_who("Weight", sex) if age_months < WHO_MAX_AGE_MONTHS \
+            else _load_cdc("wtage.csv", sex)
+    elif measure == "height":
+        rows = _load_who("Length", sex) if age_months < WHO_MAX_AGE_MONTHS \
+            else _load_cdc("statage.csv", sex)
+    elif measure == "hc":
+        rows = _load_who("Head-Circumference", sex) if age_months < WHO_MAX_AGE_MONTHS \
+            else _load_cdc("hcageinf.csv", sex)
+    elif measure == "bmi":
+        rows = _load_cdc("bmi-age-2022.csv", sex)
+    else:
+        raise ValueError(f"unknown measure {measure!r}")
+    L, M, S = _interpolate(rows, age_months)[:3]
+    return L, M, S
+
+
+def _bmi_extended(age_months: float, sex: Sex) -> tuple[float, float, float, float, float]:
+    """(L, M, S, sigma, P95) from the CDC 2022 extended BMI table."""
+    return _interpolate(_load_cdc("bmi-age-2022.csv", sex), age_months)  # type: ignore[return-value]
 
 
 @dataclass
@@ -232,43 +138,6 @@ class GrowthResult:
     percentile: float
     z_score: float
     interpretation: str
-
-
-def _interpolate_lms(
-    age_months: int,
-    lms_table: dict[int, tuple[float, float, float]],
-) -> tuple[float, float, float]:
-    """
-    Interpolate LMS values for a given age.
-    Uses linear interpolation between known points.
-    """
-    ages = sorted(lms_table.keys())
-    
-    # Exact match
-    if age_months in lms_table:
-        return lms_table[age_months]
-    
-    # Clamp to range
-    if age_months < ages[0]:
-        return lms_table[ages[0]]
-    if age_months > ages[-1]:
-        return lms_table[ages[-1]]
-    
-    # Find bracketing ages
-    lower_age = max(a for a in ages if a < age_months)
-    upper_age = min(a for a in ages if a > age_months)
-    
-    # Linear interpolation factor
-    t = (age_months - lower_age) / (upper_age - lower_age)
-    
-    L1, M1, S1 = lms_table[lower_age]
-    L2, M2, S2 = lms_table[upper_age]
-    
-    L = L1 + t * (L2 - L1)
-    M = M1 + t * (M2 - M1)
-    S = S1 + t * (S2 - S1)
-    
-    return L, M, S
 
 
 def _z_score_from_lms(value: float, L: float, M: float, S: float) -> float:
@@ -319,134 +188,125 @@ def _interpret_percentile(percentile: float, measure: str) -> str:
         return f"Very high {measure} (>97th percentile)"
 
 
+def _result(measure: str, label: str, value: float, age_months: float, sex: Sex) -> GrowthResult:
+    L, M, S = _lms(measure, age_months, sex)
+    z = _z_score_from_lms(value, L, M, S)
+    percentile = _percentile_from_z(z)
+    return GrowthResult(
+        value=value,
+        percentile=round(float(percentile), 1),
+        z_score=round(float(z), 2),
+        interpretation=_interpret_percentile(percentile, label),
+    )
+
+
 def calculate_weight_percentile(
     weight_kg: float,
-    age_months: int,
-    sex: Literal["male", "female"],
+    age_months: float,
+    sex: Sex,
 ) -> GrowthResult:
     """
-    Calculate weight-for-age percentile.
-    
+    Calculate weight-for-age percentile (WHO < 24 months, CDC 2000 after).
+
     Args:
         weight_kg: Weight in kilograms
-        age_months: Age in months (0-240)
+        age_months: Age in fractional months (0-240)
         sex: "male" or "female"
-    
+
     Returns:
         GrowthResult with percentile, z-score, and interpretation
     """
-    table = WEIGHT_FOR_AGE_MALE if sex == "male" else WEIGHT_FOR_AGE_FEMALE
-    L, M, S = _interpolate_lms(age_months, table)
-    z = _z_score_from_lms(weight_kg, L, M, S)
-    percentile = _percentile_from_z(z)
-    
-    return GrowthResult(
-        value=weight_kg,
-        percentile=round(percentile, 1),
-        z_score=round(z, 2),
-        interpretation=_interpret_percentile(percentile, "weight"),
-    )
+    return _result("weight", "weight", weight_kg, age_months, sex)
 
 
 def calculate_height_percentile(
     height_cm: float,
-    age_months: int,
-    sex: Literal["male", "female"],
+    age_months: float,
+    sex: Sex,
 ) -> GrowthResult:
     """
-    Calculate height/length-for-age percentile.
-    
+    Calculate length-for-age (WHO < 24 months) or stature-for-age (CDC 2000)
+    percentile.
+
     Args:
         height_cm: Height/length in centimeters
-        age_months: Age in months (0-240)
+        age_months: Age in fractional months (0-240)
         sex: "male" or "female"
-    
+
     Returns:
         GrowthResult with percentile, z-score, and interpretation
     """
-    table = HEIGHT_FOR_AGE_MALE if sex == "male" else HEIGHT_FOR_AGE_FEMALE
-    L, M, S = _interpolate_lms(age_months, table)
-    z = _z_score_from_lms(height_cm, L, M, S)
-    percentile = _percentile_from_z(z)
-    
-    return GrowthResult(
-        value=height_cm,
-        percentile=round(percentile, 1),
-        z_score=round(z, 2),
-        interpretation=_interpret_percentile(percentile, "height"),
-    )
+    return _result("height", "height", height_cm, age_months, sex)
 
 
 def calculate_hc_percentile(
     hc_cm: float,
-    age_months: int,
-    sex: Literal["male", "female"],
+    age_months: float,
+    sex: Sex,
 ) -> GrowthResult:
     """
     Calculate head circumference percentile (0-36 months only).
-    
+
     Args:
         hc_cm: Head circumference in centimeters
-        age_months: Age in months (0-36)
+        age_months: Age in fractional months (0-36)
         sex: "male" or "female"
-    
+
     Returns:
         GrowthResult with percentile, z-score, and interpretation
     """
     if age_months > 36:
         raise ValueError("Head circumference charts only available for ages 0-36 months")
-    
-    table = HC_FOR_AGE_MALE if sex == "male" else HC_FOR_AGE_FEMALE
-    L, M, S = _interpolate_lms(age_months, table)
-    z = _z_score_from_lms(hc_cm, L, M, S)
-    percentile = _percentile_from_z(z)
-    
-    return GrowthResult(
-        value=hc_cm,
-        percentile=round(percentile, 1),
-        z_score=round(z, 2),
-        interpretation=_interpret_percentile(percentile, "head circumference"),
-    )
+    return _result("hc", "head circumference", hc_cm, age_months, sex)
 
 
 def calculate_bmi_percentile(
     bmi: float,
-    age_months: int,
-    sex: Literal["male", "female"],
+    age_months: float,
+    sex: Sex,
 ) -> GrowthResult:
     """
-    Calculate BMI-for-age percentile (24+ months only).
-    
+    Calculate BMI-for-age percentile (24+ months), CDC 2022 extended charts.
+
+    Above the 95th percentile, uses the extended method (see module
+    docstring), so severe obesity gets a finite, meaningful percentile.
+
     Args:
         bmi: Body mass index
-        age_months: Age in months (24-240)
+        age_months: Age in fractional months (24-240)
         sex: "male" or "female"
-    
+
     Returns:
         GrowthResult with percentile, z-score, and interpretation
     """
     if age_months < 24:
         raise ValueError("BMI-for-age charts only available for ages 24+ months")
-    
-    table = BMI_FOR_AGE_MALE if sex == "male" else BMI_FOR_AGE_FEMALE
-    L, M, S = _interpolate_lms(age_months, table)
-    z = _z_score_from_lms(bmi, L, M, S)
-    percentile = _percentile_from_z(z)
-    
-    # BMI interpretation is slightly different
+
+    L, M, S, sigma, p95 = _bmi_extended(age_months, sex)
+    if bmi <= p95:
+        z = _z_score_from_lms(bmi, L, M, S)
+        percentile = _percentile_from_z(z)
+    else:
+        percentile = 90 + 10 * stats.norm.cdf((bmi - p95) / sigma)
+        z = _z_from_percentile(percentile)
+
+    # CDC weight categories; severe obesity = BMI >= 120% of the 95th
+    # percentile (CDC extended BMI charts / AAP 2023 obesity CPG, class 2+).
     if percentile < 5:
         interpretation = "Underweight (<5th percentile)"
     elif percentile < 85:
         interpretation = "Healthy weight (5th-85th percentile)"
     elif percentile < 95:
         interpretation = "Overweight (85th-95th percentile)"
+    elif bmi >= 1.2 * p95:
+        interpretation = "Severe obesity (≥120% of 95th percentile)"
     else:
         interpretation = "Obese (≥95th percentile)"
-    
+
     return GrowthResult(
         value=bmi,
-        percentile=round(percentile, 1),
-        z_score=round(z, 2),
+        percentile=round(float(percentile), 1),
+        z_score=round(float(z), 2),
         interpretation=interpretation,
     )
 
@@ -457,73 +317,75 @@ def calculate_bmi(weight_kg: float, height_cm: float) -> float:
     return round(weight_kg / (height_m * height_m), 1)
 
 
+def _value_at_percentile(measure: str, percentile: float, age_months: float, sex: Sex) -> float:
+    L, M, S = _lms(measure, age_months, sex)
+    return _value_from_lms_z(_z_from_percentile(percentile), L, M, S)
+
+
 def generate_weight_at_percentile(
     percentile: float,
-    age_months: int,
-    sex: Literal["male", "female"],
+    age_months: float,
+    sex: Sex,
 ) -> float:
     """
     Generate a weight value at a given percentile.
-    
+
     Args:
-        percentile: Target percentile (0-100)
-        age_months: Age in months
+        percentile: Target percentile (0-100, exclusive)
+        age_months: Age in fractional months
         sex: "male" or "female"
-    
+
     Returns:
         Weight in kg at that percentile
     """
-    table = WEIGHT_FOR_AGE_MALE if sex == "male" else WEIGHT_FOR_AGE_FEMALE
-    L, M, S = _interpolate_lms(age_months, table)
-    z = _z_from_percentile(percentile)
-    return round(_value_from_lms_z(z, L, M, S), 2)
+    return round(_value_at_percentile("weight", percentile, age_months, sex), 2)
 
 
 def generate_height_at_percentile(
     percentile: float,
-    age_months: int,
-    sex: Literal["male", "female"],
+    age_months: float,
+    sex: Sex,
 ) -> float:
     """
     Generate a height value at a given percentile.
-    
+
     Args:
-        percentile: Target percentile (0-100)
-        age_months: Age in months
+        percentile: Target percentile (0-100, exclusive)
+        age_months: Age in fractional months
         sex: "male" or "female"
-    
+
     Returns:
         Height in cm at that percentile
     """
-    table = HEIGHT_FOR_AGE_MALE if sex == "male" else HEIGHT_FOR_AGE_FEMALE
-    L, M, S = _interpolate_lms(age_months, table)
-    z = _z_from_percentile(percentile)
-    return round(_value_from_lms_z(z, L, M, S), 1)
+    return round(_value_at_percentile("height", percentile, age_months, sex), 1)
 
 
 def generate_hc_at_percentile(
     percentile: float,
-    age_months: int,
-    sex: Literal["male", "female"],
+    age_months: float,
+    sex: Sex,
 ) -> float:
     """
     Generate a head circumference at a given percentile.
-    
+
     Args:
-        percentile: Target percentile (0-100)
-        age_months: Age in months (0-36)
+        percentile: Target percentile (0-100, exclusive)
+        age_months: Age in fractional months (0-36)
         sex: "male" or "female"
-    
+
     Returns:
         Head circumference in cm at that percentile
     """
     if age_months > 36:
         raise ValueError("Head circumference charts only available for ages 0-36 months")
-    
-    table = HC_FOR_AGE_MALE if sex == "male" else HC_FOR_AGE_FEMALE
-    L, M, S = _interpolate_lms(age_months, table)
-    z = _z_from_percentile(percentile)
-    return round(_value_from_lms_z(z, L, M, S), 1)
+    return round(_value_at_percentile("hc", percentile, age_months, sex), 1)
+
+
+# Numerical bounds for the percentile random walk (z = +/-3.09). Not a
+# clinical clamp: it keeps the LMS inversion finite while allowing values far
+# beyond the 3rd/97th percentiles, including severe obesity.
+PERCENTILE_FLOOR = 0.1
+PERCENTILE_CEILING = 99.9
 
 
 class GrowthTrajectory:
@@ -552,6 +414,7 @@ class GrowthTrajectory:
         pattern: str = "normal",  # normal, ftt, obesity, preterm_catchup, growth_delay
         pattern_onset_age: int | None = None,  # Age in months when pattern starts
         gestational_age_weeks: int | None = None,  # For preterm catch-up
+        rng: _random.Random | None = None,
     ):
         """
         Initialize a growth trajectory.
@@ -565,7 +428,10 @@ class GrowthTrajectory:
             pattern: Growth pattern type (normal, ftt, obesity, preterm_catchup, growth_delay)
             pattern_onset_age: Age in months when non-normal pattern starts
             gestational_age_weeks: For preterm infants (corrected age calculation)
+            rng: Random source for percentile drift (defaults to the random
+                module); pass a seeded random.Random for reproducibility.
         """
+        self._rng = rng or _random
         self.sex = sex
         self.weight_percentile = weight_percentile
         self.height_percentile = height_percentile
@@ -587,7 +453,7 @@ class GrowthTrajectory:
             self._corrected_age_offset = 0
 
         # Track history
-        self._measurements: list[tuple[int, float, float, float | None]] = []
+        self._measurements: list[tuple[float, float, float, float | None]] = []
 
     def _pattern_drift(self, age_months: int) -> tuple[float, float]:
         """
@@ -596,8 +462,6 @@ class GrowthTrajectory:
         Returns:
             Tuple of (weight_drift_bias, height_drift_bias)
         """
-        import random
-
         if self.pattern == "ftt":
             # Failure to thrive: weight drifts down, height relatively stable
             # More severe for younger children
@@ -641,23 +505,24 @@ class GrowthTrajectory:
         bias: float = 0.0,
     ) -> float:
         """Apply random walk to a percentile with optional directional bias."""
-        import random
         # Scale variance to percentile points - increased multiplier for more variation
-        drift = random.gauss(bias, variance * 15)
+        drift = self._rng.gauss(bias, variance * 15)
         new = current + drift
-        # Keep within bounds, blend new (85%) with current (15%) for channel tracking
-        return max(3, min(97, new * 0.85 + current * 0.15))
+        # Blend new (85%) with current (15%) for channel tracking. Only
+        # numerical bounds apply: no 3rd-97th clamp, so severe obesity and
+        # true failure to thrive can be generated.
+        return max(PERCENTILE_FLOOR, min(PERCENTILE_CEILING, new * 0.85 + current * 0.15))
     
     def generate_measurement(
         self,
-        age_months: int,
+        age_months: float,
         include_hc: bool | None = None,
     ) -> tuple[float, float, float | None, float | None]:
         """
         Generate a measurement at a given age.
 
         Args:
-            age_months: Age in months
+            age_months: Age in fractional months (see age_in_months)
             include_hc: Include head circumference (auto-determined if None)
 
         Returns:

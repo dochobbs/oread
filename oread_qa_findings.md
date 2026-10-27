@@ -1,3 +1,12 @@
+> **Status 2026-10-27: all issues below are closed** on branch `feature/clinical-hardening`, each covered by an automated check in `tests/test_clinical_invariants.py`:
+> 1. Age-impossible conditions: fixed earlier; gate-boundary crash fixed (`test_gate_boundary_ages_generate`).
+> 2. T1D without insulin: basal + rapid-acting + glucagon (`test_required_meds`, `test_basal_insulin_not_sliding_scale`).
+> 3. R69 codes: removed; uncodable conditions raise (`test_no_placeholder_codes`).
+> 4. Dates before DOB: fixed (`test_dates_within_lifetime`, `test_no_future_dates_sweep`).
+> 5. Fontanelles after infancy: no-LLM path is deterministic and clean (`test_exam_age_appropriate`); the LLM prompt still carries the age constraints. Messiness >= 2 injects stale copy-forward text on purpose.
+>
+> See `docs/superpowers/specs/2026-10-27-oread-clinical-hardening-goal.md`.
+
 # Oread Quality Assessment Findings
 **Date:** 2025-12-31
 **Source:** `quality_assessment_10patients.md` (26,186 lines, 10 patients, zero messiness)

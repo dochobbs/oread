@@ -36,6 +36,26 @@ This is a correctness goal. No new features.
 
 ---
 
+## Progress
+
+| Slice / lane | Status | Commit |
+|---|---|---|
+| 0 T: invariant suite | done | 92efd84 |
+| 1 S: server lockdown, standalone/platform | done | 6ea0c97 |
+| P1: immunizations, 2026 AAP schedule, growth | done | 84fe641, a1cb549 |
+| P2: peds meds, conditions, dates, HPI, seeding | done | 55d5f97, d02ff56 + RNG join |
+| A: adult engine + models `extra="forbid"` | done | e3e55ad |
+| X: FHIR / C-CDA / Markdown exporters | done | d54ef76 |
+| I: LLM cache, condition service, PatientContext | done (Echo still on flattened codes; Metis fixes proposed, not made) | b1fa272 |
+| Merge + full verification | done: 310 tests, 0 xfail; full cohort 29/29 | 524d62e |
+| Found during merge: RNG not shared with growth; 16 peds RxNorm codes pointing at other drugs | fixed, code table pinned by test | 8449a98, dfbc47c |
+| Cleanup: lint F=0, no-LLM notes, constrained regeneration, relative UI paths, docs | done | 1c2a6ef, 1345bc3 |
+| Athena mirror of condition fixes (D4) | not done (other repo) | |
+| Metis-side fixes (EXPORT link to `?patient=`, Echo CodeableConcept) | not done (other repos) | |
+| Live Metis end-to-end run | not run | |
+
+---
+
 ## Decisions
 
 - **D1: Immunization schedule — RESOLVED: AAP** (2026 AAP schedule, not CDC). Cite the AAP version in the YAML header.

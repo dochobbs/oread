@@ -365,18 +365,15 @@ def test_exam_age_appropriate(peds):
 # Exports                                                                     #
 # --------------------------------------------------------------------------- #
 
-@xfail("X FHIR datetimes lack timezone; Bundle.timestamp not an instant")
 def test_fhir_bundles_validate(exported):
     _assert_none(exported, inv.check_fhir_valid, lambda m: (m.exports["fhir"],))
 
 
-@xfail("X C-CDA: duplicate Vitals, [cm_i], bare results, imm negation, no high, q24h")
 def test_ccda_structure(exported):
     _assert_none(exported, inv.check_ccda_structure,
                  lambda m: (m.exports["ccda"], m.patient))
 
 
-@xfail("X Markdown shows refused vaccines as given")
 def test_format_parity(exported):
     _assert_none(exported, inv.check_format_parity,
                  lambda m: (m.patient, m.exports["fhir"], m.exports["ccda"],

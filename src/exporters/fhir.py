@@ -3,15 +3,44 @@ FHIR R4 Exporter for SynthPatient.
 
 Converts internal Patient model to FHIR R4 Bundle format.
 Reference: https://www.hl7.org/fhir/R4/
+
+Conformance notes:
+- Validates under fhir.resources.R4B (R4-compatible models).
+- No null or empty-string values: optional elements are omitted.
+- Datetimes carry a timezone. The generator stores naive clock times; they
+  are labeled UTC so the output is deterministic across machines.
+- US Core profiles (STU 6.1) are claimed in meta.profile only where the
+  resource carries every element the profile requires.
 """
 
 from __future__ import annotations
 
+import base64
 import json
-from datetime import date, datetime
+from datetime import date, datetime, time, timezone
 from typing import Any
 from uuid import uuid4
 
+from dateutil.relativedelta import relativedelta
+
+from src.exporters.codes import (
+    ACT_REASON_URI,
+    CDC_RACE_ETH_URI,
+    OMB_ETHNICITY,
+    OMB_RACE,
+    V3_ROUTE_URI,
+    encounter_cpt,
+    is_placeholder_code,
+    lab_ucum,
+    language_code,
+    not_done_reason,
+    oread_oid,
+    parse_number,
+    route_info,
+    system_uri,
+)
+from src.exporters.measurements import as_date, vital_sessions
+from src.exporters.sig import build_sig
 from src.models import (
     Patient,
     Encounter,
@@ -19,11 +48,8 @@ from src.models import (
     Medication,
     Allergy,
     Immunization,
-    Observation,
     LabResult,
-    LabPanel,
     ImagingResult,
-    Procedure,
     PatientMessage,
     MessageCategory,
     MessageMedium,
@@ -34,9 +60,16 @@ from src.models import (
     AllergyCategory,
     EncounterClass,
     EncounterStatus,
+    ImmunizationStatus,
     Interpretation,
     ResultStatus,
 )
+
+UCUM = "http://unitsofmeasure.org"
+LOINC = "http://loinc.org"
+SNOMED = "http://snomed.info/sct"
+US_CORE = "http://hl7.org/fhir/us/core/StructureDefinition/"
+OBS_CATEGORY = "http://terminology.hl7.org/CodeSystem/observation-category"
 
 
 def generate_uuid() -> str:
@@ -44,60 +77,112 @@ def generate_uuid() -> str:
     return str(uuid4())
 
 
+def _aware(d: datetime) -> datetime:
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
 def format_date(d: date | datetime | None) -> str | None:
-    """Format a date for FHIR."""
+    """Format a FHIR date/dateTime. Datetimes always carry a timezone."""
     if d is None:
         return None
     if isinstance(d, datetime):
-        return d.isoformat()
+        return _aware(d).isoformat(timespec="seconds")
     return d.isoformat()
+
+
+def format_instant(d: date | datetime | None) -> str | None:
+    """Format a FHIR instant (full timestamp with timezone)."""
+    if d is None:
+        return None
+    if not isinstance(d, datetime):
+        d = datetime.combine(d, time(0, 0))
+    return _aware(d).isoformat(timespec="seconds")
+
+
+def _clean(value: Any) -> Any:
+    """Drop None, "", empty lists and empty dicts, recursively.
+
+    FHIR forbids empty elements and null values; omitting is the right call
+    for optional elements.
+    """
+    if isinstance(value, dict):
+        out = {k: _clean(v) for k, v in value.items()}
+        return {k: v for k, v in out.items() if v not in (None, "", [], {})}
+    if isinstance(value, list):
+        out = [_clean(v) for v in value]
+        return [v for v in out if v not in (None, "", [], {})]
+    return value
+
+
+def _coding(concept, display: str | None = None) -> dict | None:
+    """A Coding from a CodeableConcept, or None for placeholder/unknown codes."""
+    if concept is None or is_placeholder_code(concept.code):
+        return None
+    system = system_uri(concept.system)
+    if not system:
+        return None
+    return {"system": system, "code": concept.code, "display": display or concept.display}
+
+
+def _concept(concept, text: str | None) -> dict:
+    coding = _coding(concept)
+    return {"coding": [coding] if coding else [], "text": text}
+
+
+def _quantity(value: float, unit_text: str | None, ucum: str | None) -> dict:
+    q = {"value": value, "unit": unit_text or ucum}
+    if ucum:
+        q["system"] = UCUM
+        q["code"] = ucum
+    return q
 
 
 class FHIRExporter:
     """
     Exports Patient data to FHIR R4 Bundle format.
     """
-    
+
     def __init__(self):
         self.base_url = "urn:uuid:"
-    
+
     def export(self, patient: Patient) -> dict[str, Any]:
         """
         Export a patient to a FHIR R4 Bundle.
-        
+
         Returns a dictionary that can be serialized to JSON.
         """
         entries = []
-        
+        self._patient = patient
+
         # Patient resource
         patient_id = generate_uuid()
         patient_resource = self._create_patient_resource(patient, patient_id)
         entries.append(self._bundle_entry(patient_resource, patient_id))
-        
+
         # Conditions
         for condition in patient.problem_list:
             condition_id = generate_uuid()
             condition_resource = self._create_condition_resource(condition, patient_id, condition_id)
             entries.append(self._bundle_entry(condition_resource, condition_id))
-        
+
         # Medications
         for med in patient.medication_list:
             med_id = generate_uuid()
             med_resource = self._create_medication_statement_resource(med, patient_id, med_id)
             entries.append(self._bundle_entry(med_resource, med_id))
-        
+
         # Allergies
         for allergy in patient.allergy_list:
             allergy_id = generate_uuid()
             allergy_resource = self._create_allergy_resource(allergy, patient_id, allergy_id)
             entries.append(self._bundle_entry(allergy_resource, allergy_id))
-        
+
         # Immunizations
         for imm in patient.immunization_record:
             imm_id = generate_uuid()
             imm_resource = self._create_immunization_resource(imm, patient_id, imm_id)
             entries.append(self._bundle_entry(imm_resource, imm_id))
-        
+
         # Encounters
         encounter_id_map = {}
         for encounter in patient.encounters:
@@ -106,36 +191,27 @@ class FHIRExporter:
             enc_resource = self._create_encounter_resource(encounter, patient_id, enc_id)
             entries.append(self._bundle_entry(enc_resource, enc_id))
 
-            # Observations from this encounter (vitals)
-            if encounter.vital_signs:
-                for obs in self._create_vital_observations(encounter, patient_id, enc_id):
-                    obs_id = generate_uuid()
-                    entries.append(self._bundle_entry(obs, obs_id))
-
             # Lab results from this encounter
             for lab_result in encounter.lab_results:
-                # Handle both LabResult and LabPanel
-                if isinstance(lab_result, LabResult):
+                labs = lab_result.results if hasattr(lab_result, 'results') else [lab_result]
+                for lab in labs:
                     lab_id = generate_uuid()
-                    lab_obs = self._create_lab_observation(lab_result, patient_id, enc_id)
+                    lab_obs = self._create_lab_observation(lab, patient_id, enc_id, lab_id,
+                                                           encounter.date)
                     entries.append(self._bundle_entry(lab_obs, lab_id))
-                elif hasattr(lab_result, 'results'):  # LabPanel
-                    for lab in lab_result.results:
-                        lab_id = generate_uuid()
-                        lab_obs = self._create_lab_observation(lab, patient_id, enc_id)
-                        entries.append(self._bundle_entry(lab_obs, lab_id))
 
             # Imaging results from this encounter
             for imaging in encounter.imaging_results:
                 img_id = generate_uuid()
-                img_report = self._create_diagnostic_report(imaging, patient_id, enc_id)
+                img_report = self._create_diagnostic_report(imaging, patient_id, enc_id, img_id)
                 entries.append(self._bundle_entry(img_report, img_id))
-        
-        # Growth observations
-        for growth in patient.growth_data:
-            for obs in self._create_growth_observations(growth, patient_id, encounter_id_map.get(growth.encounter_id)):
-                obs_id = generate_uuid()
-                entries.append(self._bundle_entry(obs, obs_id))
+
+        # Vital signs: encounter vitals merged with same-day growth data, so
+        # each measurement (e.g. one weigh-in) is one Observation.
+        for session in vital_sessions(patient):
+            for obs in self._create_vital_observations(
+                    session, patient_id, encounter_id_map.get(session.encounter_id)):
+                entries.append(self._bundle_entry(obs, obs["id"]))
 
         # Patient messages (Communications)
         for message in patient.patient_messages:
@@ -150,72 +226,61 @@ class FHIRExporter:
             "resourceType": "Bundle",
             "id": generate_uuid(),
             "type": "collection",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": format_instant(datetime.now(timezone.utc)),
             "entry": entries,
-            "total": len(entries),
         }
-        
+
         return bundle
-    
+
     def export_json(self, patient: Patient, indent: int = 2) -> str:
         """Export to JSON string."""
         bundle = self.export(patient)
         return json.dumps(bundle, indent=indent, default=str)
-    
+
     def _bundle_entry(self, resource: dict, resource_id: str) -> dict:
-        """Wrap a resource in a bundle entry."""
+        """Wrap a resource in a bundle entry (empty/null values removed)."""
         return {
             "fullUrl": f"{self.base_url}{resource_id}",
-            "resource": resource,
+            "resource": _clean(resource),
         }
-    
+
+    @staticmethod
+    def _profile(name: str) -> dict:
+        return {"profile": [f"{US_CORE}{name}"]}
+
     def _create_patient_resource(self, patient: Patient, patient_id: str) -> dict:
-        """Create FHIR Patient resource."""
+        """Create FHIR Patient resource (US Core Patient)."""
         demo = patient.demographics
-        
-        # Name
+
         name = {
             "use": "official",
             "family": demo.family_name,
             "given": demo.given_names,
         }
-        
-        # Gender mapping
+
         gender_map = {
             Sex.MALE: "male",
             Sex.FEMALE: "female",
             Sex.INTERSEX: "other",
             Sex.UNKNOWN: "unknown",
         }
-        
-        # Address
+
         address = {
             "use": "home",
             "type": "physical",
-            "line": [demo.address.line1],
+            "line": [demo.address.line1, demo.address.line2],
             "city": demo.address.city,
             "state": demo.address.state,
             "postalCode": demo.address.postal_code,
             "country": demo.address.country,
         }
-        if demo.address.line2:
-            address["line"].append(demo.address.line2)
-        
-        # Telecom
+
         telecom = []
         if demo.phone:
-            telecom.append({
-                "system": "phone",
-                "value": demo.phone,
-                "use": "home",
-            })
+            telecom.append({"system": "phone", "value": demo.phone, "use": "home"})
         if demo.email:
-            telecom.append({
-                "system": "email",
-                "value": demo.email,
-            })
-        
-        # Contact (emergency contact / guardian)
+            telecom.append({"system": "email", "value": demo.email})
+
         contact = []
         if demo.emergency_contact:
             ec = demo.emergency_contact
@@ -224,12 +289,13 @@ class FHIRExporter:
                 "name": {"text": ec.name},
                 "telecom": [{"system": "phone", "value": ec.phone}] if ec.phone else [],
             })
-        
+
         resource = {
             "resourceType": "Patient",
             "id": patient_id,
+            "meta": self._profile("us-core-patient"),
             "identifier": [{
-                "system": "urn:oread:id",
+                "system": f"urn:oid:{oread_oid('patient')}",
                 "value": patient.id,
             }],
             "name": [name],
@@ -237,48 +303,55 @@ class FHIRExporter:
             "birthDate": format_date(demo.date_of_birth),
             "address": [address],
             "telecom": telecom,
-            "contact": contact if contact else None,
+            "contact": contact,
             "communication": [{
                 "language": {
                     "coding": [{
                         "system": "urn:ietf:bcp:47",
-                        "code": "en" if demo.preferred_language == "English" else demo.preferred_language.lower()[:2],
+                        "code": language_code(demo.preferred_language),
                         "display": demo.preferred_language,
                     }],
+                    "text": demo.preferred_language,
                 },
                 "preferred": True,
             }],
         }
-        
-        # Extensions for race/ethnicity
+
+        # US Core race / ethnicity: one extension each, OMB categories + text
         extensions = []
         if demo.race:
-            for race in demo.race:
-                extensions.append({
-                    "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
-                    "extension": [{
-                        "url": "text",
-                        "valueString": race,
-                    }],
-                })
+            race_ext = [{"url": "ombCategory", "valueCoding": {
+                "system": CDC_RACE_ETH_URI, "code": code, "display": display}}
+                for code, display in filter(None, (OMB_RACE.get(r.strip().lower())
+                                                   for r in demo.race))]
+            race_ext.append({"url": "text", "valueString": ", ".join(demo.race)})
+            extensions.append({"url": f"{US_CORE}us-core-race", "extension": race_ext})
         if demo.ethnicity:
-            extensions.append({
-                "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity",
-                "extension": [{
-                    "url": "text",
-                    "valueString": demo.ethnicity,
-                }],
-            })
-        
-        if extensions:
-            resource["extension"] = extensions
-        
-        # Remove None values
-        return {k: v for k, v in resource.items() if v is not None}
-    
+            eth_ext = []
+            eth = OMB_ETHNICITY.get(demo.ethnicity.strip().lower())
+            if eth:
+                eth_ext.append({"url": "ombCategory", "valueCoding": {
+                    "system": CDC_RACE_ETH_URI, "code": eth[0], "display": eth[1]}})
+            eth_ext.append({"url": "text", "valueString": demo.ethnicity})
+            extensions.append({"url": f"{US_CORE}us-core-ethnicity", "extension": eth_ext})
+        resource["extension"] = extensions
+        return resource
+
+    # Condition.category from the model's category.
+    # Source: FHIR condition-category; US Core condition-category (health-concern).
+    CONDITION_CATEGORY = {
+        "problem": ("http://terminology.hl7.org/CodeSystem/condition-category",
+                    "problem-list-item", "Problem List Item"),
+        "diagnosis": ("http://terminology.hl7.org/CodeSystem/condition-category",
+                      "problem-list-item", "Problem List Item"),
+        "encounter-diagnosis": ("http://terminology.hl7.org/CodeSystem/condition-category",
+                                "encounter-diagnosis", "Encounter Diagnosis"),
+        "health-concern": ("http://hl7.org/fhir/us/core/CodeSystem/condition-category",
+                           "health-concern", "Health Concern"),
+    }
+
     def _create_condition_resource(self, condition: Condition, patient_id: str, condition_id: str) -> dict:
         """Create FHIR Condition resource."""
-        # Clinical status mapping
         status_map = {
             ConditionStatus.ACTIVE: "active",
             ConditionStatus.RECURRENCE: "recurrence",
@@ -287,10 +360,16 @@ class FHIRExporter:
             ConditionStatus.REMISSION: "remission",
             ConditionStatus.RESOLVED: "resolved",
         }
-        
+        system, code, display = self.CONDITION_CATEGORY.get(
+            condition.category, self.CONDITION_CATEGORY["problem"])
+        coding = _coding(condition.code)
+        profile = ("us-core-condition-encounter-diagnosis" if code == "encounter-diagnosis"
+                   else "us-core-condition-problems-health-concerns")
+
         resource = {
             "resourceType": "Condition",
             "id": condition_id,
+            "meta": self._profile(profile) if coding else None,
             "clinicalStatus": {
                 "coding": [{
                     "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
@@ -303,37 +382,77 @@ class FHIRExporter:
                     "code": condition.verification_status.value,
                 }],
             },
-            "code": {
-                "coding": [{
-                    "system": condition.code.system,
-                    "code": condition.code.code,
-                    "display": condition.code.display,
-                }],
-                "text": condition.display_name,
-            },
-            "subject": {
-                "reference": f"urn:uuid:{patient_id}",
-            },
+            "category": [{"coding": [{"system": system, "code": code, "display": display}]}],
+            "code": {"coding": [coding] if coding else [], "text": condition.display_name},
+            "subject": {"reference": f"urn:uuid:{patient_id}"},
             "onsetDateTime": format_date(condition.onset_date),
+            "abatementDateTime": format_date(condition.abatement_date),
+            "recordedDate": format_date(condition.recorded_date),
         }
-        
-        if condition.severity:
+
+        severity_codes = {"mild": "255604002", "moderate": "6736007", "severe": "24484000"}
+        if condition.severity and condition.severity.value in severity_codes:
             resource["severity"] = {
                 "coding": [{
-                    "system": "http://snomed.info/sct",
-                    "code": {"mild": "255604002", "moderate": "6736007", "severe": "24484000"}.get(condition.severity.value, ""),
+                    "system": SNOMED,
+                    "code": severity_codes[condition.severity.value],
                     "display": condition.severity.value.title(),
                 }],
             }
-        
-        if condition.abatement_date:
-            resource["abatementDateTime"] = format_date(condition.abatement_date)
-        
+
         if condition.notes:
             resource["note"] = [{"text": condition.notes}]
-        
+
         return resource
-    
+
+    def _dosage(self, med: Medication) -> dict:
+        """Dosage with structured timing, PRN, numeric dose and the full sig."""
+        sig = build_sig(med)
+        t = sig.timing
+        dosage: dict[str, Any] = {"text": sig.text}
+
+        repeat: dict[str, Any] = {}
+        if t.once:
+            repeat = {"count": 1}
+        elif t.event:
+            repeat = {"frequency": 1, "period": 1, "periodUnit": "d", "when": [t.event]}
+        elif t.period is not None:
+            repeat = {"frequency": 1, "period": t.period, "periodUnit": t.period_unit}
+            if t.period_max is not None:
+                repeat["periodMax"] = t.period_max
+        if repeat:
+            dosage["timing"] = {"repeat": repeat}
+
+        if t.prn:
+            reason = med.prn_reason
+            if reason:
+                dosage["asNeededCodeableConcept"] = {"text": reason}
+            else:
+                dosage["asNeededBoolean"] = True
+
+        info = route_info(med.route)
+        if info:
+            dosage["route"] = {"coding": [{"system": SNOMED, "code": info[2], "display": info[3]}],
+                               "text": med.route}
+        elif med.route:
+            dosage["route"] = {"text": med.route}
+
+        unit_text = med.dose_unit or None
+        if sig.dose and sig.unit_known:
+            low, high = sig.dose
+            if high is None:
+                dosage["doseAndRate"] = [{"doseQuantity": _quantity(low, unit_text, sig.ucum)}]
+            else:
+                dosage["doseAndRate"] = [{"doseRange": {
+                    "low": _quantity(low, unit_text, sig.ucum),
+                    "high": _quantity(high, unit_text, sig.ucum)}}]
+        if sig.daily_dose is not None and sig.unit_known:
+            dosage["maxDosePerPeriod"] = {
+                "numerator": _quantity(sig.daily_dose, unit_text, sig.ucum),
+                "denominator": {"value": 1, "unit": "day", "system": UCUM, "code": "d"},
+            }
+        return dosage
+
     def _create_medication_statement_resource(self, med: Medication, patient_id: str, med_id: str) -> dict:
         """Create FHIR MedicationStatement resource."""
         status_map = {
@@ -342,59 +461,40 @@ class FHIRExporter:
             MedicationStatus.STOPPED: "stopped",
             MedicationStatus.ON_HOLD: "on-hold",
         }
-        
+
         resource = {
             "resourceType": "MedicationStatement",
             "id": med_id,
             "status": status_map.get(med.status, "active"),
-            "medicationCodeableConcept": {
-                "coding": [{
-                    "system": med.code.system,
-                    "code": med.code.code,
-                    "display": med.code.display,
-                }],
-                "text": med.display_name,
-            },
-            "subject": {
-                "reference": f"urn:uuid:{patient_id}",
-            },
+            "medicationCodeableConcept": _concept(med.code, med.display_name),
+            "subject": {"reference": f"urn:uuid:{patient_id}"},
             "effectivePeriod": {
                 "start": format_date(med.start_date),
+                "end": format_date(med.end_date),
             },
-            "dosage": [{
-                "text": f"{med.dose_quantity} {med.dose_unit} {med.frequency}",
-                "route": {
-                    "text": med.route,
-                },
-                "doseAndRate": [{
-                    "doseQuantity": {
-                        "value": float(med.dose_quantity) if med.dose_quantity.replace(".", "").isdigit() else None,
-                        "unit": med.dose_unit,
-                    },
-                }],
-            }],
+            "dosage": [self._dosage(med)],
         }
-        
-        if med.end_date:
-            resource["effectivePeriod"]["end"] = format_date(med.end_date)
-        
+
         if med.indication:
             resource["reasonCode"] = [{"text": med.indication}]
-        
+        if med.discontinuation_reason and med.status != MedicationStatus.ACTIVE:
+            resource["statusReason"] = [{"text": med.discontinuation_reason}]
+
         return resource
-    
+
     def _create_allergy_resource(self, allergy: Allergy, patient_id: str, allergy_id: str) -> dict:
-        """Create FHIR AllergyIntolerance resource."""
+        """Create FHIR AllergyIntolerance resource (US Core AllergyIntolerance)."""
         category_map = {
             AllergyCategory.FOOD: "food",
             AllergyCategory.MEDICATION: "medication",
             AllergyCategory.ENVIRONMENT: "environment",
             AllergyCategory.BIOLOGIC: "biologic",
         }
-        
+
         resource = {
             "resourceType": "AllergyIntolerance",
             "id": allergy_id,
+            "meta": self._profile("us-core-allergyintolerance"),
             "clinicalStatus": {
                 "coding": [{
                     "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical",
@@ -410,86 +510,95 @@ class FHIRExporter:
             "type": allergy.type.value,
             "category": [category_map.get(allergy.category, "environment")],
             "criticality": allergy.criticality,
-            "code": {
-                "text": allergy.display_name,
-            },
-            "patient": {
-                "reference": f"urn:uuid:{patient_id}",
-            },
+            "code": _concept(allergy.code, allergy.display_name),
+            "patient": {"reference": f"urn:uuid:{patient_id}"},
+            "onsetDateTime": format_date(allergy.onset_date),
+            "recordedDate": format_date(allergy.recorded_date),
         }
-        
-        if allergy.code:
-            resource["code"]["coding"] = [{
-                "system": allergy.code.system,
-                "code": allergy.code.code,
-                "display": allergy.code.display,
-            }]
-        
+
         if allergy.reactions:
+            severities = [r.severity.value for r in allergy.reactions
+                          if r.severity and r.severity.value in ("mild", "moderate", "severe")]
             resource["reaction"] = [{
                 "manifestation": [{"text": r.manifestation} for r in allergy.reactions],
+                "severity": max(severities, key=["mild", "moderate", "severe"].index)
+                if severities else None,
             }]
-        
+
         return resource
-    
+
     def _create_immunization_resource(self, imm: Immunization, patient_id: str, imm_id: str) -> dict:
-        """Create FHIR Immunization resource."""
+        """Create FHIR Immunization resource (US Core Immunization)."""
+        not_done = imm.status == ImmunizationStatus.NOT_DONE
+        coding = _coding(imm.vaccine_code)
         resource = {
             "resourceType": "Immunization",
             "id": imm_id,
+            "meta": self._profile("us-core-immunization") if coding else None,
             "status": imm.status.value,
-            "vaccineCode": {
-                "coding": [{
-                    "system": imm.vaccine_code.system,
-                    "code": imm.vaccine_code.code,
-                    "display": imm.vaccine_code.display,
-                }],
-                "text": imm.display_name,
-            },
-            "patient": {
-                "reference": f"urn:uuid:{patient_id}",
-            },
+            "vaccineCode": {"coding": [coding] if coding else [], "text": imm.display_name},
+            "patient": {"reference": f"urn:uuid:{patient_id}"},
             "occurrenceDateTime": format_date(imm.date),
             "primarySource": True,
         }
-        
-        if imm.dose_number:
-            resource["protocolApplied"] = [{
-                "doseNumberPositiveInt": imm.dose_number,
-            }]
-            if imm.series_doses:
-                resource["protocolApplied"][0]["seriesDosesPositiveInt"] = imm.series_doses
-        
-        if imm.lot_number:
+
+        if not_done:
+            reason = not_done_reason(imm.status_reason)
+            resource["statusReason"] = {
+                "coding": [{"system": ACT_REASON_URI, "code": reason[0], "display": reason[1]}]
+                if reason else [],
+                "text": imm.status_reason or "Not given",
+            }
+        else:
+            if imm.dose_number:
+                resource["protocolApplied"] = [{
+                    "doseNumberPositiveInt": imm.dose_number,
+                    "seriesDosesPositiveInt": imm.series_doses,
+                }]
             resource["lotNumber"] = imm.lot_number
-        
-        if imm.site:
-            resource["site"] = {"text": imm.site}
-        
+            resource["expirationDate"] = format_date(imm.expiration_date)
+            if imm.manufacturer:
+                resource["manufacturer"] = {"display": imm.manufacturer}
+            if imm.site:
+                resource["site"] = {"text": imm.site}
+            info = route_info(imm.route)
+            if info:
+                resource["route"] = {"coding": [{"system": V3_ROUTE_URI, "code": info[4]}],
+                                     "text": imm.route}
+            elif imm.route:
+                resource["route"] = {"text": imm.route}
+        if imm.notes:
+            resource["note"] = [{"text": imm.notes}]
+
         return resource
-    
+
     def _create_encounter_resource(self, encounter: Encounter, patient_id: str, enc_id: str) -> dict:
-        """Create FHIR Encounter resource."""
+        """Create FHIR Encounter resource (US Core Encounter)."""
         class_map = {
             EncounterClass.AMBULATORY: {"code": "AMB", "display": "ambulatory"},
             EncounterClass.EMERGENCY: {"code": "EMER", "display": "emergency"},
-            EncounterClass.INPATIENT: {"code": "IMP", "display": "inpatient"},
+            EncounterClass.INPATIENT: {"code": "IMP", "display": "inpatient encounter"},
             EncounterClass.VIRTUAL: {"code": "VR", "display": "virtual"},
             EncounterClass.HOME: {"code": "HH", "display": "home health"},
         }
-        
+
         status_map = {
             EncounterStatus.PLANNED: "planned",
             EncounterStatus.IN_PROGRESS: "in-progress",
             EncounterStatus.FINISHED: "finished",
             EncounterStatus.CANCELLED: "cancelled",
         }
-        
+
         enc_class = class_map.get(encounter.encounter_class, {"code": "AMB", "display": "ambulatory"})
-        
+        age_years = relativedelta(as_date(encounter.date),
+                                  self._patient.demographics.date_of_birth).years
+        cpt = encounter_cpt(encounter.type.value, age_years)
+
         resource = {
             "resourceType": "Encounter",
             "id": enc_id,
+            "meta": self._profile("us-core-encounter"),
+            "identifier": [{"system": f"urn:oid:{oread_oid('encounter')}", "value": encounter.id}],
             "status": status_map.get(encounter.status, "finished"),
             "class": {
                 "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
@@ -497,127 +606,100 @@ class FHIRExporter:
                 "display": enc_class["display"],
             },
             "type": [{
+                "coding": [{"system": "http://www.ama-assn.org/go/cpt", "code": cpt[0],
+                            "display": cpt[1]}] if cpt else [],
                 "text": encounter.type.value.replace("-", " ").title(),
             }],
-            "subject": {
-                "reference": f"urn:uuid:{patient_id}",
-            },
+            "subject": {"reference": f"urn:uuid:{patient_id}"},
             "period": {
                 "start": format_date(encounter.date),
+                "end": format_date(encounter.end_date),
             },
             "reasonCode": [{"text": encounter.chief_complaint}],
         }
-        
-        if encounter.end_date:
-            resource["period"]["end"] = format_date(encounter.end_date)
-        
+
         if encounter.provider:
-            resource["participant"] = [{
-                "individual": {
-                    "display": encounter.provider.name,
-                },
-            }]
-        
+            resource["participant"] = [{"individual": {"display": encounter.provider.name}}]
+
         if encounter.location:
-            resource["location"] = [{
-                "location": {
-                    "display": encounter.location.name,
-                },
-            }]
-        
+            resource["location"] = [{"location": {"display": encounter.location.name}}]
+
         return resource
-    
-    def _create_vital_observations(self, encounter: Encounter, patient_id: str, enc_id: str) -> list[dict]:
-        """Create FHIR Observation resources for vital signs."""
-        observations = []
-        vs = encounter.vital_signs
-        
-        if not vs:
-            return observations
-        
-        # LOINC codes for vitals
-        vital_configs = [
-            ("8310-5", "Body temperature", vs.temperature_f, "degF", "[degF]"),
-            ("8867-4", "Heart rate", vs.heart_rate, "beats/minute", "/min"),
-            ("9279-1", "Respiratory rate", vs.respiratory_rate, "breaths/minute", "/min"),
-            ("8480-6", "Systolic blood pressure", vs.blood_pressure_systolic, "mmHg", "mm[Hg]"),
-            ("8462-4", "Diastolic blood pressure", vs.blood_pressure_diastolic, "mmHg", "mm[Hg]"),
-            ("2708-6", "Oxygen saturation", vs.oxygen_saturation, "%", "%"),
-            ("29463-7", "Body weight", vs.weight_kg, "kg", "kg"),
-            ("8302-2", "Body height", vs.height_cm, "cm", "cm"),
-            ("9843-4", "Head circumference", vs.head_circumference_cm, "cm", "cm"),
-        ]
-        
-        for loinc, display, value, unit_display, unit_code in vital_configs:
-            if value is not None:
-                obs = {
-                    "resourceType": "Observation",
-                    "status": "final",
-                    "category": [{
-                        "coding": [{
-                            "system": "http://terminology.hl7.org/CodeSystem/observation-category",
-                            "code": "vital-signs",
-                            "display": "Vital Signs",
-                        }],
-                    }],
-                    "code": {
-                        "coding": [{
-                            "system": "http://loinc.org",
-                            "code": loinc,
-                            "display": display,
-                        }],
-                    },
-                    "subject": {
-                        "reference": f"urn:uuid:{patient_id}",
-                    },
-                    "encounter": {
-                        "reference": f"urn:uuid:{enc_id}",
-                    },
-                    "effectiveDateTime": format_date(vs.date),
-                    "valueQuantity": {
-                        "value": value,
-                        "unit": unit_display,
-                        "system": "http://unitsofmeasure.org",
-                        "code": unit_code,
-                    },
-                }
-                observations.append(obs)
-        
-        return observations
-    
-    def _create_growth_observations(self, growth, patient_id: str, enc_id: str | None) -> list[dict]:
-        """Create FHIR Observation resources for growth measurements."""
-        observations = []
-        
-        # Weight with percentile
-        if growth.weight_kg:
-            obs = {
-                "resourceType": "Observation",
-                "status": "final",
-                "category": [{
-                    "coding": [{
-                        "system": "http://terminology.hl7.org/CodeSystem/observation-category",
-                        "code": "vital-signs",
-                    }],
+
+    # (key, LOINC, display, unit text, UCUM, US Core profile)
+    # Sources: FHIR R4 Vital Signs profile codes; US Core STU 6.1 vital-sign
+    # and pediatric percentile profiles.
+    VITAL_SPECS = [
+        ("height", "8302-2", "Body height", "cm", "cm", "us-core-body-height"),
+        ("weight", "29463-7", "Body weight", "kg", "kg", "us-core-body-weight"),
+        ("bmi", "39156-5", "Body mass index (BMI) [Ratio]", "kg/m2", "kg/m2", "us-core-bmi"),
+        ("bmi_pct", "59576-9", "Body mass index (BMI) [Percentile] Per age and sex", "%", "%",
+         "pediatric-bmi-for-age"),
+        ("hc", "9843-4", "Head Occipital-frontal circumference", "cm", "cm",
+         "us-core-head-circumference"),
+        ("hc_pct", "8289-1", "Head Occipital-frontal circumference Percentile", "%", "%",
+         "head-occipital-frontal-circumference-percentile"),
+        ("temp", "8310-5", "Body temperature", "degF", "[degF]", "us-core-body-temperature"),
+        ("hr", "8867-4", "Heart rate", "beats/minute", "/min", "us-core-heart-rate"),
+        ("rr", "9279-1", "Respiratory rate", "breaths/minute", "/min", "us-core-respiratory-rate"),
+        ("spo2", "59408-5", "Oxygen saturation in Arterial blood by Pulse oximetry", "%", "%",
+         "us-core-pulse-oximetry"),
+    ]
+
+    def _vital_base(self, patient_id: str, enc_id: str | None, when, loinc: str,
+                    display: str, profile: str) -> dict:
+        codings = [{"system": LOINC, "code": loinc, "display": display}]
+        if loinc == "59408-5":
+            # US Core pulse oximetry requires both codes
+            codings.append({"system": LOINC, "code": "2708-6", "display": "Oxygen saturation in Arterial blood"})
+        return {
+            "resourceType": "Observation",
+            "id": generate_uuid(),
+            "meta": self._profile(profile),
+            "status": "final",
+            "category": [{
+                "coding": [{
+                    "system": OBS_CATEGORY,
+                    "code": "vital-signs",
+                    "display": "Vital Signs",
                 }],
-                "code": {
-                    "coding": [{
-                        "system": "http://loinc.org",
-                        "code": "29463-7",
-                        "display": "Body weight",
-                    }],
-                },
-                "subject": {"reference": f"urn:uuid:{patient_id}"},
-                "effectiveDateTime": format_date(growth.date),
-                "valueQuantity": {
-                    "value": growth.weight_kg,
-                    "unit": "kg",
-                    "system": "http://unitsofmeasure.org",
-                    "code": "kg",
-                },
-            }
-            if enc_id:
-                obs["encounter"] = {"reference": f"urn:uuid:{enc_id}"}
+            }],
+            "code": {"coding": codings, "text": display},
+            "subject": {"reference": f"urn:uuid:{patient_id}"},
+            "encounter": {"reference": f"urn:uuid:{enc_id}"} if enc_id else None,
+            "effectiveDateTime": format_date(when),
+        }
+
+    def _create_vital_observations(self, session, patient_id: str, enc_id: str | None) -> list[dict]:
+        """One Observation per measurement; BP as the 85354-9 panel."""
+        observations = []
+        values = session.values()
+
+        for key, loinc, display, unit_text, ucum, profile in self.VITAL_SPECS:
+            value = values[key]
+            if value is None:
+                continue
+            obs = self._vital_base(patient_id, enc_id, session.when, loinc, display, profile)
+            obs["valueQuantity"] = _quantity(value, unit_text, ucum)
+            observations.append(obs)
+
+        sbp, dbp = values["sbp"], values["dbp"]
+        if sbp is not None or dbp is not None:
+            obs = self._vital_base(patient_id, enc_id, session.when, "85354-9",
+                                   "Blood pressure panel with all children optional",
+                                   "us-core-blood-pressure")
+            components = []
+            for loinc, display, value in (("8480-6", "Systolic blood pressure", sbp),
+                                          ("8462-4", "Diastolic blood pressure", dbp)):
+                comp = {"code": {"coding": [{"system": LOINC, "code": loinc, "display": display}]}}
+                if value is not None:
+                    comp["valueQuantity"] = _quantity(value, "mmHg", "mm[Hg]")
+                else:
+                    comp["dataAbsentReason"] = {"coding": [{
+                        "system": "http://terminology.hl7.org/CodeSystem/data-absent-reason",
+                        "code": "not-performed"}]}
+                components.append(comp)
+            obs["component"] = components
             observations.append(obs)
 
         return observations
@@ -627,9 +709,10 @@ class FHIRExporter:
         lab: LabResult,
         patient_id: str,
         enc_id: str | None,
+        obs_id: str | None = None,
+        fallback_date: datetime | None = None,
     ) -> dict:
         """Create FHIR Observation resource for a lab result."""
-        # Map interpretation to FHIR
         interpretation_map = {
             Interpretation.NORMAL: {"code": "N", "display": "Normal"},
             Interpretation.ABNORMAL: {"code": "A", "display": "Abnormal"},
@@ -639,64 +722,56 @@ class FHIRExporter:
             Interpretation.POSITIVE: {"code": "POS", "display": "Positive"},
             Interpretation.NEGATIVE: {"code": "NEG", "display": "Negative"},
         }
-
-        interp = interpretation_map.get(
-            lab.interpretation,
-            {"code": "N", "display": "Normal"}
-        )
+        coding = _coding(lab.code)
 
         obs = {
             "resourceType": "Observation",
+            "id": obs_id or generate_uuid(),
+            "meta": self._profile("us-core-observation-lab") if coding else None,
             "status": "final",
             "category": [{
                 "coding": [{
-                    "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                    "system": OBS_CATEGORY,
                     "code": "laboratory",
                     "display": "Laboratory",
                 }],
             }],
-            "code": {
-                "coding": [{
-                    "system": lab.code.system if lab.code else "http://loinc.org",
-                    "code": lab.code.code if lab.code else "",
-                    "display": lab.code.display if lab.code else lab.display_name,
-                }],
-                "text": lab.display_name,
-            },
-            "subject": {
-                "reference": f"urn:uuid:{patient_id}",
-            },
-            "effectiveDateTime": format_date(lab.resulted_date),
-            "interpretation": [{
+            "code": {"coding": [coding] if coding else [], "text": lab.display_name},
+            "subject": {"reference": f"urn:uuid:{patient_id}"},
+            "encounter": {"reference": f"urn:uuid:{enc_id}"} if enc_id else None,
+            "effectiveDateTime": format_date(lab.collected_date or lab.resulted_date or fallback_date),
+            "issued": format_instant(lab.resulted_date),
+        }
+
+        interp = interpretation_map.get(lab.interpretation)
+        if interp:
+            obs["interpretation"] = [{
                 "coding": [{
                     "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
                     "code": interp["code"],
                     "display": interp["display"],
                 }],
-            }],
-        }
+            }]
 
-        # Add encounter reference if available
-        if enc_id:
-            obs["encounter"] = {"reference": f"urn:uuid:{enc_id}"}
+        # Value: numeric -> valueQuantity (UCUM when mappable), else valueString
+        number = parse_number(lab.value)
+        if number is not None:
+            obs["valueQuantity"] = _quantity(number, lab.unit or None, lab_ucum(lab.unit))
+        elif lab.value is not None and str(lab.value).strip():
+            obs["valueString"] = str(lab.value)
+        else:
+            obs["dataAbsentReason"] = {"coding": [{
+                "system": "http://terminology.hl7.org/CodeSystem/data-absent-reason",
+                "code": "unknown"}]}
 
-        # Add value - either numeric or string
-        if lab.value is not None:
-            if isinstance(lab.value, (int, float)):
-                obs["valueQuantity"] = {
-                    "value": lab.value,
-                    "unit": lab.unit or "",
-                    "system": "http://unitsofmeasure.org",
-                    "code": lab.unit or "",
-                }
-            else:
-                obs["valueString"] = str(lab.value)
-
-        # Add reference range if available
-        if lab.reference_range:
+        rr = lab.reference_range
+        if rr and (rr.low is not None or rr.high is not None or rr.text):
+            unit = rr.unit or lab.unit
+            ucum = lab_ucum(unit)
             obs["referenceRange"] = [{
-                "low": {"value": lab.reference_range.low, "unit": lab.reference_range.unit or ""},
-                "high": {"value": lab.reference_range.high, "unit": lab.reference_range.unit or ""},
+                "low": _quantity(rr.low, unit, ucum) if rr.low is not None else None,
+                "high": _quantity(rr.high, unit, ucum) if rr.high is not None else None,
+                "text": rr.text,
             }]
 
         return obs
@@ -706,18 +781,20 @@ class FHIRExporter:
         imaging: ImagingResult,
         patient_id: str,
         enc_id: str | None,
+        report_id: str | None = None,
     ) -> dict:
         """Create FHIR DiagnosticReport resource for imaging result."""
-        # Map status
         status_map = {
             ResultStatus.PRELIMINARY: "preliminary",
             ResultStatus.FINAL: "final",
             ResultStatus.AMENDED: "amended",
             ResultStatus.CANCELLED: "cancelled",
         }
+        report_text = f"FINDINGS:\n{imaging.findings}\n\nIMPRESSION:\n{imaging.impression}\n"
 
         report = {
             "resourceType": "DiagnosticReport",
+            "id": report_id or generate_uuid(),
             "status": status_map.get(imaging.status, "final"),
             "category": [{
                 "coding": [{
@@ -726,51 +803,22 @@ class FHIRExporter:
                     "display": "Radiology",
                 }],
             }],
-            "code": {
-                "coding": [{
-                    "system": imaging.code.system if imaging.code else "http://loinc.org",
-                    "code": imaging.code.code if imaging.code else "",
-                    "display": imaging.code.display if imaging.code else imaging.display_name,
-                }] if imaging.code else [],
-                "text": imaging.display_name,
-            },
-            "subject": {
-                "reference": f"urn:uuid:{patient_id}",
-            },
+            "code": _concept(imaging.code, imaging.display_name),
+            "subject": {"reference": f"urn:uuid:{patient_id}"},
+            "encounter": {"reference": f"urn:uuid:{enc_id}"} if enc_id else None,
             "effectiveDateTime": format_date(imaging.performed_date),
-            "issued": format_date(imaging.reported_date) if imaging.reported_date else None,
+            "issued": format_instant(imaging.reported_date),
             "conclusion": imaging.impression,
             "presentedForm": [{
                 "contentType": "text/plain",
-                "data": None,  # Would be base64 encoded report
+                "data": base64.b64encode(report_text.encode("utf-8")).decode("ascii"),
                 "title": imaging.display_name,
             }],
+            "performer": [{"display": name} for name in
+                          (imaging.radiologist, imaging.performing_facility) if name],
         }
 
-        # Add encounter reference if available
-        if enc_id:
-            report["encounter"] = {"reference": f"urn:uuid:{enc_id}"}
-
-        # Add performer (radiologist)
-        if imaging.radiologist:
-            report["performer"] = [{
-                "display": imaging.radiologist,
-            }]
-
-        # Add performing facility
-        if imaging.performing_facility:
-            report["performer"] = report.get("performer", []) + [{
-                "display": imaging.performing_facility,
-            }]
-
-        # Add findings as result narrative
-        if imaging.findings:
-            report["conclusionCode"] = [{
-                "text": imaging.findings,
-            }]
-
-        # Remove None values
-        return {k: v for k, v in report.items() if v is not None}
+        return report
 
     def _create_communication_resource(
         self,
@@ -780,7 +828,6 @@ class FHIRExporter:
         comm_id: str
     ) -> dict:
         """Create FHIR Communication resource for patient messages."""
-        # Map internal category to FHIR Communication category codes
         # Using http://terminology.hl7.org/CodeSystem/communication-category
         category_map = {
             MessageCategory.REFILL_REQUEST: {"code": "prescription", "display": "Prescription"},
@@ -794,16 +841,14 @@ class FHIRExporter:
             MessageCategory.OTHER: {"code": "notification", "display": "Notification"},
         }
 
-        # Map medium to FHIR ContactPoint system
         medium_map = {
             MessageMedium.PORTAL: {"code": "WRITTEN", "display": "Written"},
             MessageMedium.PHONE: {"code": "PHONE", "display": "Telephone"},
             MessageMedium.EMAIL: {"code": "EMAILWRIT", "display": "Email"},
-            MessageMedium.FAX: {"code": "FAX", "display": "Fax"},
-            MessageMedium.SMS: {"code": "SMS", "display": "SMS"},
+            MessageMedium.FAX: {"code": "FAXWRIT", "display": "Fax"},
+            MessageMedium.SMS: {"code": "SMSWRIT", "display": "SMS"},
         }
 
-        # Map status
         status_map = {
             MessageStatus.COMPLETED: "completed",
             MessageStatus.IN_PROGRESS: "in-progress",
@@ -813,7 +858,6 @@ class FHIRExporter:
         cat_info = category_map.get(message.category, {"code": "notification", "display": "Notification"})
         med_info = medium_map.get(message.medium, {"code": "WRITTEN", "display": "Written"})
 
-        # Build the resource
         resource = {
             "resourceType": "Communication",
             "id": comm_id,
@@ -834,38 +878,16 @@ class FHIRExporter:
                 }],
                 "text": message.medium.value.title(),
             }],
-            "subject": {
-                "reference": f"urn:uuid:{patient_id}",
-            },
+            "subject": {"reference": f"urn:uuid:{patient_id}"},
+            "encounter": {"reference": f"urn:uuid:{encounter_id}"} if encounter_id else None,
             "sent": format_date(message.sent_datetime),
-            "payload": [{
-                "contentString": message.message_body,
-            }],
+            "payload": [{"contentString": message.message_body}],
+            "sender": {"display": message.sender_name},
+            "recipient": [{"display": message.recipient_name}],
+            "topic": {"text": message.subject} if message.subject else None,
+            "reasonCode": [{"text": message.related_condition}] if message.related_condition else None,
         }
 
-        # Add sender info
-        resource["sender"] = {
-            "display": message.sender_name,
-        }
-
-        # Add recipient info
-        resource["recipient"] = [{
-            "display": message.recipient_name,
-        }]
-
-        # Add encounter reference if available
-        if encounter_id:
-            resource["encounter"] = {
-                "reference": f"urn:uuid:{encounter_id}",
-            }
-
-        # Add topic/subject
-        if message.subject:
-            resource["topic"] = {
-                "text": message.subject,
-            }
-
-        # Add reply as a note if present
         if message.reply_body and message.reply_datetime:
             resource["note"] = [{
                 "authorString": message.replier_name or "Office Staff",
@@ -874,35 +896,29 @@ class FHIRExporter:
             }]
             resource["received"] = format_date(message.reply_datetime)
 
-        # Add related condition as reasonCode if present
-        if message.related_condition:
-            resource["reasonCode"] = [{
-                "text": message.related_condition,
-            }]
-
         return resource
 
 
 def export_to_fhir(patient: Patient, output_path=None) -> dict[str, Any]:
     """Convenience function to export a patient to FHIR.
-    
+
     Args:
         patient: The patient to export
         output_path: Optional path to write the FHIR bundle JSON
-    
+
     Returns:
         FHIR Bundle as a dictionary
     """
     from pathlib import Path
-    
+
     exporter = FHIRExporter()
     bundle = exporter.export(patient)
-    
+
     if output_path:
         path = Path(output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(bundle, indent=2, default=str))
-    
+
     return bundle
 
 

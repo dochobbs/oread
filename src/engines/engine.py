@@ -1399,6 +1399,7 @@ Examples:
             height_percentile=height_pct,
             hc_percentile=self.rng.gauss(50, 15),
             pattern=pattern,
+            rng=self.rng,
             **pattern_kwargs,
         )
         
@@ -2549,7 +2550,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         latest_growth = growth_data[-1] if growth_data else None
 
         # Generate vitals (illness-aware for acute encounters)
-        vitals_dict = generate_normal_vitals(age_months)
+        vitals_dict = generate_normal_vitals(age_months, rng=self.rng)
 
         # Apply illness-specific vital sign modifications
         condition_key = self._get_condition_key(stub.reason)
@@ -3088,7 +3089,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         for ftt_cond in ftt_conditions:
             for cond in conditions_lower:
                 if ftt_cond in cond:
-                    return "ftt", {"pattern_onset_age": random.randint(6, 18)}
+                    return "ftt", {"pattern_onset_age": self.rng.randint(6, 18)}
 
         # Check for obesity-related conditions
         obesity_conditions = [
@@ -3098,7 +3099,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         for obesity_cond in obesity_conditions:
             for cond in conditions_lower:
                 if obesity_cond in cond:
-                    return "obesity", {"pattern_onset_age": random.randint(36, 72)}
+                    return "obesity", {"pattern_onset_age": self.rng.randint(36, 72)}
 
         # Check for prematurity
         preterm_conditions = [
@@ -3109,7 +3110,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             for cond in conditions_lower:
                 if preterm_cond in cond:
                     return "preterm_catchup", {
-                        "gestational_age_weeks": random.randint(28, 36)
+                        "gestational_age_weeks": self.rng.randint(28, 36)
                     }
 
         # Check for conditions causing growth delay
@@ -3120,7 +3121,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         for delay_cond in delay_conditions:
             for cond in conditions_lower:
                 if delay_cond in cond:
-                    return "growth_delay", {"pattern_onset_age": random.randint(24, 60)}
+                    return "growth_delay", {"pattern_onset_age": self.rng.randint(24, 60)}
 
         # Default to normal growth
         return "normal", {}
@@ -5028,6 +5029,7 @@ VITAL SIGNS:
                 weight_percentile=50,
                 height_percentile=50,
                 hc_percentile=50,
+                rng=self.rng,
             )
             weight, height, hc, bmi = growth_trajectory.generate_measurement(age_months)
             latest_growth = GrowthMeasurement(
@@ -5557,6 +5559,7 @@ VITAL SIGNS:
             weight_percentile=50,  # Could be improved by inferring from existing data
             height_percentile=50,
             hc_percentile=50,
+            rng=self.rng,
         )
         weight, height, hc, bmi = growth.generate_measurement(age_months)
 

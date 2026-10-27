@@ -647,9 +647,9 @@ def get_vital_ranges(age_months: int) -> dict[str, tuple[float, float]]:
         return VITAL_SIGNS_BY_AGE["adult"]
 
 
-def generate_normal_vitals(age_months: int) -> dict[str, float]:
-    """Generate normal vital signs for an age."""
-    import random
+def generate_normal_vitals(age_months: int, rng: _random.Random | None = None) -> dict[str, float]:
+    """Generate normal vital signs for an age. Pass rng for reproducible output."""
+    rng = rng or _random
     
     ranges = get_vital_ranges(age_months)
     vitals = {}
@@ -657,7 +657,7 @@ def generate_normal_vitals(age_months: int) -> dict[str, float]:
     for name, (low, high) in ranges.items():
         # Generate value in middle 80% of range
         margin = (high - low) * 0.1
-        value = random.uniform(low + margin, high - margin)
+        value = rng.uniform(low + margin, high - margin)
         
         # Round appropriately
         if name in ("temperature_f", "o2_sat"):

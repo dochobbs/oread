@@ -202,12 +202,10 @@ def test_gate_boundary_ages_generate():
         pytest.fail("\n".join(errors), pytrace=False)
 
 
-@pytest.mark.xfail(FULL, strict=True, reason="known: future dates (see sweep below)")
 def test_dates_within_lifetime(generated):
     _assert_none(generated, inv.check_dates)
 
 
-@xfail("P abatement dates after today; A encounters/med starts after today")
 def test_no_future_dates_sweep():
     """Seed sweep that reliably reaches the future-date paths the smoke cohort can miss."""
     peds, adult = PedsEngine(use_llm=False), AdultEngine(use_llm=False)
@@ -285,7 +283,6 @@ def test_annual_flu(peds):
 
 # P side (AOM amox + amox-clav, SSRI x2) fixed; adult duplicate statins remain and
 # only surface in the full cohort.
-@pytest.mark.xfail(FULL, strict=True, reason="known: A duplicate statins")
 def test_no_duplicate_therapy(generated):
     _assert_none(generated, inv.check_duplicate_therapy)
 
@@ -314,7 +311,6 @@ def test_self_limited_conditions_resolve(peds):
     _assert_none(peds, inv.check_self_limited_resolve)
 
 
-@xfail("A RxNorm 000000 on every adult med; R69 fallback")
 def test_no_placeholder_codes(generated):
     _assert_none(generated, inv.check_no_placeholder_codes)
 

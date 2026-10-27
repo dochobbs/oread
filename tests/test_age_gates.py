@@ -36,6 +36,7 @@ from src.models import (
     SocialHistory,
 )
 from src.models.patient import Address, Contact
+from src.validators.age import calendar_months_between, meets_min_age, within_max_age
 from src.validators import (
     PatientValidator,
     ValidationSeverity,
@@ -186,8 +187,8 @@ class TestEnginePostGenerationFix:
 
         fixed = engine._validate_and_fix_age_gates(patient)
 
-        age_at_onset = (fixed.problem_list[0].onset_date - dob).days / 30.44
-        assert age_at_onset >= 12, (
+        age_at_onset = calendar_months_between(dob, fixed.problem_list[0].onset_date)
+        assert meets_min_age(dob, fixed.problem_list[0].onset_date, 12), (
             f"Asthma onset still at {age_at_onset:.1f}mo after fix pass"
         )
 
@@ -199,8 +200,7 @@ class TestEnginePostGenerationFix:
 
         fixed = engine._validate_and_fix_age_gates(patient)
 
-        age_at_onset = (fixed.problem_list[0].onset_date - dob).days / 30.44
-        assert age_at_onset >= 48
+        assert meets_min_age(dob, fixed.problem_list[0].onset_date, 48)
 
     def test_fix_pass_clamps_bronchiolitis_onset_above_24mo(self):
         engine = self._engine()
@@ -210,8 +210,7 @@ class TestEnginePostGenerationFix:
 
         fixed = engine._validate_and_fix_age_gates(patient)
 
-        age_at_onset = (fixed.problem_list[0].onset_date - dob).days / 30.44
-        assert age_at_onset <= 24
+        assert within_max_age(dob, fixed.problem_list[0].onset_date, 24)
         # Sanity: still after DOB
         assert fixed.problem_list[0].onset_date >= dob
 
@@ -250,8 +249,8 @@ class TestEnginePostGenerationFix:
         )
         fixed = engine._fix_temporal_issue(patient, issue)
 
-        age_at_onset = (fixed.problem_list[0].onset_date - dob).days / 30.44
-        assert age_at_onset >= 48, (
+        age_at_onset = calendar_months_between(dob, fixed.problem_list[0].onset_date)
+        assert meets_min_age(dob, fixed.problem_list[0].onset_date, 48), (
             f"_fix_temporal_issue produced ADHD onset at {age_at_onset:.1f}mo "
             f"(must be >=48mo per age gate)"
         )

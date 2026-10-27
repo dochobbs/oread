@@ -187,7 +187,6 @@ GATE_BOUNDARIES = [("adhd", 48), ("anxiety_disorder", 36), ("depression", 72),
                    ("learning_disorder", 60)]
 
 
-@xfail("P gate-boundary crash: onset clamp vs validator day/30.44 rounding")
 def test_gate_boundary_ages_generate():
     """A condition requested at exactly its minimum age generates without error."""
     engine = PedsEngine(use_llm=False)

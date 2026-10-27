@@ -55,6 +55,12 @@ from src.knowledge import (
     create_exa_search_functions,
 )
 from src.reconciliation import PatientReconciler
+from src.validators.age import (
+    add_months,
+    calendar_months_between,
+    meets_min_age,
+    within_max_age,
+)
 
 
 class LifeArc(BaseModel):
@@ -156,8 +162,23 @@ class PedsEngine(BaseEngine):
 
         return cls._immunization_cache
 
-    def __init__(self, *args, use_llm: bool = True, messiness_level: int = 0, **kwargs):
+    def __init__(
+        self,
+        *args,
+        use_llm: bool = True,
+        messiness_level: int = 0,
+        today: date | None = None,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
+        # Per-engine RNG. Every random draw in the engine goes through
+        # self.rng so a GenerationSeed.random_seed reproduces a patient
+        # without touching (or racing on) the process-global `random` state.
+        self.rng = random.Random()
+        # Injectable "today". None means the real date at generate() time.
+        # Pinning it makes a seed reproduce the same chart on any day.
+        self._today_override = today
+        self.today = today or date.today()
         # Load conditions database
         self._conditions = self._load_conditions(self.knowledge_dir)
         # Load immunization schedule
@@ -173,6 +194,7 @@ class PedsEngine(BaseEngine):
         # Messiness level for realistic chart artifacts (0=pristine, 5=hostile)
         self.messiness_level = messiness_level
         self.messiness = MessinessInjector(level=messiness_level)
+        self._base_messiness_level = messiness_level
 
         # Initialize condition knowledge service with optional web search
         cache_dir = self.knowledge_dir.parent / "cache" / "conditions"
@@ -291,6 +313,14 @@ class PedsEngine(BaseEngine):
             'obstructive_sleep_apnea': (24, None),  # OSA: ≥2 years
         }
 
+    def _age_months(self, demographics: Demographics, on: date | None = None) -> int:
+        """Whole calendar months of age on `on` (default: the run's today).
+
+        Demographics.age_months uses the wall clock; the engine must use its
+        injected today so a pinned run reproduces.
+        """
+        return calendar_months_between(demographics.date_of_birth, on or self.today)
+
     def _months_to_date(self, base_date: date, months: int) -> date:
         """
         Add months to a date using proper calendar arithmetic.
@@ -346,33 +376,20 @@ class PedsEngine(BaseEngine):
         """
         Clamp an onset_date so it satisfies the condition's age gate.
 
-        Computes age_at_onset in months from (onset_date - dob).days / 30.44
-        (matching how the validator measures it). If it violates the min or
-        max gate, returns the appropriate boundary date computed via
-        relativedelta (calendar-accurate). Otherwise returns onset_date
-        unchanged.
+        Uses the same calendar-month comparison as the validator
+        (src/validators/age.py): the gate boundary is the date the child
+        turns N months. A violating onset moves exactly to that boundary,
+        never past today.
         """
         min_months, max_months = self._get_condition_age_limits(condition_name)
         if onset_date is None:
             return onset_date
 
-        age_at_onset_months = (onset_date - dob).days / 30.44
+        if not meets_min_age(dob, onset_date, min_months):
+            return min(add_months(dob, min_months), self.today)
 
-        if age_at_onset_months < min_months:
-            # Push to one extra day past min to absorb 30.44-day rounding,
-            # then clamp to today so we never produce a future date.
-            new_onset = self._months_to_date(dob, min_months) + timedelta(days=1)
-            today = date.today()
-            if new_onset > today:
-                new_onset = today
-            return new_onset
-
-        if max_months is not None and age_at_onset_months > max_months:
-            # Pull back one day before max for the same rounding-safety reason.
-            new_onset = self._months_to_date(dob, max_months) - timedelta(days=1)
-            if new_onset < dob:
-                new_onset = dob
-            return new_onset
+        if max_months is not None and not within_max_age(dob, onset_date, max_months):
+            return max(add_months(dob, max_months), dob)
 
         return onset_date
 
@@ -711,7 +728,7 @@ Examples:
                 if med_def['agent'].lower() not in existing_meds:
                     # Add the maintenance medication
                     # Use condition onset date as medication start date
-                    start_date = problem.onset_date if problem.onset_date else date.today()
+                    start_date = problem.onset_date if problem.onset_date else self.today
                     med = Medication(
                         code=CodeableConcept(
                             system="http://www.nlm.nih.gov/research/umls/rxnorm",
@@ -754,7 +771,7 @@ Examples:
         # Apply temperature range if specified
         temp_range = vitals_impact.get('temp_f')
         if temp_range and len(temp_range) == 2:
-            vitals_dict['temperature_f'] = round(random.uniform(temp_range[0], temp_range[1]), 1)
+            vitals_dict['temperature_f'] = round(self.rng.uniform(temp_range[0], temp_range[1]), 1)
 
         # Apply heart rate multiplier
         hr_mult = vitals_impact.get('hr_multiplier', 1.0)
@@ -770,7 +787,7 @@ Examples:
         spo2_min = vitals_impact.get('spo2_min')
         if spo2_min is not None:
             # Generate SpO2 between condition-specific minimum and 100
-            vitals_dict['o2_sat'] = random.randint(spo2_min, 100)
+            vitals_dict['o2_sat'] = self.rng.randint(spo2_min, 100)
 
         return vitals_dict
 
@@ -804,7 +821,7 @@ Examples:
                 continue
 
             # Probabilistic selection
-            if random.random() < probability:
+            if self.rng.random() < probability:
                 selected.append(description if description else name)
 
         return selected
@@ -853,7 +870,7 @@ Examples:
                 continue
 
             # Probabilistic selection
-            if random.random() < probability:
+            if self.rng.random() < probability:
                 if system not in system_findings:
                     system_findings[system] = []
                 system_findings[system].append(finding_text)
@@ -936,7 +953,7 @@ Examples:
                 result_negative = lab.get('result_negative', 'Negative')
                 prob_positive = lab.get('probability_positive', 0.5)
 
-                is_positive = random.random() < prob_positive
+                is_positive = self.rng.random() < prob_positive
 
                 results.append(LabResult(
                     code=CodeableConcept(
@@ -992,23 +1009,23 @@ Examples:
 
         # Determine if abnormal
         prob_abnormal = lab_def.get('probability_abnormal', 0.3)
-        is_abnormal = random.random() < prob_abnormal
+        is_abnormal = self.rng.random() < prob_abnormal
 
         if is_abnormal:
             # Generate abnormal value (high or low)
-            if random.random() < 0.6:  # 60% high abnormal
+            if self.rng.random() < 0.6:  # 60% high abnormal
                 abn_min = lab_def.get('abnormal_high_min', normal_high)
                 abn_max = lab_def.get('abnormal_high_max', normal_high * 1.5)
-                value = random.uniform(abn_min, abn_max)
+                value = self.rng.uniform(abn_min, abn_max)
                 interpretation = Interpretation.HIGH
             else:  # 40% low abnormal
                 abn_min = lab_def.get('abnormal_low_min', normal_low * 0.5)
                 abn_max = lab_def.get('abnormal_low_max', normal_low)
-                value = random.uniform(abn_min, abn_max)
+                value = self.rng.uniform(abn_min, abn_max)
                 interpretation = Interpretation.LOW
         else:
             # Generate normal value
-            value = random.uniform(normal_low, normal_high)
+            value = self.rng.uniform(normal_low, normal_high)
             interpretation = Interpretation.NORMAL
 
         # Round appropriately
@@ -1070,7 +1087,7 @@ Examples:
             prob_positive = img_def.get('probability_positive', 0.5)
 
             # Determine positive or negative finding
-            is_positive = random.random() < prob_positive
+            is_positive = self.rng.random() < prob_positive
 
             if is_positive:
                 finding = img_def.get('finding_positive', 'Abnormal finding')
@@ -1280,9 +1297,20 @@ Examples:
         if seed.description and self.use_llm:
             seed = self._parse_description(seed)
 
-        # Set random seed for reproducibility
-        if seed.random_seed is not None:
-            random.seed(seed.random_seed)
+        # Reproducibility: re-seed the per-engine RNG (never the global one)
+        # and pin "today" for this run.
+        self.rng = random.Random(seed.random_seed)
+        self.today = self._today_override or date.today()
+
+        # GenerationSeed.messiness_level drives this run when the caller set
+        # it explicitly; otherwise the engine's constructor level applies.
+        if "messiness_level" in seed.model_fields_set:
+            self.messiness_level = seed.messiness_level
+        else:
+            self.messiness_level = self._base_messiness_level
+        self.messiness = MessinessInjector(
+            level=self.messiness_level, seed=seed.random_seed
+        )
 
         # Step 1: Generate persona (demographics, family, social)
         demographics = self._generate_demographics(seed)
@@ -1299,8 +1327,8 @@ Examples:
         sex = "male" if demographics.sex_at_birth == Sex.MALE else "female"
 
         # Determine starting percentiles (can be influenced by conditions)
-        weight_pct = random.gauss(50, 20)
-        height_pct = random.gauss(50, 20)
+        weight_pct = self.rng.gauss(50, 20)
+        height_pct = self.rng.gauss(50, 20)
         weight_pct = max(5, min(95, weight_pct))
         height_pct = max(5, min(95, height_pct))
 
@@ -1311,7 +1339,7 @@ Examples:
             sex=sex,
             weight_percentile=weight_pct,
             height_percentile=height_pct,
-            hc_percentile=random.gauss(50, 15),
+            hc_percentile=self.rng.gauss(50, 15),
             pattern=pattern,
             **pattern_kwargs,
         )
@@ -1394,7 +1422,7 @@ Examples:
         
         # Create Condition objects from life_arc
         problem_list = []
-        today = date.today()
+        today = self.today
         for cond_name in life_arc.major_conditions:
             onset_months = life_arc.condition_onset_ages.get(cond_name, 24)
             onset_date = self._months_to_date(demographics.date_of_birth, onset_months)
@@ -1457,7 +1485,7 @@ Examples:
         
         # Generate message frequency (some patients message a lot, some rarely)
         # Higher complexity patients tend to message more
-        base_frequency = random.random()
+        base_frequency = self.rng.random()
         complexity_boost = len(life_arc.major_conditions) * 0.1
         message_frequency = min(1.0, base_frequency + complexity_boost)
 
@@ -1493,19 +1521,19 @@ Examples:
             # Ensure substance is not empty (Bug 12 fix)
             substance = allergy_info.get('substance', '').strip()
             if not substance:
-                substance = random.choice(['Penicillin', 'Amoxicillin', 'Sulfa', 'Cephalosporin'])
+                substance = self.rng.choice(['Penicillin', 'Amoxicillin', 'Sulfa', 'Cephalosporin'])
 
             allergy = Allergy(
                 display_name=f"{substance} allergy",
                 category=AllergyCategory.MEDICATION,
-                criticality=random.choice(["low", "high"]),
+                criticality=self.rng.choice(["low", "high"]),
                 reactions=[
                     AllergyReaction(
-                        manifestation=random.choice([
+                        manifestation=self.rng.choice([
                             "Rash", "Hives", "Itching", "Swelling",
                             "Nausea", "Stomach upset"
                         ]),
-                        severity=random.choice([AllergySeverity.MILD, AllergySeverity.MODERATE]),
+                        severity=self.rng.choice([AllergySeverity.MILD, AllergySeverity.MODERATE]),
                     )
                 ],
                 onset_date=allergy_info.get("discovery_date"),
@@ -1520,18 +1548,18 @@ Examples:
         # Add food allergy to allergy_list if patient has food allergy condition
         for cond_name in life_arc.major_conditions:
             if cond_name.lower() == 'food allergy':
-                food_allergen = random.choice(['Peanut', 'Tree nuts', 'Milk', 'Egg', 'Shellfish', 'Wheat', 'Soy'])
+                food_allergen = self.rng.choice(['Peanut', 'Tree nuts', 'Milk', 'Egg', 'Shellfish', 'Wheat', 'Soy'])
                 allergy = Allergy(
                     display_name=f"{food_allergen} allergy",
                     category=AllergyCategory.FOOD,
-                    criticality=random.choice(["low", "high"]),
+                    criticality=self.rng.choice(["low", "high"]),
                     reactions=[
                         AllergyReaction(
-                            manifestation=random.choice([
+                            manifestation=self.rng.choice([
                                 "Hives", "Swelling", "Vomiting", "Anaphylaxis",
                                 "Itching", "Difficulty breathing"
                             ]),
-                            severity=random.choice([AllergySeverity.MILD, AllergySeverity.MODERATE, AllergySeverity.SEVERE]),
+                            severity=self.rng.choice([AllergySeverity.MILD, AllergySeverity.MODERATE, AllergySeverity.SEVERE]),
                         )
                     ],
                 )
@@ -1776,13 +1804,13 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             age_months = seed.age_months
         else:
             # Random age 0-21 years
-            age_months = random.randint(0, 252)
+            age_months = self.rng.randint(0, 252)
         
         # Sex
-        sex = seed.sex or random.choice([Sex.MALE, Sex.FEMALE])
+        sex = seed.sex or self.rng.choice([Sex.MALE, Sex.FEMALE])
         
         # Calculate DOB using proper calendar month arithmetic
-        today = date.today()
+        today = self.today
         from dateutil.relativedelta import relativedelta
         dob = today - relativedelta(months=age_months)
         
@@ -1793,19 +1821,19 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         # Address
         from src.models import Address, Contact
         address = Address(
-            line1=f"{random.randint(100, 9999)} {random.choice(['Oak', 'Maple', 'Cedar', 'Pine', 'Main', 'First', 'Park'])} {random.choice(['Street', 'Avenue', 'Lane', 'Drive', 'Court'])}",
-            city=random.choice(["Springfield", "Riverside", "Lakewood", "Fairview", "Madison"]),
-            state=seed.state or random.choice(["MN", "WI", "CA", "TX", "NY", "FL", "IL"]),
-            postal_code=f"{random.randint(10000, 99999)}",
+            line1=f"{self.rng.randint(100, 9999)} {self.rng.choice(['Oak', 'Maple', 'Cedar', 'Pine', 'Main', 'First', 'Park'])} {self.rng.choice(['Street', 'Avenue', 'Lane', 'Drive', 'Court'])}",
+            city=self.rng.choice(["Springfield", "Riverside", "Lakewood", "Fairview", "Madison"]),
+            state=seed.state or self.rng.choice(["MN", "WI", "CA", "TX", "NY", "FL", "IL"]),
+            postal_code=f"{self.rng.randint(10000, 99999)}",
         )
         
         # Emergency contact (parent) - ensure realistic age gap
         # Parent should be at least 18 + child's age, typically 22-38 years older
         child_age_years = age_months // 12
-        parent_age_gap = random.randint(22, 38)
+        parent_age_gap = self.rng.randint(22, 38)
         parent_age = child_age_years + parent_age_gap
 
-        parent_sex = random.choice([Sex.MALE, Sex.FEMALE])
+        parent_sex = self.rng.choice([Sex.MALE, Sex.FEMALE])
         parent_first = self._generate_first_name(parent_sex)
         emergency_contact = Contact(
             name=f"{parent_first} {last_name}",
@@ -1827,8 +1855,8 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             family_name=last_name,
             date_of_birth=dob,
             sex_at_birth=sex,
-            race=seed.race or [random.choice(["White", "Black or African American", "Asian", "Two or more races"])],
-            ethnicity=seed.ethnicity or random.choice(["Not Hispanic or Latino", "Hispanic or Latino"]),
+            race=seed.race or [self.rng.choice(["White", "Black or African American", "Asian", "Two or more races"])],
+            ethnicity=seed.ethnicity or self.rng.choice(["Not Hispanic or Latino", "Hispanic or Latino"]),
             preferred_language="English",
             address=address,
             phone=self._generate_phone(),
@@ -1840,32 +1868,32 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         """Generate social history appropriate to age."""
         from src.models import HouseholdMember, SubstanceUse
         
-        age_years = demographics.age_years
+        age_years = self._age_months(demographics) // 12
         
         # Household
         household = []
         if age_years < 18:
             # Add parents - use realistic parent age based on child's age
-            parent_age = getattr(self, '_last_parent_age', age_years + random.randint(22, 38))
+            parent_age = getattr(self, '_last_parent_age', age_years + self.rng.randint(22, 38))
             household.append(HouseholdMember(
                 name=demographics.legal_guardian.name if demographics.legal_guardian else "Parent",
                 relationship="Parent",
                 age=parent_age,
             ))
-            if random.random() > 0.3:  # 70% two-parent households
+            if self.rng.random() > 0.3:  # 70% two-parent households
                 # Second parent within a few years of first parent
-                second_parent_age = parent_age + random.randint(-5, 5)
+                second_parent_age = parent_age + self.rng.randint(-5, 5)
                 household.append(HouseholdMember(
                     name="Parent",
                     relationship="Parent",
                     age=max(age_years + 18, second_parent_age),  # Ensure at least 18 years older than child
                 ))
             # Maybe siblings
-            if random.random() > 0.4:
+            if self.rng.random() > 0.4:
                 household.append(HouseholdMember(
                     name="Sibling",
                     relationship="Sibling",
-                    age=random.randint(1, 18),
+                    age=self.rng.randint(1, 18),
                 ))
         
         # School/childcare
@@ -1875,7 +1903,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             school_name = "Little Stars Preschool"
             grade_level = "Preschool"
         elif 5 <= age_years < 18:
-            school_name = f"{demographics.address.city} {random.choice(['Elementary', 'Middle', 'High'])} School"
+            school_name = f"{demographics.address.city} {self.rng.choice(['Elementary', 'Middle', 'High'])} School"
             grade_level = self._age_to_grade(age_years)
         
         return SocialHistory(
@@ -1883,12 +1911,12 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             household_members=household,
             school_name=school_name,
             grade_level=grade_level,
-            school_performance="Good" if random.random() > 0.3 else random.choice(["Excellent", "Average", "Struggling"]),
+            school_performance="Good" if self.rng.random() > 0.3 else self.rng.choice(["Excellent", "Average", "Struggling"]),
             tobacco=SubstanceUse(substance="tobacco", status="never") if age_years >= 11 else None,
             food_security="secure",
             housing_stability="stable",
             transportation_access="adequate",
-            firearms_in_home=random.random() > 0.7,
+            firearms_in_home=self.rng.random() > 0.7,
         )
     
     def generate_life_arc(self, demographics: Demographics, seed: GenerationSeed) -> LifeArc:
@@ -1900,7 +1928,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             tier = ComplexityTier.TIER_1 if len(seed.conditions) == 1 else ComplexityTier.TIER_2
         else:
             # Random weighted distribution
-            tier = random.choices(
+            tier = self.rng.choices(
                 [ComplexityTier.TIER_0, ComplexityTier.TIER_1, ComplexityTier.TIER_2, ComplexityTier.TIER_3],
                 weights=[60, 25, 12, 3],
             )[0]
@@ -1911,7 +1939,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         
         if seed.conditions:
             # Filter out age-inappropriate conditions and apply comorbidity logic
-            patient_age = demographics.age_months
+            patient_age = self._age_months(demographics)
             filtered_conditions = []
 
             for cond in seed.conditions:
@@ -1973,12 +2001,12 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                     continue
 
                 valid_conditions.append(cond)
-                onset_ages[cond] = random.randint(onset_min, onset_max)
+                onset_ages[cond] = self.rng.randint(onset_min, onset_max)
 
             conditions = valid_conditions
         elif tier != ComplexityTier.TIER_0:
             # Use conditions loaded from YAML database
-            age_months = demographics.age_months
+            age_months = self._age_months(demographics)
 
             # Filter to age-appropriate chronic conditions
             condition_pool = [
@@ -2006,11 +2034,11 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
 
             num_conditions = {
                 ComplexityTier.TIER_1: 1,
-                ComplexityTier.TIER_2: random.randint(2, 3),
-                ComplexityTier.TIER_3: random.randint(3, 5),
+                ComplexityTier.TIER_2: self.rng.randint(2, 3),
+                ComplexityTier.TIER_3: self.rng.randint(3, 5),
             }.get(tier, 0)
 
-            conditions = random.sample(condition_pool, min(num_conditions, len(condition_pool)))
+            conditions = self.rng.sample(condition_pool, min(num_conditions, len(condition_pool)))
 
             # Apply co-morbidity logic - conditions tend to cluster
             conditions = self._apply_comorbidity_logic(conditions)
@@ -2027,7 +2055,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                     cond_min_age = cond_data.get('min_months', 6)
                     cond_max_age = cond_data.get('max_months')
 
-                patient_age = demographics.age_months
+                patient_age = self._age_months(demographics)
 
                 # Check if patient is too young for this condition
                 if patient_age < cond_min_age:
@@ -2051,7 +2079,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                     continue
 
                 valid_conditions.append(cond)
-                onset_ages[cond] = random.randint(onset_min, onset_max)
+                onset_ages[cond] = self.rng.randint(onset_min, onset_max)
 
             conditions = valid_conditions
         
@@ -2075,8 +2103,8 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         """Generate the timeline of encounter stubs."""
         stubs = []
         dob = demographics.date_of_birth
-        current_age_months = demographics.age_months
-        today = date.today()
+        current_age_months = self._age_months(demographics)
+        today = self.today
         
         # Well-child visits
         for visit_age in self.WELL_CHILD_SCHEDULE:
@@ -2088,7 +2116,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                 continue
 
             # Add some realistic variation to dates (clamped to valid range)
-            visit_date += timedelta(days=random.randint(-7, 14))
+            visit_date += timedelta(days=self.rng.randint(-7, 14))
             visit_date = max(visit_date, dob)  # Clamp to DOB floor
             visit_date = min(visit_date, today)  # Clamp to today ceiling
             
@@ -2119,12 +2147,12 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
 
             # Expected number of acute visits in this range
             expected_visits = (months_in_range / 12) * frequency
-            actual_visits = int(expected_visits + random.random())  # Randomize
+            actual_visits = int(expected_visits + self.rng.random())  # Randomize
 
             for _ in range(actual_visits):
                 # Random date in this age range
-                visit_age_months = random.randint(start_month, end_month)
-                visit_date = self._months_to_date(dob, visit_age_months) + timedelta(days=random.randint(0, 29))
+                visit_age_months = self.rng.randint(start_month, end_month)
+                visit_date = self._months_to_date(dob, visit_age_months) + timedelta(days=self.rng.randint(0, 29))
 
                 if visit_date > today:
                     continue
@@ -2159,7 +2187,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             ))
             
             # Follow-up visits (every 3-6 months)
-            follow_up_age = onset_age + random.randint(2, 4)
+            follow_up_age = onset_age + self.rng.randint(2, 4)
             while follow_up_age < current_age_months:
                 fu_date = self._months_to_date(dob, follow_up_age)
                 if fu_date <= today:
@@ -2169,7 +2197,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                         reason=f"{condition} follow-up",
                         conditions_to_address=[condition],
                     ))
-                follow_up_age += random.randint(3, 6)
+                follow_up_age += self.rng.randint(3, 6)
         
         # Generate random life events (injuries, surgeries, etc.)
         life_event_stubs, discovered_allergies = self._generate_life_events(
@@ -2203,7 +2231,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         stubs = []
         discovered_allergies = []
         dob = demographics.date_of_birth
-        today = date.today()
+        today = self.today
         sex = "male" if demographics.sex_at_birth == Sex.MALE else "female"
 
         # Track what events have occurred to avoid duplicates
@@ -2239,10 +2267,10 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                 adjusted_rate = base_rate * sex_mod * age_mod
 
                 # Roll the dice
-                if random.random() < adjusted_rate:
+                if self.rng.random() < adjusted_rate:
                     # Event occurred!
-                    event_age_months = random.randint(age_months_start, age_months_end)
-                    event_date = self._months_to_date(dob, event_age_months) + timedelta(days=random.randint(0, 29))
+                    event_age_months = self.rng.randint(age_months_start, age_months_end)
+                    event_date = self._months_to_date(dob, event_age_months) + timedelta(days=self.rng.randint(0, 29))
                     event_date = max(event_date, dob)  # Clamp to DOB floor
 
                     if event_date > today:
@@ -2252,7 +2280,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                     variants = event_def.get("variants", [])
                     if variants:
                         weights = [v["weight"] for v in variants]
-                        variant = random.choices(variants, weights=weights)[0]
+                        variant = self.rng.choices(variants, weights=weights)[0]
                         event_name = variant["name"]
                         icd10_code = variant.get("icd10", "")
                     else:
@@ -2486,7 +2514,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
 
         # Build the encounter
         encounter = Encounter(
-            date=datetime.combine(stub.date, datetime.min.time().replace(hour=random.randint(8, 16))),
+            date=datetime.combine(stub.date, datetime.min.time().replace(hour=self.rng.randint(8, 16))),
             type=stub.type,
             chief_complaint=stub.reason,
             provider=provider,
@@ -2755,7 +2783,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             domains = ["gross-motor", "fine-motor", "communication", "problem-solving", "personal-social"]
         elif age_months <= 24:
             if age_months in [18, 24]:
-                tool = random.choice(["ASQ-3", "M-CHAT-R/F"])
+                tool = self.rng.choice(["ASQ-3", "M-CHAT-R/F"])
             else:
                 tool = "Developmental Surveillance"
             domains = ["gross-motor", "fine-motor", "language", "social-emotional", "cognitive"]
@@ -2763,11 +2791,11 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             tool = "ASQ-3" if age_months == 30 else "Developmental Surveillance"
             domains = ["gross-motor", "fine-motor", "language", "social-emotional", "cognitive"]
         elif age_months <= 60:
-            tool = "PEDS" if random.random() < 0.3 else "Developmental Surveillance"
+            tool = "PEDS" if self.rng.random() < 0.3 else "Developmental Surveillance"
             domains = ["motor", "language", "social", "self-help", "academic-readiness"]
         else:
             # School-age - less frequent formal screening
-            if random.random() < 0.2:
+            if self.rng.random() < 0.2:
                 tool = "Developmental Surveillance"
                 domains = ["academic", "social", "behavioral"]
             else:
@@ -2780,7 +2808,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             "delayed": 0.02,
             "not-completed": 0.01,
         }
-        result = random.choices(
+        result = self.rng.choices(
             list(result_weights.keys()),
             weights=list(result_weights.values())
         )[0]
@@ -2797,13 +2825,13 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                 "communication": ["limited babbling", "not pointing", "no words"],
             }
             for domain in domains:
-                if domain in possible_concerns and random.random() < 0.3:
-                    concerns.append(random.choice(possible_concerns[domain]))
+                if domain in possible_concerns and self.rng.random() < 0.3:
+                    concerns.append(self.rng.choice(possible_concerns[domain]))
 
         # Generate notes
         notes = None
         if result == "normal":
-            notes = random.choice([
+            notes = self.rng.choice([
                 "Development appropriate for age",
                 "Meeting all milestones",
                 "No developmental concerns at this time",
@@ -3345,19 +3373,19 @@ VITAL SIGNS:
     def _generate_first_name(self, sex: Sex) -> str:
         male_names = ["James", "William", "Oliver", "Benjamin", "Elijah", "Lucas", "Mason", "Ethan", "Alexander", "Henry", "Sebastian", "Jack", "Aiden", "Owen", "Samuel", "Ryan", "Nathan", "Caleb", "Dylan", "Luke"]
         female_names = ["Olivia", "Emma", "Charlotte", "Amelia", "Sophia", "Isabella", "Mia", "Evelyn", "Harper", "Luna", "Camila", "Sofia", "Scarlett", "Elizabeth", "Eleanor", "Emily", "Chloe", "Mila", "Violet", "Penelope"]
-        return random.choice(male_names if sex == Sex.MALE else female_names)
+        return self.rng.choice(male_names if sex == Sex.MALE else female_names)
     
     def _generate_last_name(self) -> str:
         names = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Anderson", "Taylor", "Thomas", "Moore", "Jackson", "Martin", "Lee", "Thompson", "White", "Harris"]
-        return random.choice(names)
+        return self.rng.choice(names)
     
     def _generate_provider_name(self) -> str:
-        first = random.choice(["Sarah", "Michael", "Jennifer", "David", "Emily", "Robert", "Jessica", "William", "Amanda", "James"])
-        last = random.choice(["Chen", "Patel", "Kim", "Singh", "Johnson", "Williams", "Brown", "Garcia", "Miller", "Davis"])
+        first = self.rng.choice(["Sarah", "Michael", "Jennifer", "David", "Emily", "Robert", "Jessica", "William", "Amanda", "James"])
+        last = self.rng.choice(["Chen", "Patel", "Kim", "Singh", "Johnson", "Williams", "Brown", "Garcia", "Miller", "Davis"])
         return f"Dr. {first} {last}"
     
     def _generate_phone(self) -> str:
-        return f"({random.randint(200, 999)}) {random.randint(200, 999)}-{random.randint(1000, 9999)}"
+        return f"({self.rng.randint(200, 999)}) {self.rng.randint(200, 999)}-{self.rng.randint(1000, 9999)}"
     
     def _age_to_description(self, age_months: int) -> str:
         if age_months == 0:
@@ -3421,7 +3449,7 @@ VITAL SIGNS:
         for condition in list(result):  # Iterate over copy to allow modification
             if condition in comorbidity_map:
                 for comorbid, probability in comorbidity_map[condition]:
-                    if comorbid not in result and random.random() < probability:
+                    if comorbid not in result and self.rng.random() < probability:
                         result.append(comorbid)
 
         return result
@@ -3537,7 +3565,7 @@ VITAL SIGNS:
 
         # Weighted random selection
         illnesses, weights = zip(*filtered_pool)
-        return random.choices(illnesses, weights=weights, k=1)[0]
+        return self.rng.choices(illnesses, weights=weights, k=1)[0]
 
     def _generate_acute_illness_plan(
         self,
@@ -3921,7 +3949,7 @@ VITAL SIGNS:
         base_count = int(len(encounters) * message_frequency * 0.3)
 
         # Add some randomness - some patients message more than expected
-        if random.random() < 0.2:  # 20% chance of being more prolific
+        if self.rng.random() < 0.2:  # 20% chance of being more prolific
             base_count = int(base_count * 1.5) + 1
 
         # Ensure at least 0, cap at reasonable maximum
@@ -3940,7 +3968,7 @@ VITAL SIGNS:
 
         # Get provider info for replies
         provider_name = provider.name if provider else "Office Staff"
-        provider_role = "RN" if random.random() < 0.6 else "MD"  # Most replies from nurses
+        provider_role = "RN" if self.rng.random() < 0.6 else "MD"  # Most replies from nurses
 
         # Message templates by category
         message_templates = {
@@ -4054,44 +4082,44 @@ VITAL SIGNS:
         # Generate messages
         for _ in range(num_messages):
             # Select category
-            category = random.choices(categories, weights=weights, k=1)[0]
+            category = self.rng.choices(categories, weights=weights, k=1)[0]
 
             # Select template
             templates = message_templates.get(category, message_templates[MessageCategory.CLINICAL_QUESTION])
-            template = random.choice(templates)
+            template = self.rng.choice(templates)
 
             # Select medium (mostly portal, some phone)
-            medium = MessageMedium.PORTAL if random.random() < 0.75 else MessageMedium.PHONE
+            medium = MessageMedium.PORTAL if self.rng.random() < 0.75 else MessageMedium.PHONE
 
             # Generate timestamp relative to encounters
             if encounters:
                 # Pick a random encounter as reference point
-                ref_encounter = random.choice(encounters)
+                ref_encounter = self.rng.choice(encounters)
                 # Message can be 1-14 days after encounter
-                days_after = random.randint(1, 14)
-                sent_dt = ref_encounter.date + timedelta(days=days_after, hours=random.randint(7, 21))
-                related_encounter_id = ref_encounter.id if random.random() < 0.5 else None
+                days_after = self.rng.randint(1, 14)
+                sent_dt = ref_encounter.date + timedelta(days=days_after, hours=self.rng.randint(7, 21))
+                related_encounter_id = ref_encounter.id if self.rng.random() < 0.5 else None
             else:
                 # No encounters, generate within last year
-                days_ago = random.randint(1, 365)
+                days_ago = self.rng.randint(1, 365)
                 sent_dt = datetime.now() - timedelta(days=days_ago)
                 related_encounter_id = None
 
             # Reply typically within 4-48 hours (business hours more common)
-            reply_hours = random.choices([4, 8, 24, 48], weights=[15, 40, 35, 10], k=1)[0]
+            reply_hours = self.rng.choices([4, 8, 24, 48], weights=[15, 40, 35, 10], k=1)[0]
             reply_dt = sent_dt + timedelta(hours=reply_hours)
 
             # Fill in template variables
             child_name = demographics.given_names[0] if demographics.given_names else "Child"
-            symptom = random.choice(common_symptoms)
-            medication = random.choice(medication_names)
-            pharmacy = random.choice(pharmacies)
-            side_effect = random.choice(side_effects)
-            warning_sign = random.choice(warning_signs)
-            home_treatment = random.choice(home_treatments)
-            form_type = random.choice(form_types)
-            advice = random.choice(advice_options)
-            reason = random.choice(["a checkup", "follow-up on previous issue", "ongoing symptoms"])
+            symptom = self.rng.choice(common_symptoms)
+            medication = self.rng.choice(medication_names)
+            pharmacy = self.rng.choice(pharmacies)
+            side_effect = self.rng.choice(side_effects)
+            warning_sign = self.rng.choice(warning_signs)
+            home_treatment = self.rng.choice(home_treatments)
+            form_type = self.rng.choice(form_types)
+            advice = self.rng.choice(advice_options)
+            reason = self.rng.choice(["a checkup", "follow-up on previous issue", "ongoing symptoms"])
 
             # Format message body
             body = template["body"].format(
@@ -4226,7 +4254,7 @@ VITAL SIGNS:
                     code_info = acute_icd_codes.get(diagnosis_lower, ("R69", assessment.diagnosis))
 
                     # Calculate resolution date (typically 7-14 days after encounter for acute)
-                    resolution_days = random.randint(7, 14)
+                    resolution_days = self.rng.randint(7, 14)
                     resolution_date = encounter.date.date() + timedelta(days=resolution_days)
 
                     resolved_condition = Condition(
@@ -4385,7 +4413,7 @@ VITAL SIGNS:
         # Determine visit type (with fallback)
         if visit_type is None:
             if config["visit_types"]:
-                visit_type = random.choice(config["visit_types"])
+                visit_type = self.rng.choice(config["visit_types"])
             else:
                 visit_type = EncounterType.ACUTE_ILLNESS
 
@@ -4407,13 +4435,13 @@ VITAL SIGNS:
                         valid_conditions.append(cond_key)
 
                 if valid_conditions:
-                    encounter_condition = random.choice(valid_conditions)
+                    encounter_condition = self.rng.choice(valid_conditions)
                 else:
                     # Fall back to common conditions
-                    encounter_condition = random.choice(["otitis_media", "viral_uri", "pharyngitis"])
+                    encounter_condition = self.rng.choice(["otitis_media", "viral_uri", "pharyngitis"])
 
         # Build the encounter stub
-        today = date.today()
+        today = self._today_override or date.today()
         encounter_reason = self._get_encounter_reason(visit_type, encounter_condition, age_months)
 
         stub = EncounterStub(
@@ -4532,17 +4560,17 @@ VITAL SIGNS:
         atypical_prob = config.get("atypical_probability", 0.0)
 
         # Atypical vitals
-        if "atypical_vitals" in complicating_factors and random.random() < atypical_prob:
+        if "atypical_vitals" in complicating_factors and self.rng.random() < atypical_prob:
             if encounter.vital_signs:
                 # Make vitals less obviously abnormal
                 # e.g., afebrile UTI, hypothermic sepsis
                 if encounter.vital_signs.temperature_f and encounter.vital_signs.temperature_f > 100.4:
                     # 30% chance of being afebrile despite infection
-                    if random.random() < 0.3:
-                        encounter.vital_signs.temperature_f = random.uniform(98.0, 99.5)
+                    if self.rng.random() < 0.3:
+                        encounter.vital_signs.temperature_f = self.rng.uniform(98.0, 99.5)
 
         # Red herrings in physical exam
-        if "red_herrings" in complicating_factors and random.random() < atypical_prob:
+        if "red_herrings" in complicating_factors and self.rng.random() < atypical_prob:
             if encounter.physical_exam:
                 # Add an incidental finding
                 red_herrings = [
@@ -4550,7 +4578,7 @@ VITAL SIGNS:
                     ("heent", "Mild nasal congestion"),
                     ("respiratory", "Occasional cough during exam"),
                 ]
-                system, finding = random.choice(red_herrings)
+                system, finding = self.rng.choice(red_herrings)
                 current = getattr(encounter.physical_exam, system, None)
                 if current:
                     setattr(encounter.physical_exam, system, f"{current}. {finding}")
@@ -4558,7 +4586,7 @@ VITAL SIGNS:
                     setattr(encounter.physical_exam, system, finding)
 
         # Social complexity
-        if "social_complexity" in complicating_factors and random.random() < 0.3:
+        if "social_complexity" in complicating_factors and self.rng.random() < 0.3:
             # Add a note about social factors
             if encounter.assessment and encounter.assessment[0].clinical_notes:
                 encounter.assessment[0].clinical_notes += " Consider social factors in disposition."
@@ -4786,9 +4814,9 @@ VITAL SIGNS:
 
                 # Use middle of range as activation age
                 if cumulative_age < min_age:
-                    start_age = random.randint(min_age, min(max_age, current_age_months))
+                    start_age = self.rng.randint(min_age, min(max_age, current_age_months))
                 else:
-                    start_age = cumulative_age + random.randint(6, 18)
+                    start_age = cumulative_age + self.rng.randint(6, 18)
 
                 if start_age > current_age_months:
                     # Haven't reached this stage yet
@@ -4797,7 +4825,7 @@ VITAL SIGNS:
                 # Determine end age (when next stage starts or current)
                 if i + 1 < len(arc.stages):
                     next_min, _ = arc.stages[i + 1].typical_age_range
-                    end_age = min(current_age_months, next_min + random.randint(0, 12))
+                    end_age = min(current_age_months, next_min + self.rng.randint(0, 12))
                 else:
                     end_age = current_age_months
 

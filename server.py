@@ -666,7 +666,7 @@ def signup(request: SignUpRequest):
 
         # Create user profile in our table (use admin client to bypass RLS)
         user_repo = UserRepository(use_admin=True)
-        profile = user_repo.create(
+        user_repo.create(
             user_id=auth_response.user.id,
             email=request.email,
             display_name=request.display_name,

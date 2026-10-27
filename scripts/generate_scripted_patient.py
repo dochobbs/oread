@@ -51,7 +51,6 @@ from src.models.patient import (
   AllergySeverity,
   AllergyCategory,
   Sex,
-  ComplexityTier,
 )
 from src.models.patient import generate_id
 from src.exporters import export_json, export_ccda
@@ -984,7 +983,6 @@ def generate_patient() -> Patient:
 
   # Now create the 5 specific encounters
   print("\nCreating 5 scripted encounters...")
-  dob = patient.demographics.date_of_birth
 
   # Encounter A: Well-child checkup at 9 years (108 months)
   print("  1. Creating well-child checkup (9 years)...")
@@ -1080,17 +1078,17 @@ def main():
   print(f"ID: {patient.id}")
   print(f"Age: {patient.demographics.age_years} years")
   print(f"DOB: {patient.demographics.date_of_birth}")
-  print(f"\nConditions:")
+  print("\nConditions:")
   for c in patient.problem_list:
     print(f"  - {c.display_name}")
-  print(f"\nActive Medications:")
+  print("\nActive Medications:")
   for m in patient.active_medications:
     print(f"  - {m.display_name}")
-  print(f"\nAllergies:")
+  print("\nAllergies:")
   for a in patient.allergy_list:
     reactions_str = ", ".join(r.manifestation for r in a.reactions) if a.reactions else "Unknown"
     print(f"  - {a.display_name}: {reactions_str}")
-  print(f"\n5 Scripted Encounters:")
+  print("\n5 Scripted Encounters:")
   scripted_types = [
     EncounterType.WELL_CHILD,
     EncounterType.ACUTE_ILLNESS,

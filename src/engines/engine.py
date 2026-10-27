@@ -12,10 +12,13 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from src.models.patient import DiseaseArc, PlanItem, TimeSnapshot
 
 from src.models import (
     Allergy,
@@ -27,7 +30,6 @@ from src.models import (
     Condition,
     ConditionStatus,
     Demographics,
-    DevelopmentalMilestone,
     DevelopmentalScreen,
     Encounter,
     EncounterType,
@@ -50,7 +52,6 @@ from src.llm import get_client, LLMClient
 from src.engines.messiness import MessinessInjector
 from src.validators import PatientValidator, ValidationResult
 from src.knowledge import (
-    ConditionKnowledgeService,
     create_condition_service,
     create_exa_search_functions,
 )
@@ -118,6 +119,14 @@ class BaseEngine(ABC):
     ) -> list[EncounterStub]:
         """Generate the timeline of encounters."""
         pass
+
+
+def _ordinal_suffix(value: float) -> str:
+    """Suffix for a percentile rounded to a whole number: 1st, 2nd, 3rd, 11th, 81st."""
+    n = int(round(value))
+    if 10 <= n % 100 <= 20:
+        return "th"
+    return {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
 
 
 class PedsEngine(BaseEngine):
@@ -497,7 +506,6 @@ class PedsEngine(BaseEngine):
         - "3 year old boy with asthma and eczema"
         - "teenager with anxiety and depression"
         """
-        import json
         from pydantic import BaseModel
 
         class ParsedDescription(BaseModel):
@@ -887,7 +895,6 @@ Examples:
         encounter_type: EncounterType
     ) -> dict[str, str]:
         """Generate condition-specific physical exam findings."""
-        from src.models import PhysicalExam
 
         # Default findings by system
         findings = {
@@ -957,7 +964,7 @@ Examples:
         Returns:
             List of LabResult objects
         """
-        from src.models import LabResult, CodeableConcept, Interpretation, ReferenceRange
+        from src.models import LabResult, CodeableConcept, Interpretation
 
         # Must have a condition to generate labs
         if not condition_key:
@@ -1469,7 +1476,7 @@ Examples:
             immunizations.extend(encounter.immunizations_given)
 
         # Generate all LLM content in parallel if enabled
-        if self.use_llm and seed.include_narrative_notes:
+        if seed.include_narrative_notes:
             self._generate_narratives_parallel(encounters, demographics, life_arc)
 
         # Determine complexity tier
@@ -1887,19 +1894,26 @@ Examples:
         actual_meds = [m.display_name for m in patient.medication_list if m.status.value == "active"]
         actual_conditions = [c.display_name for c in patient.problem_list if c.clinical_status.value == "active"]
 
-        constraint_text = ""
+        constraint_text = (
+            "\nThe chart's active medications are: "
+            f"{', '.join(actual_meds) or 'none'}. Active problems: "
+            f"{', '.join(actual_conditions) or 'none'}. Mention no others as current."
+        )
         if forbidden_claims:
-            constraint_text = f"""
-IMPORTANT: Do NOT include any of these claims (they are not supported by structured data):
-{chr(10).join(f'- {claim}' for claim in forbidden_claims)}
-
-"""
+            constraint_text += (
+                "\nDo NOT include any of these claims (not supported by structured data):\n"
+                + "\n".join(f"- {claim}" for claim in forbidden_claims)
+            )
 
         # Get age for context
         age_months = (encounter.date.date() - patient.demographics.date_of_birth).days // 30
 
-        # Call existing narrative generation with constraints in mind
-        return self._generate_llm_narrative(encounter, patient.demographics, age_months)
+        # Regenerate with the facts and forbidden claims in the system prompt.
+        # (Previously built and dropped, so a regenerated note could repeat the
+        # same hallucination.)
+        return self._generate_llm_narrative(
+            encounter, patient.demographics, age_months, extra_constraints=constraint_text
+        )
     
     def _generate_demographics(self, seed: GenerationSeed) -> Demographics:
         """Generate patient demographics."""
@@ -2382,10 +2396,8 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                         weights = [v["weight"] for v in variants]
                         variant = self.rng.choices(variants, weights=weights)[0]
                         event_name = variant["name"]
-                        icd10_code = variant.get("icd10", "")
                     else:
                         event_name = event_type.replace("_", " ").title()
-                        icd10_code = event_def.get("icd10", "")
 
                     # Handle different event types
                     encounter_type = event_def.get("encounter_type")
@@ -2536,7 +2548,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         """Generate a full encounter from a stub."""
         from src.models import (
             VitalSigns, PhysicalExam, Assessment, PlanItem,
-            GrowthPercentiles, ReviewOfSystems
+            GrowthPercentiles
         )
         from knowledge.growth.cdc_2000 import (
             generate_normal_vitals, calculate_weight_percentile,
@@ -2709,8 +2721,6 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         imaging_results = self._generate_imaging(condition_key, stub.date)
 
         # Apply timeline-aware messiness errors
-        vitals_contradiction_text = ""
-        threading_content = None
         if self.messiness_level > 0:
             # Get timeline-appropriate errors (for future structured error injection)
             # Currently used for tracking; structured injection coming in future update
@@ -2719,16 +2729,9 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             )
 
             # Apply vitals contradictions (level 3+) - only if BP is available
-            if vitals.blood_pressure_systolic is not None:
-                vitals_dict_copy = {
-                    "temperature_f": vitals.temperature_f,
-                    "blood_pressure_systolic": vitals.blood_pressure_systolic,
-                }
-                _, vitals_contradiction_text = self.messiness.inject_vitals_contradiction(vitals_dict_copy)
-
-            # For level 5, get threading error content for this visit
-            if self.messiness_level >= 5:
-                threading_content = self.messiness.get_threading_stage_content(encounter_index)
+            # TODO: vitals contradictions (level 3+) are computed by
+            # MessinessInjector.inject_vitals_contradiction but not yet wired
+            # into notes; threading errors are injected in _apply_note_messiness.
 
         # Build the encounter
         encounter = Encounter(
@@ -3197,7 +3200,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                 "Age-appropriate development noted",
             ])
         elif concerns:
-            notes = f"Discussed concerns with family. Will monitor at next visit."
+            notes = "Discussed concerns with family. Will monitor at next visit."
 
         return DevelopmentalScreen(
             tool=tool,
@@ -3227,7 +3230,15 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         Uses ThreadPoolExecutor to make concurrent LLM calls, dramatically
         reducing generation time from O(n * latency) to O(n/workers * latency).
         """
-        if not self.use_llm or not encounters:
+        if not encounters:
+            return
+
+        if not self.use_llm:
+            # Standalone / no-LLM: templated notes, same messiness treatment.
+            for idx, enc in enumerate(encounters):
+                age_months = (enc.date.date() - demographics.date_of_birth).days // 30
+                note = self._generate_templated_note(enc, demographics, age_months)
+                enc.narrative_note = self._apply_note_messiness(note, demographics, age_months, idx)
             return
 
         # Get conditions list for anticipatory guidance
@@ -3246,29 +3257,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             except Exception:
                 note = self._generate_templated_note(enc, demographics, age_months)
 
-            # Apply chart messiness if configured
-            if self.messiness_level > 0:
-                context = {
-                    "sex": demographics.sex_at_birth.value,
-                    "age_months": age_months,
-                }
-                note = self.messiness.inject_text(note, context)
-                note = self.messiness.add_redundant_text(note)
-                note = self.messiness.inject_incomplete_sentence(note)
-
-                # Level 4+: potentially add wrong-sex exam finding
-                wrong_finding = self.messiness.get_wrong_sex_finding(demographics.sex_at_birth.value)
-                if wrong_finding:
-                    note = note.rstrip() + f"\n\n{wrong_finding}"
-
-                # Level 5: inject threading error content
-                if self.messiness_level >= 5:
-                    threading_content = self.messiness.get_threading_stage_content(enc_idx)
-                    if threading_content:
-                        # Inject threading error into the note
-                        note = note.rstrip() + f"\n\n{threading_content}"
-
-            result["narrative"] = note
+            result["narrative"] = self._apply_note_messiness(note, demographics, age_months, enc_idx)
 
             # Generate family narrative (HPI) for acute illness visits
             if enc.type == EncounterType.ACUTE_ILLNESS:
@@ -3328,7 +3317,13 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
 
                         break
 
-    def _generate_llm_narrative(self, encounter: Encounter, demographics: Demographics, age_months: int) -> str:
+    def _generate_llm_narrative(
+        self,
+        encounter: Encounter,
+        demographics: Demographics,
+        age_months: int,
+        extra_constraints: str = "",
+    ) -> str:
         """Generate a natural clinical narrative using Claude."""
         age_str = self._age_to_description(age_months)
 
@@ -3401,7 +3396,7 @@ Write the clinical note (start with HPI, end with signature):"""
         system = f"""You are a pediatric physician writing clinical documentation.
 Write clear, professional SOAP-style notes. Use standard medical abbreviations where appropriate.
 Keep it concise but complete. Sign as the provider.
-IMPORTANT: This patient is {age_str}. Only include age-appropriate exam findings.{constraints_note}"""
+IMPORTANT: This patient is {age_str}. Only include age-appropriate exam findings.{constraints_note}{extra_constraints}"""
 
         note = self.llm.generate(prompt, system=system, max_tokens=600, temperature=0.7)
 
@@ -3641,6 +3636,32 @@ Be specific and practical. Reference AAP recommendations where relevant."""
             # Fallback to template
             return self._generate_anticipatory_guidance_list(age_months)
 
+    def _apply_note_messiness(
+        self, note: str, demographics: Demographics, age_months: int, enc_idx: int
+    ) -> str:
+        """Apply configured chart messiness to a narrative note (LLM or templated)."""
+        if self.messiness_level <= 0:
+            return note
+        context = {
+            "sex": demographics.sex_at_birth.value,
+            "age_months": age_months,
+        }
+        note = self.messiness.inject_text(note, context)
+        note = self.messiness.add_redundant_text(note)
+        note = self.messiness.inject_incomplete_sentence(note)
+
+        # Level 4+: potentially add wrong-sex exam finding
+        wrong_finding = self.messiness.get_wrong_sex_finding(demographics.sex_at_birth.value)
+        if wrong_finding:
+            note = note.rstrip() + f"\n\n{wrong_finding}"
+
+        # Level 5: inject threading error content
+        if self.messiness_level >= 5:
+            threading_content = self.messiness.get_threading_stage_content(enc_idx)
+            if threading_content:
+                note = note.rstrip() + f"\n\n{threading_content}"
+        return note
+
     def _generate_templated_note(self, encounter: Encounter, demographics: Demographics, age_months: int) -> str:
         """Generate a templated clinical note (fallback when LLM unavailable)."""
         age_str = self._age_to_description(age_months)
@@ -3652,7 +3673,7 @@ VISIT TYPE: {encounter.type.value.replace('-', ' ').title()}
 CHIEF COMPLAINT: {encounter.chief_complaint}
 
 HISTORY OF PRESENT ILLNESS:
-{age_str} {demographics.sex_at_birth.value} presenting for {encounter.chief_complaint.lower()}.
+{encounter.hpi or f"{age_str} {demographics.sex_at_birth.value} presenting for {encounter.chief_complaint.lower()}."}
 
 VITAL SIGNS:
 """
@@ -3677,13 +3698,13 @@ VITAL SIGNS:
             gp = encounter.growth_percentiles
             note += "\nGROWTH PERCENTILES:\n"
             if gp.weight_percentile:
-                note += f"Weight: {gp.weight_percentile}th percentile\n"
+                note += f"Weight: {gp.weight_percentile:.0f}{_ordinal_suffix(gp.weight_percentile)} percentile\n"
             if gp.height_percentile:
-                note += f"Height: {gp.height_percentile}th percentile\n"
+                note += f"Height: {gp.height_percentile:.0f}{_ordinal_suffix(gp.height_percentile)} percentile\n"
             if gp.hc_percentile:
-                note += f"Head Circumference: {gp.hc_percentile}th percentile\n"
+                note += f"Head Circumference: {gp.hc_percentile:.0f}{_ordinal_suffix(gp.hc_percentile)} percentile\n"
             if gp.bmi_percentile:
-                note += f"BMI: {gp.bmi_percentile}th percentile\n"
+                note += f"BMI: {gp.bmi_percentile:.0f}{_ordinal_suffix(gp.bmi_percentile)} percentile\n"
 
         if encounter.physical_exam:
             note += "\nPHYSICAL EXAMINATION:\n"
@@ -5087,9 +5108,8 @@ VITAL SIGNS:
         # Apply difficulty-specific modifications
         encounter = self._apply_difficulty_modifiers(encounter, difficulty_level, config)
 
-        # Generate LLM content if enabled
-        if self.use_llm:
-            self._generate_narratives_parallel([encounter], demographics, life_arc)
+        # Generate narrative (LLM, or templated when LLM is off)
+        self._generate_narratives_parallel([encounter], demographics, life_arc)
 
         return encounter
 
@@ -5205,8 +5225,7 @@ VITAL SIGNS:
             Tuple of (snapshots, disease_arcs)
         """
         from src.models.patient import (
-            TimeSnapshot, DiseaseArc, ArcStage, ArcStageStatus,
-            DecisionPoint, MedicationChange, MedicationChangeType
+            TimeSnapshot, DiseaseArc, ArcStage, MedicationChange, MedicationChangeType
         )
 
         # Load disease arc definitions
@@ -5426,12 +5445,8 @@ VITAL SIGNS:
                 if start_age <= age_months <= end_age:
                     # This stage is active at this age
                     # Look up condition details from database
-                    cond_key = stage_name.lower().replace(" ", "_")
-                    cond_data = self._conditions.get(cond_key, {})
-
-                    billing = cond_data.get("billing_codes", {})
-                    icd10 = billing.get("icd10", ["R69"])[0] if isinstance(billing.get("icd10"), list) else billing.get("icd10", "R69")
-                    snomed = billing.get("snomed", "")
+                    # Same resolver as the problem list: never R69
+                    icd10, _ = self._resolve_icd10(stage_name)
 
                     condition = Condition(
                         display_name=stage_name,

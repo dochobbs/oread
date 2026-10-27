@@ -515,7 +515,13 @@ def check_encounter_hpi(patient: Patient) -> list[str]:
 
 
 def check_exam_age_appropriate(patient: Patient) -> list[str]:
-    """No fontanelle findings after 24 months."""
+    """No fontanelle findings after 24 months.
+
+    Skipped for messy charts: messiness >= 2 deliberately injects stale
+    copy-forward text ("fontanelle soft and flat") as a realism feature.
+    """
+    if (patient.generation_seed or {}).get("messiness_level", 0) > 0:
+        return []
     out = []
     for e in patient.encounters:
         if _age_days(patient, e.date) < 730:

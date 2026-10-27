@@ -5,7 +5,6 @@ Provides singleton access to Supabase client with proper configuration.
 """
 
 import os
-from functools import lru_cache
 from typing import Optional
 
 from supabase import create_client, Client

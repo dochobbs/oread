@@ -7,14 +7,14 @@ that would make a patient record unusable for training or testing.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from .age import calendar_months_between, meets_min_age, within_max_age
 from .models import ValidationIssue, ValidationResult, ValidationSeverity, ValidationType
 
 if TYPE_CHECKING:
-  from src.models import Patient, Encounter, Condition, GrowthMeasurement
+  from src.models import Patient, Condition
 
 
 class PatientValidator:

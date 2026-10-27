@@ -13,7 +13,6 @@ Requires ANTHROPIC_API_KEY environment variable.
 import argparse
 import os
 import random
-import re
 import sys
 from datetime import datetime
 from pathlib import Path

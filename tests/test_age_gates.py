@@ -20,7 +20,6 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-import pytest
 from dateutil.relativedelta import relativedelta
 
 # Make project root importable

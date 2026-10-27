@@ -1395,10 +1395,16 @@ Examples:
         sex = "male" if demographics.sex_at_birth == Sex.MALE else "female"
 
         # Determine starting percentiles (can be influenced by conditions)
-        weight_pct = self.rng.gauss(50, 20)
-        height_pct = self.rng.gauss(50, 20)
-        weight_pct = max(5, min(95, weight_pct))
-        height_pct = max(5, min(95, height_pct))
+        # Weight and height channels are correlated in real children; drawing
+        # them independently put ~4% of ordinary kids under the 1st BMI
+        # percentile. r = 0.7 in z-space is a modeling assumption (not a
+        # clinical value), tuned so the BMI spread of undiagnosed kids looks
+        # plausible.
+        from scipy.stats import norm as _norm
+        z_h = self.rng.gauss(0, 0.85)
+        z_w = 0.7 * z_h + (1 - 0.7 ** 2) ** 0.5 * self.rng.gauss(0, 0.85)
+        height_pct = max(5, min(95, float(_norm.cdf(z_h)) * 100))
+        weight_pct = max(5, min(95, float(_norm.cdf(z_w)) * 100))
 
         # Select growth pattern based on conditions
         pattern, pattern_kwargs = self._select_growth_pattern(
@@ -1529,6 +1535,8 @@ Examples:
                 abatement_date=abatement,
             )
             problem_list.append(condition)
+
+        self._supersede_problems(problem_list)
         
         # Generate message frequency (some patients message a lot, some rarely)
         # Higher complexity patients tend to message more
@@ -2190,7 +2198,23 @@ Examples:
                 onset_ages[cond] = self.rng.randint(onset_min, onset_max)
 
             conditions = valid_conditions
-        
+
+        # Comorbidity logic can re-add a condition under another name or case
+        # ("ADHD" / "adhd"): keep one per condition, with the earliest onset.
+        deduped: list[str] = []
+        by_key: dict[str, str] = {}
+        for cond in conditions:
+            key = self._get_condition_key(cond) or cond.lower().replace(" ", "_")
+            if key in by_key:
+                kept = by_key[key]
+                if cond in onset_ages and kept in onset_ages:
+                    onset_ages[kept] = min(onset_ages[kept], onset_ages[cond])
+                onset_ages.pop(cond, None)
+                continue
+            by_key[key] = cond
+            deduped.append(cond)
+        conditions = deduped
+
         trajectory = "healthy" if not conditions else "single_chronic" if len(conditions) == 1 else "multiple_chronic"
         
         return LifeArc(
@@ -2346,6 +2370,25 @@ Examples:
         self._discovered_allergies = discovered_allergies
 
         return stubs
+
+    # A provisional label that a later diagnosis replaces: reactive airway
+    # disease is what young wheezers carry until asthma is diagnosed (the
+    # RSV -> RAD -> asthma arc), so once asthma is on the list RAD resolves.
+    _SUPERSEDED_BY = {"reactive airway disease": "asthma"}
+
+    def _supersede_problems(self, problems: list[Condition]) -> None:
+        """Resolve (or drop) a provisional problem once its successor is diagnosed."""
+        by_name = {p.display_name.lower(): p for p in problems}
+        for old_name, new_name in self._SUPERSEDED_BY.items():
+            old, new = by_name.get(old_name), by_name.get(new_name)
+            if not old or not new:
+                continue
+            if old.onset_date < new.onset_date:
+                old.clinical_status = ConditionStatus.RESOLVED
+                old.abatement_date = new.onset_date
+                old.notes = f"Superseded by {new.display_name} diagnosis"
+            else:
+                problems.remove(old)  # diagnosed asthma first: RAD adds nothing
 
     def _consolidate_same_day_stubs(
         self, stubs: list[EncounterStub], dob: date, today: date
@@ -3153,6 +3196,11 @@ Examples:
         """
         conditions_lower = [c.lower() for c in conditions]
 
+        # An explicit obesity diagnosis must be backed by BMI >= 95th, so it
+        # wins over an FTT-associated condition (celiac with excess weight is
+        # a recognized presentation).
+        explicit_obesity = any("obesity" in c for c in conditions_lower)
+
         # Check for conditions that would cause failure to thrive
         ftt_conditions = [
             "malabsorption", "celiac disease", "celiac", "cystic fibrosis",
@@ -3161,7 +3209,7 @@ Examples:
         ]
         for ftt_cond in ftt_conditions:
             for cond in conditions_lower:
-                if ftt_cond in cond:
+                if ftt_cond in cond and not explicit_obesity:
                     return "ftt", {"pattern_onset_age": self.rng.randint(6, 18)}
 
         # Check for obesity-related conditions

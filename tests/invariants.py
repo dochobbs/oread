@@ -832,3 +832,13 @@ def check_food_allergy_listed(patient: Patient) -> list[str]:
             not any(a.category.value == "food" for a in patient.allergy_list):
         return ["food allergy problem, no food allergen in allergy_list"]
     return []
+
+
+def check_no_duplicate_problems(patient: Patient) -> list[str]:
+    """One active entry per condition (messiness duplicates on purpose)."""
+    if _messy(patient):
+        return []
+    from collections import Counter
+    c = Counter(p.code.code for p in patient.problem_list if p.clinical_status.value == "active")
+    names = {p.code.code: p.display_name for p in patient.problem_list}
+    return [f"'{names[code]}' ({code}) active x{n}" for code, n in c.items() if n > 1]

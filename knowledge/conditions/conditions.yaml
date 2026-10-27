@@ -1192,7 +1192,7 @@ reactive_airway_disease:
   aliases: ["RAD", "Recurrent wheeze", "Post-viral wheeze"]
 
   billing_codes:
-    icd10: ["J45.20"]  # Often coded as mild intermittent asthma
+    icd10: ["J45.909"]  # ICD-10-CM index: "Disease, airway, reactive - see Asthma" -> J45.909 (NLM-verified 2026-10-27)
     snomed: "195967001"
 
   category: chronic

@@ -371,6 +371,24 @@ def test_display_text_not_snake_case(peds):
     _assert_none(peds, inv.check_display_text)
 
 
+def test_no_duplicate_active_problems(peds):
+    _assert_none(peds, inv.check_no_duplicate_problems)
+
+
+def test_tier3_has_no_duplicate_problems():
+    """Regression: comorbidity logic re-added conditions under another name."""
+    from src.models import ComplexityTier
+    engine = PedsEngine(use_llm=False)
+    report = []
+    for seed in range(40):
+        p = engine.generate(GenerationSeed(age_months=24 + seed * 4,
+                                           complexity_tier=ComplexityTier.TIER_3,
+                                           random_seed=4000 + seed))
+        report += [f"  seed={4000 + seed}: {v}" for v in inv.check_no_duplicate_problems(p)]
+    if report:
+        pytest.fail("\n".join(report), pytrace=False)
+
+
 def test_food_allergy_in_allergy_list(peds):
     _assert_none(peds, inv.check_food_allergy_listed)
 

@@ -65,3 +65,13 @@ Manual QA generators (formerly `test_full_features.py` / `test_stress.py` at the
 ```bash
 uv run python scripts/qa_full_features.py
 ```
+
+## stress_peds.py
+
+Randomized peds stress test: every condition alone and in combinations (including requests below a condition's minimum age), ages 0-21 y, messiness 0-5, complexity tiers. Each patient gets the clinical invariants plus extra plausibility checks (vitals, growth, allergy conflicts, screening schedule, same-day duplicates), all four exports, a stored-record round trip, timeline snapshots and single-encounter generation.
+
+```bash
+uv run python scripts/stress_peds.py 800 20261027   # N patients, master seed
+```
+
+Last run (2026-10-27, three seeds, 3,800 patients): 0 crashes, 0 faults on clean charts.

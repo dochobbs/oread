@@ -55,6 +55,7 @@ from src.knowledge import (
     create_exa_search_functions,
 )
 from src.reconciliation import PatientReconciler
+from src.engines import peds_dosing
 from src.validators.age import (
     add_months,
     calendar_months_between,
@@ -195,6 +196,8 @@ class PedsEngine(BaseEngine):
         self.messiness_level = messiness_level
         self.messiness = MessinessInjector(level=messiness_level)
         self._base_messiness_level = messiness_level
+        self._rx_history: list[tuple[date, str]] = []
+        self._current_dob: date | None = None
 
         # Initialize condition knowledge service with optional web search
         cache_dir = self.knowledge_dir.parent / "cache" / "conditions"
@@ -346,17 +349,48 @@ class PedsEngine(BaseEngine):
             return False, f"{condition_name} requires age <={max_age}mo at onset, got {age_at_onset_months:.0f}mo"
         return True, ""
 
+    def _yaml_key(self, condition_name: str) -> str | None:
+        """conditions.yaml key for a key, display name, or alias."""
+        n = condition_name.strip()
+        if n in self._conditions and isinstance(self._conditions[n], dict):
+            return n
+        k = n.lower().replace(' ', '_')
+        if k in self._conditions and isinstance(self._conditions[k], dict):
+            return k
+        if n.lower() in self._display_to_key:
+            return self._display_to_key[n.lower()]
+        result = self.condition_service.get_condition(n)
+        if result.found and result.source == "yaml" and result.definition:
+            return result.definition.condition_key
+        return None
+
     def _get_condition_age_limits(self, condition_name: str) -> tuple[int, int | None]:
         """
         Get age limits for a condition.
 
+        Resolves keys, display names and aliases (e.g. "Learning Disability"
+        -> learning_disorder) so the life arc, the onset clamp and the
+        validator all see the same gate.
+
         Returns (min_months, max_months) where max_months may be None.
         """
-        cond_key = condition_name.lower().replace(' ', '_')
+        keys = [condition_name.lower().replace(' ', '_')]
+        yaml_key = self._yaml_key(condition_name)
+        if yaml_key:
+            keys.append(yaml_key)
 
         # Check hardcoded gates first (most reliable)
-        if cond_key in self._hardcoded_age_gates:
-            return self._hardcoded_age_gates[cond_key]
+        for k in keys:
+            if k in self._hardcoded_age_gates:
+                return self._hardcoded_age_gates[k]
+
+        if yaml_key:
+            data = self._conditions[yaml_key]
+            age_ranges = data.get('age_ranges', {}) or {}
+            age_cfg = (data.get('demographics', {}) or {}).get('age_months', {}) or {}
+            min_age = age_ranges.get('min_months') or age_cfg.get('min') or 0
+            max_age = age_ranges.get('max_months') or age_cfg.get('max') or None
+            return min_age, max_age
 
         # Check chronic then acute conditions dictionaries
         for conditions_dict in (self._chronic_conditions, self._acute_conditions):
@@ -587,166 +621,219 @@ Examples:
         return deduped
 
     def _dedupe_medications(self, medications: list) -> list:
-        """Deduplicate medications, keeping most recent for PRN meds."""
-        by_name: dict = {}
+        """Drop exact repeats (same drug, same start date).
+
+        Each acute course is its own medication-list entry (completed or
+        stopped), so every encounter prescription appears in the exported
+        medication history. Earlier code kept one entry per drug name, which
+        silently dropped all but the first amoxicillin course.
+        """
+        seen: set = set()
+        out = []
         for med in medications:
-            key = med.display_name.lower()
-            if key not in by_name:
-                by_name[key] = med
-            elif getattr(med, 'prn', False) and getattr(by_name[key], 'prn', False):
-                # For PRN meds, keep the more recent one
-                if med.start_date and by_name[key].start_date:
-                    if med.start_date > by_name[key].start_date:
-                        by_name[key] = med
-        return list(by_name.values())
+            key = (med.display_name.lower(), med.start_date)
+            if key not in seen:
+                seen.add(key)
+                out.append(med)
+        return out
+
+    # Problem display name (lowercased) -> regimen key in peds_dosing.
+    _CHRONIC_REGIMEN_KEYS = {
+        "asthma": "asthma",
+        "adhd": "adhd",
+        "attention deficit hyperactivity disorder": "adhd",
+        "eczema": "eczema",
+        "atopic dermatitis": "eczema",
+        "anxiety": "anxiety",
+        "anxiety disorder": "anxiety",
+        "generalized anxiety disorder": "anxiety",
+        "depression": "depression",
+        "major depressive disorder": "depression",
+        "allergic rhinitis": "allergic_rhinitis",
+        "type 1 diabetes": "type_1_diabetes",
+        "type 2 diabetes": "type_2_diabetes",
+        "epilepsy": "epilepsy",
+        "seizure disorder": "epilepsy",
+        "food allergy": "food_allergy",
+        "kawasaki disease": "kawasaki",
+    }
+
+    def _regimen_key(self, display_name: str) -> str | None:
+        name = display_name.lower().replace("_", " ").strip()
+        return self._CHRONIC_REGIMEN_KEYS.get(name)
 
     def _ensure_chronic_treatment(self, patient) -> None:
-        """Add maintenance medications for chronic conditions (Bug 4 fix)."""
-        from src.models import Medication, MedicationStatus, CodeableConcept
+        """Add weight/age-dosed maintenance medications for chronic conditions.
 
-        # Map conditions to typical maintenance medications
-        chronic_meds = {
-            'asthma': {
-                'agent': 'Albuterol HFA Inhaler',
-                'rxnorm': '351137',
-                'dose_quantity': '1-2',
-                'dose_unit': 'puffs',
-                'frequency': 'Q4-6H PRN',
-                'route': 'inhaled',
-                'prn': True,
-            },
-            'adhd': {
-                'agent': 'Methylphenidate ER',
-                'rxnorm': '866924',
-                'dose_quantity': '18',
-                'dose_unit': 'mg',
-                'frequency': 'daily in AM',
-                'route': 'oral',
-                'prn': False,
-            },
-            'eczema': {
-                'agent': 'Hydrocortisone 1% Cream',
-                'rxnorm': '312312',
-                'dose_quantity': 'thin layer',
-                'dose_unit': '',
-                'frequency': 'BID to affected areas',
-                'route': 'topical',
-                'prn': True,
-            },
-            'anxiety': {
-                'agent': 'Fluoxetine',
-                'rxnorm': '310385',
-                'dose_quantity': '10',
-                'dose_unit': 'mg',
-                'frequency': 'daily',
-                'route': 'oral',
-                'prn': False,
-            },
-            'depression': {
-                'agent': 'Sertraline',
-                'rxnorm': '312938',
-                'dose_quantity': '25',
-                'dose_unit': 'mg',
-                'frequency': 'daily',
-                'route': 'oral',
-                'prn': False,
-            },
-            'allergic rhinitis': {
-                'agent': 'Cetirizine',
-                'rxnorm': '998671',
-                'dose_quantity': '10',
-                'dose_unit': 'mg',
-                'frequency': 'daily',
-                'route': 'oral',
-                'prn': False,
-            },
-            'type 1 diabetes': {
-                'agent': 'Insulin Glargine',
-                'rxnorm': '261551',
-                'dose_quantity': 'per sliding scale',
-                'dose_unit': '',
-                'frequency': 'at bedtime',
-                'route': 'subcutaneous',
-                'prn': False,
-            },
-            'epilepsy': {
-                'agent': 'Levetiracetam',
-                'rxnorm': '310422',
-                'dose_quantity': '250',
-                'dose_unit': 'mg',
-                'frequency': 'BID',
-                'route': 'oral',
-                'prn': False,
-            },
-            'seizure disorder': {
-                'agent': 'Levetiracetam',
-                'rxnorm': '310422',
-                'dose_quantity': '250',
-                'dose_unit': 'mg',
-                'frequency': 'BID',
-                'route': 'oral',
-                'prn': False,
-            },
-            'kawasaki disease': {
-                'agent': 'Aspirin',
-                'rxnorm': '1191',
-                'dose_quantity': '81',
-                'dose_unit': 'mg',
-                'frequency': 'daily',
-                'route': 'oral',
-                'prn': False,
-            },
-            'kawasaki_disease': {
-                'agent': 'Aspirin',
-                'rxnorm': '1191',
-                'dose_quantity': '81',
-                'dose_unit': 'mg',
-                'frequency': 'daily',
-                'route': 'oral',
-                'prn': False,
-            },
-        }
+        Doses come from src/engines/peds_dosing.py (each number cited there),
+        computed from the child's weight and calendar age on the prescribing
+        date. At most one agent per drug class is active: anxiety plus
+        depression share one SSRI.
+        """
+        dob = patient.demographics.date_of_birth
+        active_classes = {
+            self._med_class(m.display_name)
+            for m in patient.medication_list
+            if m.status == MedicationStatus.ACTIVE
+        } - {None}
+        existing = {m.display_name.lower() for m in patient.medication_list}
 
-        # Get existing medication names
-        existing_meds = {m.display_name.lower() for m in patient.medication_list}
-
-        # Check each active condition
+        by_key: dict[str, Condition] = {}
         for problem in patient.problem_list:
-            if not problem.is_active:
-                continue
+            key = self._regimen_key(problem.display_name)
+            if key and key not in by_key:
+                by_key[key] = problem
 
-            # Try multiple key formats: "kawasaki disease", "kawasaki_disease"
-            condition_name = problem.display_name.lower()
-            possible_keys = [
-                condition_name,
-                condition_name.replace(' ', '_'),
-                condition_name.replace('_', ' '),
-            ]
-            condition_key = next((k for k in possible_keys if k in chronic_meds), None)
-            if condition_key:
-                med_def = chronic_meds[condition_key]
-                if med_def['agent'].lower() not in existing_meds:
-                    # Add the maintenance medication
-                    # Use condition onset date as medication start date
-                    start_date = problem.onset_date if problem.onset_date else self.today
-                    med = Medication(
-                        code=CodeableConcept(
-                            system="http://www.nlm.nih.gov/research/umls/rxnorm",
-                            code=med_def['rxnorm'],
-                            display=med_def['agent'],
-                        ),
-                        display_name=med_def['agent'],
-                        dose_quantity=med_def['dose_quantity'],
-                        dose_unit=med_def['dose_unit'],
-                        frequency=med_def['frequency'],
-                        route=med_def['route'],
-                        status=MedicationStatus.ACTIVE,
-                        start_date=start_date,
-                        prn=med_def['prn'],
-                        indication=f"Maintenance treatment for {problem.display_name}",
-                    )
-                    patient.medication_list.append(med)
-                    existing_meds.add(med_def['agent'].lower())
+        def add(rx: peds_dosing.Rx, problem: Condition, start: date,
+                replaced_on: date | None = None) -> None:
+            """Append rx. replaced_on marks an earlier weight-based dose that
+            was re-dosed (stopped) on that date."""
+            cls = self._med_class(rx.agent) or rx.drug_class
+            if replaced_on is None:
+                if rx.agent.lower() in existing:
+                    return
+                if cls and cls in active_classes:
+                    return
+            if start > self.today:
+                return  # Not started yet (e.g. preschool behavioral trial)
+            end = replaced_on or peds_dosing.end_date_for(rx, start)
+            done = end is not None and end <= self.today
+            if replaced_on:
+                status, reason = MedicationStatus.STOPPED, "Re-dosed for current weight"
+            elif done:
+                status, reason = MedicationStatus.COMPLETED, "Course completed"
+            else:
+                status, reason = MedicationStatus.ACTIVE, None
+            patient.medication_list.append(Medication(
+                code=CodeableConcept(system=peds_dosing.RXNORM, code=rx.rxnorm, display=rx.agent),
+                display_name=rx.agent,
+                dose_quantity=rx.dose_quantity,
+                dose_unit=rx.dose_unit,
+                frequency=rx.frequency,
+                route=rx.route,
+                prn=rx.prn,
+                prn_reason=rx.prn_reason if rx.prn else None,
+                instructions=rx.instructions,
+                status=status,
+                start_date=start,
+                end_date=end,
+                discontinuation_reason=reason,
+                indication=rx.indication or f"Maintenance treatment for {problem.display_name}",
+            ))
+            if replaced_on:
+                return
+            existing.add(rx.agent.lower())
+            if cls and not done:
+                active_classes.add(cls)
+
+        def add_weight_based(regimen, problem: Condition, onset: date) -> None:
+            """Weight-based maintenance meds are re-dosed as the child grows:
+            the starting dose (onset weight) is stopped and re-ordered at the
+            most recent measured weight when the dose has changed."""
+            age0, wt0 = age_wt(onset)
+            if not wt0:
+                return
+            initial = regimen(age0, wt0)
+            latest = max((g for g in patient.growth_data
+                          if g.weight_kg and onset < g.date <= self.today),
+                         key=lambda g: g.date, default=None)
+            current = regimen(calendar_months_between(dob, latest.date), latest.weight_kg) \
+                if latest else initial
+            cur_by_agent = {rx.agent: rx for rx in current}
+            for rx in initial:
+                new = cur_by_agent.get(rx.agent)
+                if latest and new and new.dose_quantity != rx.dose_quantity:
+                    add(rx, problem, onset, replaced_on=latest.date)
+                    add(new, problem, latest.date)
+                else:
+                    add(rx, problem, onset)
+
+        def age_wt(on: date) -> tuple[int, float | None]:
+            return (calendar_months_between(dob, on),
+                    peds_dosing.weight_on(patient.growth_data, on))
+
+        ssri_considered = False
+        for key, problem in by_key.items():
+            onset = problem.onset_date or self.today
+            if not problem.is_active and key != "kawasaki":
+                continue
+            age, wt = age_wt(onset)
+
+            if key == "asthma":
+                severity = self.rng.choices(
+                    ["intermittent", "mild_persistent", "moderate_persistent"],
+                    weights=[40, 35, 25])[0]
+                code, display = peds_dosing.ICD10_ASTHMA[severity]
+                problem.code = CodeableConcept(
+                    system="http://hl7.org/fhir/sid/icd-10-cm", code=code, display=display)
+                for rx in peds_dosing.asthma(age, severity):
+                    add(rx, problem, onset)
+            elif key == "adhd":
+                start = onset
+                if age < peds_dosing.PRESCHOOL_MAX_AGE_MONTHS:
+                    # AAP 2019 KAS 5a: behavioral therapy first for ages 4-5
+                    start = onset + timedelta(days=peds_dosing.PRESCHOOL_BEHAVIORAL_TRIAL_DAYS)
+                if start <= self.today:
+                    for rx in peds_dosing.methylphenidate(calendar_months_between(dob, start)):
+                        add(rx, problem, start)
+            elif key in ("anxiety", "depression"):
+                if ssri_considered:
+                    continue
+                ssri_considered = True
+                mood = [by_key[k] for k in ("depression", "anxiety")
+                        if k in by_key and by_key[k].is_active]
+                start = max(p.onset_date or self.today for p in mood) if mood else onset
+                for rx in peds_dosing.ssri(
+                        calendar_months_between(dob, start),
+                        depression="depression" in by_key and by_key["depression"].is_active,
+                        anxiety="anxiety" in by_key and by_key["anxiety"].is_active):
+                    add(rx, problem, start)
+            elif key == "allergic_rhinitis":
+                for rx in peds_dosing.cetirizine(age):
+                    add(rx, problem, onset)
+            elif key == "eczema":
+                add(peds_dosing.Rx(
+                    "Hydrocortisone 1% Cream", "312312", "thin layer", "", "BID to affected areas",
+                    route="topical", prn=True, prn_reason="eczema flare",
+                    drug_class="topical corticosteroid"), problem, onset)
+            elif key == "epilepsy":
+                add_weight_based(peds_dosing.levetiracetam, problem, onset)
+            elif key == "type_1_diabetes":
+                add_weight_based(peds_dosing.type_1_diabetes, problem, onset)
+            elif key == "type_2_diabetes":
+                for rx in peds_dosing.type_2_diabetes(age):
+                    add(rx, problem, onset)
+            elif key == "food_allergy":
+                # Auto-injectors are re-prescribed as the child grows: dose the
+                # current device by the latest measured weight.
+                latest = max((g for g in patient.growth_data if g.weight_kg),
+                             key=lambda g: g.date, default=None)
+                if latest or wt:
+                    start = max(onset, latest.date) if latest else onset
+                    for rx in peds_dosing.epinephrine(latest.weight_kg if latest else wt):
+                        add(rx, problem, start)
+            elif key == "kawasaki" and wt:
+                for rx in peds_dosing.kawasaki_aspirin(wt):
+                    add(rx, problem, onset)
+
+    # Drug-class membership for duplicate-therapy checks. Substring match on
+    # the display name; combination products count toward their class.
+    _DRUG_CLASSES = {
+        "SSRI": ("sertraline", "fluoxetine", "escitalopram", "citalopram",
+                 "fluvoxamine", "paroxetine"),
+        "stimulant": ("methylphenidate", "amphetamine", "lisdexamfetamine"),
+        "aminopenicillin": ("amoxicillin", "ampicillin"),
+        "ICS": ("fluticasone", "budesonide", "beclomethasone", "mometasone", "ciclesonide"),
+        "basal insulin": ("glargine", "detemir", "degludec"),
+        "rapid-acting insulin": ("lispro", "aspart", "glulisine"),
+    }
+
+    def _med_class(self, name: str) -> str | None:
+        n = name.lower()
+        for cls, members in self._DRUG_CLASSES.items():
+            if any(m in n for m in members):
+                return cls
+        return None
 
     def _apply_vitals_impact(
         self,
@@ -1311,9 +1398,12 @@ Examples:
         self.messiness = MessinessInjector(
             level=self.messiness_level, seed=seed.random_seed
         )
+        # Per-run prescription history (date, agent) for class-aware choices.
+        self._rx_history: list[tuple[date, str]] = []
 
         # Step 1: Generate persona (demographics, family, social)
         demographics = self._generate_demographics(seed)
+        self._current_dob = demographics.date_of_birth
         social_history = self._generate_social_history(demographics, seed)
         
         # Step 2: Generate life arc
@@ -1402,6 +1492,8 @@ Examples:
                 timeline_position=timeline_position,
             )
             encounters.append(encounter)
+            if growth_data and growth_data[-1].date == stub.date and growth_data[-1].encounter_id is None:
+                growth_data[-1].encounter_id = encounter.id
             
             # Collect immunizations
             immunizations.extend(encounter.immunizations_given)
@@ -1430,56 +1522,22 @@ Examples:
             onset_date = max(onset_date, demographics.date_of_birth)
             onset_date = min(onset_date, today)
 
-            # Map condition names to ICD-10 codes (case-insensitive lookup)
-            condition_codes = {
-                "asthma": ("J45.20", "Mild intermittent asthma, uncomplicated"),
-                "adhd": ("F90.2", "Attention-deficit hyperactivity disorder, combined type"),
-                "eczema": ("L20.9", "Atopic dermatitis, unspecified"),
-                "allergic rhinitis": ("J30.9", "Allergic rhinitis, unspecified"),
-                "allergic_rhinitis": ("J30.9", "Allergic rhinitis, unspecified"),
-                "anxiety": ("F41.1", "Generalized anxiety disorder"),
-                "food allergy": ("T78.1", "Other adverse food reactions, not elsewhere classified"),
-                "obesity": ("E66.9", "Obesity, unspecified"),
-                "constipation": ("K59.00", "Constipation, unspecified"),
-                "recurrent otitis media": ("H66.90", "Otitis media, unspecified"),
-                "depression": ("F32.9", "Major depressive disorder, single episode, unspecified"),
-                "autism": ("F84.0", "Autistic disorder"),
-                "type 1 diabetes": ("E10.9", "Type 1 diabetes mellitus without complications"),
-                "type_1_diabetes": ("E10.9", "Type 1 diabetes mellitus without complications"),
-                "type 2 diabetes": ("E11.9", "Type 2 diabetes mellitus without complications"),
-                "type_2_diabetes": ("E11.9", "Type 2 diabetes mellitus without complications"),
-                "seizure disorder": ("G40.909", "Epilepsy, unspecified, not intractable"),
-                "epilepsy": ("G40.909", "Epilepsy, unspecified, not intractable"),
-                "cerebral palsy": ("G80.9", "Cerebral palsy, unspecified"),
-                "gerd": ("K21.0", "Gastro-esophageal reflux disease with esophagitis"),
-                "prediabetes": ("R73.03", "Prediabetes"),
-                "cough": ("R05.9", "Cough, unspecified"),
-                "swimmer's ear": ("H60.339", "Swimmer's ear, unspecified ear"),
-                "swimmers ear": ("H60.339", "Swimmer's ear, unspecified ear"),
-            }
+            code, display_name = self._resolve_icd10(cond_name)
 
-            # First try ConditionKnowledgeService for accurate codes
-            lookup_key = cond_name.lower().strip()
-            result = self.condition_service.get_condition(cond_name)
-            if result.found and result.definition and result.definition.icd10_primary:
-                code = result.definition.icd10_primary
-                display_name = result.definition.display_name
-                display = display_name  # Use display_name for ICD-10 display text
-            else:
-                # Fall back to hardcoded dictionary
-                code, display = condition_codes.get(lookup_key, ("R69", cond_name))
-                # Convert snake_case to proper display name
-                display_name = cond_name.replace('_', ' ').title() if code != "R69" else cond_name
-
+            # Self-limited conditions requested as part of the life arc
+            # (bronchiolitis, AOM, Kawasaki...) resolve after their course.
+            # An episode still in progress today stays active.
+            abatement = self._abatement_for(cond_name, onset_date)
             condition = Condition(
                 display_name=display_name,
                 code=CodeableConcept(
                     system="http://hl7.org/fhir/sid/icd-10-cm",
                     code=code,
-                    display=display_name,  # Use formatted display_name consistently
+                    display=display_name,
                 ),
-                clinical_status=ConditionStatus.ACTIVE,
+                clinical_status=ConditionStatus.RESOLVED if abatement else ConditionStatus.ACTIVE,
                 onset_date=onset_date,
+                abatement_date=abatement,
             )
             problem_list.append(condition)
         
@@ -1547,7 +1605,7 @@ Examples:
 
         # Add food allergy to allergy_list if patient has food allergy condition
         for cond_name in life_arc.major_conditions:
-            if cond_name.lower() == 'food allergy':
+            if cond_name.lower().replace('_', ' ') == 'food allergy':
                 food_allergen = self.rng.choice(['Peanut', 'Tree nuts', 'Milk', 'Egg', 'Shellfish', 'Wheat', 'Soy'])
                 allergy = Allergy(
                     display_name=f"{food_allergen} allergy",
@@ -1657,6 +1715,7 @@ Examples:
             "coding": self._fix_coding_issue,
             "medication": self._fix_medication_issue,
             "age_gate": self._fix_age_gate_issue,
+            "lab": self._fix_lab_issue,
         }
 
         for issue in result.issues:
@@ -1737,37 +1796,114 @@ Examples:
 
         return patient
 
-    def _fix_medication_issue(self, patient: Patient, issue) -> Patient:
-        """Add missing medications for conditions that require them."""
-        for condition in patient.problem_list:
-            if condition.clinical_status.value != "active":
+    # HbA1c monitoring. LOINC 4548-4 (Hemoglobin A1c/Hemoglobin.total in Blood).
+    # ADA Standards of Care 2026: diagnosis >= 6.5%, prediabetes 5.7-6.4%,
+    # normal < 5.7%; youth with diabetes tested every 3 months (S6, S14),
+    # prediabetes at least yearly (S2). Pediatric glycemic target < 7% (S14).
+    A1C_LOINC = "4548-4"
+    A1C_INTERVAL_DAYS = {"type 1 diabetes": 84, "type 2 diabetes": 84, "prediabetes": 330}
+    A1C_RANGES = {
+        # (at diagnosis, at follow-up), percent
+        "type 1 diabetes": ((8.5, 12.0), (6.8, 9.0)),
+        "type 2 diabetes": ((6.5, 9.0), (6.0, 8.0)),
+        "prediabetes": ((5.7, 6.4), (5.5, 6.4)),
+    }
+
+    def _fix_lab_issue(self, patient: Patient, issue) -> Patient:
+        """Add missing monitoring labs. Currently: HbA1c for diabetes and
+        prediabetes, on chronic follow-ups at the ADA interval."""
+        from src.models import LabResult, Interpretation, ReferenceRange
+
+        for cond in patient.problem_list:
+            name = cond.display_name.lower().replace("_", " ")
+            dx = next((k for k in self.A1C_INTERVAL_DAYS if k in name), None)
+            if dx is None or not cond.is_active:
                 continue
+            word = dx.split()[-1] if dx != "prediabetes" else "prediabetes"
+            visits = sorted(
+                (e for e in patient.encounters
+                 if e.type == EncounterType.CHRONIC_FOLLOWUP
+                 and (word in e.chief_complaint.lower() or dx in e.chief_complaint.lower())),
+                key=lambda e: e.date)
+            if not visits:
+                visits = sorted((e for e in patient.encounters
+                                 if e.type == EncounterType.CHRONIC_FOLLOWUP), key=lambda e: e.date)
+            last: date | None = None
+            for enc in visits:
+                d = enc.date.date()
+                has = any(getattr(getattr(lab, "code", None), "code", None) == self.A1C_LOINC
+                          for lab in enc.lab_results)
+                if has:
+                    last = d
+                    continue
+                if last is not None and (d - last).days < self.A1C_INTERVAL_DAYS[dx]:
+                    continue
+                at_dx = "evaluation" in enc.chief_complaint.lower() or last is None
+                lo, hi = self.A1C_RANGES[dx][0 if at_dx else 1]
+                value = round(self.rng.uniform(lo, hi), 1)
+                enc.lab_results.append(LabResult(
+                    code=CodeableConcept(system="http://loinc.org", code=self.A1C_LOINC,
+                                         display="Hemoglobin A1c/Hemoglobin.total in Blood"),
+                    display_name="Hemoglobin A1c",
+                    value=value,
+                    unit="%",
+                    reference_range=ReferenceRange(low=4.0, high=5.6, unit="%"),
+                    interpretation=Interpretation.HIGH if value >= 5.7 else Interpretation.NORMAL,
+                    collected_date=enc.date,
+                    resulted_date=enc.date,
+                    encounter_id=enc.id,
+                ))
+                last = d
+        return patient
 
-            # Look up condition to get expected medications
-            result = self.condition_service.get_condition(condition.display_name)
+    def _fix_medication_issue(self, patient: Patient, issue) -> Patient:
+        """Add missing standard-of-care medications.
 
-            if result.found and result.definition and result.definition.medications:
-                current_meds = {m.display_name.lower() for m in patient.medication_list}
-
-                for med_def in result.definition.medications:
-                    if med_def.agent.lower() not in current_meds:
-                        new_med = Medication(
-                            display_name=med_def.agent,
-                            code=CodeableConcept(
-                                system="http://www.nlm.nih.gov/research/umls/rxnorm",
-                                code=med_def.rxnorm or "",
-                                display=med_def.agent,
-                            ),
-                            status=MedicationStatus.ACTIVE,
-                            dose_quantity="1",  # Default dose (string)
-                            dose_unit="dose",   # Generic unit
-                            frequency=med_def.frequency or "as directed",
-                            route=med_def.route or "oral",
-                            start_date=condition.onset_date,
-                        )
-                        patient.medication_list.append(new_med)
-                        break  # Add one medication at a time
-
+        First pass: the cited, weight/age-dosed regimens in peds_dosing (this
+        covers T1D, T2D, food allergy, epilepsy, asthma, ...). Second pass:
+        local conditions.yaml `treatment.medications` entries that carry a
+        real dose (dose_mg_kg or fixed_dose_mg). Entries without a dose are
+        skipped rather than written as "1 dose".
+        """
+        self._ensure_chronic_treatment(patient)
+        dob = patient.demographics.date_of_birth
+        current = {m.display_name.lower() for m in patient.medication_list
+                   if m.status == MedicationStatus.ACTIVE}
+        for condition in patient.problem_list:
+            if not condition.is_active or self._regimen_key(condition.display_name):
+                continue
+            key = self._get_condition_key(condition.display_name)
+            meds = (self._conditions.get(key, {}) or {}).get("treatment", {}).get("medications", []) \
+                if key else []
+            start = condition.onset_date or self.today
+            wt = peds_dosing.weight_on(patient.growth_data, start)
+            for med in meds:
+                if not isinstance(med, dict) or med.get("prn") or not med.get("rxnorm"):
+                    continue
+                agent = med.get("agent", "")
+                if not agent or agent.lower() in current:
+                    continue
+                if med.get("age_min_months") and \
+                        calendar_months_between(dob, start) < med["age_min_months"]:
+                    continue
+                dose = self._dose_from_def(med, wt)
+                if dose is None:
+                    continue
+                dose_str, frequency = dose
+                patient.medication_list.append(Medication(
+                    display_name=agent,
+                    code=CodeableConcept(system=peds_dosing.RXNORM, code=str(med["rxnorm"]),
+                                         display=agent),
+                    status=MedicationStatus.ACTIVE,
+                    dose_quantity=dose_str,
+                    dose_unit="mg",
+                    frequency=frequency,
+                    route=med.get("route") or "oral",
+                    start_date=start,
+                    indication=med.get("indication"),
+                ))
+                current.add(agent.lower())
+                break  # one agent per condition
         return patient
 
     def _regenerate_constrained_narrative(
@@ -1943,17 +2079,8 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             filtered_conditions = []
 
             for cond in seed.conditions:
-                # Get age constraints from hardcoded gates or YAML
-                cond_key = cond.lower().replace(' ', '_')
-                if cond_key in self._hardcoded_age_gates:
-                    min_age, max_age = self._hardcoded_age_gates[cond_key]
-                else:
-                    cond_data = self._conditions.get(cond_key, {})
-                    age_ranges = cond_data.get('age_ranges', {})
-                    demographics_cfg = cond_data.get('demographics', {})
-                    age_months_config = demographics_cfg.get('age_months', {})
-                    min_age = age_ranges.get('min_months') or age_months_config.get('min') or 0
-                    max_age = age_ranges.get('max_months') or age_months_config.get('max') or None
+                # Same gate the onset clamp and validator use
+                min_age, max_age = self._get_condition_age_limits(cond)
 
                 # Check if patient age allows this condition
                 if patient_age < min_age:
@@ -1979,16 +2106,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             # Generate plausible onset ages with proper age constraints
             valid_conditions = []
             for cond in conditions:
-                cond_key = cond.lower().replace(' ', '_')
-                if cond_key in self._hardcoded_age_gates:
-                    cond_min_age, cond_max_age = self._hardcoded_age_gates[cond_key]
-                else:
-                    cond_data = self._conditions.get(cond_key, {})
-                    age_ranges = cond_data.get('age_ranges', {})
-                    demographics_cfg = cond_data.get('demographics', {})
-                    age_months_config = demographics_cfg.get('age_months', {})
-                    cond_min_age = age_ranges.get('min_months') or age_months_config.get('min') or 6
-                    cond_max_age = age_ranges.get('max_months') or age_months_config.get('max') or None
+                cond_min_age, cond_max_age = self._get_condition_age_limits(cond)
 
                 # Calculate valid onset age range
                 onset_min = cond_min_age
@@ -2046,14 +2164,8 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             # Filter out conditions where patient age doesn't allow valid onset
             valid_conditions = []
             for cond in conditions:
-                # Get age constraints from hardcoded gates or YAML
-                cond_key = cond.lower().replace(' ', '_')
-                if cond_key in self._hardcoded_age_gates:
-                    cond_min_age, cond_max_age = self._hardcoded_age_gates[cond_key]
-                else:
-                    cond_data = self._chronic_conditions.get(cond, {})
-                    cond_min_age = cond_data.get('min_months', 6)
-                    cond_max_age = cond_data.get('max_months')
+                # Same gate the onset clamp and validator use
+                cond_min_age, cond_max_age = self._get_condition_age_limits(cond)
 
                 patient_age = self._age_months(demographics)
 
@@ -2177,6 +2289,24 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             diagnosis_date = self._months_to_date(dob, onset_age)
             diagnosis_date = max(diagnosis_date, dob)  # Clamp to DOB floor
             diagnosis_date = min(diagnosis_date, today)  # Clamp to today ceiling (no future dates)
+
+            # Self-limited conditions (bronchiolitis, AOM, ...) are a single
+            # acute visit with an acute plan, not a chronic follow-up series.
+            if self._abatement_for(condition, diagnosis_date) is not None or \
+                    self._is_acute_condition(condition):
+                ykey = self._get_condition_key(condition) or condition
+                display = (self._conditions.get(ykey) or {}).get(
+                    'display_name', condition.replace('_', ' ').title())
+                stubs.append(EncounterStub(
+                    date=diagnosis_date,
+                    type=EncounterType.ACUTE_ILLNESS,
+                    reason=display,
+                    conditions_to_address=[condition],
+                    is_new_condition_diagnosis=True,
+                    new_condition=condition,
+                ))
+                continue
+
             stubs.append(EncounterStub(
                 date=diagnosis_date,
                 type=EncounterType.CHRONIC_FOLLOWUP,
@@ -2315,6 +2445,110 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
 
         return stubs, discovered_allergies
 
+    # Generic pertinent negatives by organ system for the template HPI.
+    _HPI_NEGATIVES_BY_SYSTEM = {
+        "respiratory": ["difficulty breathing", "retractions", "cyanosis"],
+        "ent": ["ear drainage", "difficulty breathing"],
+        "gastrointestinal": ["bloody stools", "bilious vomiting", "decreased urine output"],
+        "genitourinary": ["flank pain", "vomiting"],
+        "dermatologic": ["mucosal involvement", "blistering"],
+        "ophthalmologic": ["vision changes", "eye pain"],
+        "neurological": ["head injury", "neck stiffness"],
+    }
+
+    def _template_hpi(
+        self,
+        stub: EncounterStub,
+        demographics: Demographics,
+        age_months: int,
+        condition_key: str | None,
+        temperature_f: float | None,
+    ) -> str | None:
+        """Deterministic HPI for problem visits (used when the LLM is off;
+        the LLM path overwrites it for acute visits when enabled).
+
+        Built from the chief complaint, onset/duration, YAML presentation
+        symptoms (probabilistic, age-filtered) and pertinent negatives drawn
+        from the condition's unselected symptoms and its organ system. Fever
+        statements follow the visit's measured temperature so the HPI never
+        contradicts the vitals.
+        """
+        if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN):
+            return None
+        male = demographics.sex_at_birth == Sex.MALE
+        if age_months >= 216:
+            who = f"{age_months // 12} year old " + ("man" if male else "woman")
+        else:
+            who = f"{self._age_to_description(age_months)} " + ("boy" if male else "girl")
+        who = who[0].upper() + who[1:]
+        historian = "Patient" if age_months >= 144 else "Parent"
+        febrile = temperature_f is not None and temperature_f >= 100.4
+        fever_at_home = febrile or "fever" in stub.reason.lower()
+
+        data = self._conditions.get(condition_key, {}) if condition_key else {}
+        if not isinstance(data, dict):
+            data = {}
+        presentation = data.get("presentation", {}) or {}
+        positives: list[str] = []
+        negatives: list[str] = []
+        for sd in presentation.get("symptoms", []) or []:
+            if isinstance(sd, str):
+                sd = {"name": sd.removeprefix("may have ").strip(),
+                      "probability": 0.5 if sd.startswith("may have") else 1.0}
+            name = sd.get("name", "")
+            if sd.get("age_min") is not None and age_months < sd["age_min"]:
+                continue
+            if sd.get("age_max") is not None and age_months > sd["age_max"]:
+                continue
+            if "fever" in name.lower() or "temperature" in name.lower():
+                # Reported fever follows the history (and never contradicts a
+                # febrile clinic temperature).
+                if self.rng.random() < sd.get("probability", 1.0):
+                    fever_at_home = True
+                continue
+            if self.rng.random() < sd.get("probability", 1.0):
+                positives.append(name)
+            else:
+                negatives.append(name)
+        if not fever_at_home:
+            negatives.append("fever")
+        for n in self._HPI_NEGATIVES_BY_SYSTEM.get(data.get("system", ""), []):
+            if n not in negatives and n not in positives:
+                negatives.append(n)
+
+        if stub.type == EncounterType.CHRONIC_FOLLOWUP:
+            cond = (stub.conditions_to_address or [stub.reason])[0]
+            ykey = self._get_condition_key(cond) or cond
+            cname = (self._conditions.get(ykey) or {}).get(
+                "display_name", cond.replace("_", " ").title())
+            if stub.is_new_condition_diagnosis:
+                sx = ", ".join(positives[:4]) or f"concerns related to {cname.lower()}"
+                text = (f"{who} presenting for evaluation of {sx}. {historian} reports these "
+                        f"developed gradually over the past several weeks to months.")
+                if negatives:
+                    text += f" Denies {', '.join(negatives[:3])}."
+                return text
+            return (f"{who} here for routine follow-up of {cname}. {historian} reports "
+                    f"symptoms are stable since the last visit with good adherence to the "
+                    f"current plan. No emergency visits or hospitalizations since last seen.")
+
+        days = self.rng.randint(1, 3)
+        when = "1 day" if days == 1 else f"{days} days"
+        parts = [f"{who} presenting with {stub.reason.lower()} for {when}."]
+        if positives:
+            parts.append(f"{historian} reports {', '.join(positives[:5])}.")
+        if febrile:
+            parts.append(f"Fever at home; {temperature_f:.1f} F in clinic.")
+        elif fever_at_home:
+            parts.append("Fever at home, treated with antipyretics; afebrile in clinic.")
+        if stub.type == EncounterType.ACUTE_INJURY:
+            parts.append("Injury occurred during play; no loss of consciousness.")
+        parts.append("Tolerating fluids with normal urine output." if age_months < 144
+                     else "Eating and drinking normally.")
+        if negatives:
+            parts.append(f"Denies {', '.join(negatives[:4])}.")
+        return " ".join(parts)
+
     def _generate_encounter(
         self,
         stub: EncounterStub,
@@ -2427,8 +2661,11 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
                 is_primary=True,
             ))
         
-        # Add chronic conditions to assessment if being addressed
+        # Add chronic conditions to assessment if being addressed (an acute
+        # visit's condition is already the primary diagnosis)
         for condition in stub.conditions_to_address:
+            if stub.type == EncounterType.ACUTE_ILLNESS:
+                break
             if condition in life_arc.major_conditions:
                 status = "newly diagnosed" if stub.is_new_condition_diagnosis else "stable"
                 assessment.append(Assessment(
@@ -2528,6 +2765,8 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
             lab_results=lab_results,
             imaging_results=imaging_results,
             prescriptions=illness_prescriptions,
+            hpi=self._template_hpi(stub, demographics, age_months, condition_key,
+                                   vitals.temperature_f),
             anticipatory_guidance=self._generate_anticipatory_guidance_list(age_months) if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN) else [],
             developmental_screen=developmental_screen,
         )
@@ -3429,6 +3668,111 @@ VITAL SIGNS:
         guidance = self._generate_anticipatory_guidance(age_months)
         return [g.strip() for g in guidance.split(",")]
 
+    # ICD-10-CM fallback for problem names that are not conditions.yaml keys
+    # (mostly comorbidities named in conditions.yaml `comorbidities:` lists).
+    # Codes from the ICD-10-CM FY2026 tabular list. Display text is the
+    # problem-list name; the second element is the ICD-10 descriptor.
+    _ICD10_FALLBACK: dict[str, tuple[str, str]] = {
+        "asthma": ("J45.20", "Mild intermittent asthma, uncomplicated"),
+        "adhd": ("F90.2", "Attention-deficit hyperactivity disorder, combined type"),
+        "eczema": ("L20.9", "Atopic dermatitis, unspecified"),
+        "allergic rhinitis": ("J30.9", "Allergic rhinitis, unspecified"),
+        "anxiety": ("F41.1", "Generalized anxiety disorder"),
+        "food allergy": ("T78.1XXA", "Other adverse food reactions, NEC, initial encounter"),
+        "obesity": ("E66.9", "Obesity, unspecified"),
+        "constipation": ("K59.00", "Constipation, unspecified"),
+        "recurrent otitis media": ("H66.90", "Otitis media, unspecified, unspecified ear"),
+        "depression": ("F32.A", "Depression, unspecified"),
+        "autism": ("F84.0", "Autistic disorder"),
+        "type 1 diabetes": ("E10.9", "Type 1 diabetes mellitus without complications"),
+        "type 2 diabetes": ("E11.9", "Type 2 diabetes mellitus without complications"),
+        "seizure disorder": ("G40.909", "Epilepsy, unspecified, not intractable"),
+        "epilepsy": ("G40.909", "Epilepsy, unspecified, not intractable"),
+        "cerebral palsy": ("G80.9", "Cerebral palsy, unspecified"),
+        "gerd": ("K21.9", "Gastro-esophageal reflux disease without esophagitis"),
+        "prediabetes": ("R73.03", "Prediabetes"),
+        "cough": ("R05.9", "Cough, unspecified"),
+        "swimmer's ear": ("H60.339", "Swimmer's ear, unspecified ear"),
+        "swimmers ear": ("H60.339", "Swimmer's ear, unspecified ear"),
+        "kawasaki disease": ("M30.3", "Mucocutaneous lymph node syndrome [Kawasaki]"),
+        "hearing loss": ("H91.90", "Unspecified hearing loss, unspecified ear"),
+        "intellectual disability": ("F79", "Unspecified intellectual disabilities"),
+        "motion sickness": ("T75.3XXA", "Motion sickness, initial encounter"),
+        "somatic complaints": ("F45.9", "Somatoform disorder, unspecified"),
+        "vitamin d deficiency": ("E55.9", "Vitamin D deficiency, unspecified"),
+        "celiac disease": ("K90.0", "Celiac disease"),
+        "thyroid disease": ("E07.9", "Disorder of thyroid, unspecified"),
+        "dyslipidemia": ("E78.5", "Hyperlipidemia, unspecified"),
+        "hypertension": ("I10", "Essential (primary) hypertension"),
+        "nafld": ("K76.0", "Fatty (change of) liver, not elsewhere classified"),
+        "acanthosis nigricans": ("L83", "Acanthosis nigricans"),
+        "sinusitis": ("J32.9", "Chronic sinusitis, unspecified"),
+        "oppositional defiant disorder": ("F91.3", "Oppositional defiant disorder"),
+        "tic disorder": ("F95.9", "Tic disorder, unspecified"),
+        "eating disorders": ("F50.9", "Eating disorder, unspecified"),
+        "learning disability": ("F81.9", "Developmental disorder of scholastic skills, unspecified"),
+        "speech delay": ("F80.9", "Developmental disorder of speech and language, unspecified"),
+        "developmental delay": ("F88", "Other disorders of psychological development"),
+    }
+    _DISPLAY_OVERRIDES = {
+        "adhd": "ADHD", "gerd": "GERD", "nafld": "Nonalcoholic Fatty Liver Disease",
+    }
+
+    def _resolve_icd10(self, name: str) -> tuple[str, str]:
+        """(ICD-10 code, display name) for a problem. Never returns R69.
+
+        Order: condition knowledge service (local YAML + aliases, then cache /
+        Athena / LLM when available), then _ICD10_FALLBACK. Raises ValueError
+        for a name nothing can code, rather than writing a placeholder.
+        """
+        result = self.condition_service.get_condition(name)
+        if result.found and result.definition and result.definition.icd10_primary \
+                and result.definition.icd10_primary not in ("R69", "R99"):
+            return result.definition.icd10_primary, result.definition.display_name
+        key = name.lower().replace("_", " ").strip()
+        if key in self._ICD10_FALLBACK:
+            display = self._DISPLAY_OVERRIDES.get(key, name.replace("_", " ").title())
+            return self._ICD10_FALLBACK[key][0], display
+        raise ValueError(f"No ICD-10 code for condition '{name}' (not in conditions.yaml, "
+                         f"its aliases, or the engine fallback table)")
+
+    def _can_code(self, name: str) -> bool:
+        try:
+            self._resolve_icd10(name)
+            return True
+        except ValueError:
+            return False
+
+    # Self-limited conditions that resolve after an episode (days to
+    # abatement when conditions.yaml gives no presentation.duration_days).
+    # Kawasaki: AHA 2017 statement, acute phase + convalescent aspirin to
+    # 6 weeks; the problem is resolved when aspirin stops absent coronary
+    # findings.
+    _SELF_LIMITED_DAYS = {"kawasaki disease": 42}
+    _DEFAULT_ACUTE_DAYS = 14
+
+    def _is_acute_condition(self, cond_name: str) -> bool:
+        if cond_name.lower().replace("_", " ").strip() in self._SELF_LIMITED_DAYS:
+            return True
+        ykey = self._get_condition_key(cond_name) or cond_name
+        data = self._conditions.get(ykey) or {}
+        return isinstance(data, dict) and data.get("category") == "acute"
+
+    def _abatement_for(self, cond_name: str, onset: date) -> date | None:
+        """Abatement date for a self-limited condition, or None if chronic or
+        the episode is still in progress on today."""
+        key = cond_name.lower().replace("_", " ").strip()
+        days = self._SELF_LIMITED_DAYS.get(key)
+        if days is None:
+            ykey = self._get_condition_key(cond_name) or cond_name
+            data = self._conditions.get(ykey) or self._conditions.get(cond_name) or {}
+            if not isinstance(data, dict) or data.get("category") != "acute":
+                return None
+            dur = (data.get("presentation") or {}).get("duration_days")
+            days = max(dur) if isinstance(dur, list) and dur else self._DEFAULT_ACUTE_DAYS
+        end = onset + timedelta(days=days)
+        return end if end <= self.today else None
+
     def _apply_comorbidity_logic(self, conditions: list[str]) -> list[str]:
         """
         Apply realistic co-morbidity patterns to condition lists.
@@ -3449,7 +3793,10 @@ VITAL SIGNS:
         for condition in list(result):  # Iterate over copy to allow modification
             if condition in comorbidity_map:
                 for comorbid, probability in comorbidity_map[condition]:
-                    if comorbid not in result and self.rng.random() < probability:
+                    if comorbid not in result and self.rng.random() < probability \
+                            and self._can_code(comorbid):
+                        # Only comorbidities we can code (YAML or fallback
+                        # table); vague ones like "gi disorders" are skipped.
                         result.append(comorbid)
 
         return result
@@ -3567,6 +3914,93 @@ VITAL SIGNS:
         illnesses, weights = zip(*filtered_pool)
         return self.rng.choices(illnesses, weights=weights, k=1)[0]
 
+    # Doses per day for a frequency token. Used to split "divided" daily
+    # doses into per-dose amounts.
+    _DOSES_PER_DAY = {"QD": 1, "DAILY": 1, "BID": 2, "TID": 3, "QID": 4}
+
+    def _dose_from_def(self, med: dict, weight_kg: float | None) -> tuple[str, str] | None:
+        """Per-dose amount (mg, as a string) and frequency for a YAML med entry.
+
+        conditions.yaml convention: when `frequency` starts with "divided",
+        `dose_mg_kg` and `max_dose_mg` are per DAY and are split across the
+        doses (e.g. amoxicillin 90 mg/kg/day "divided BID" -> 45 mg/kg BID).
+        Otherwise they are per dose. Returns None when the entry has no dose.
+        """
+        frequency = med.get("frequency", "") or ""
+        dose_mg_kg = med.get("dose_mg_kg")
+        max_dose = med.get("max_dose_mg")
+        if dose_mg_kg and weight_kg:
+            amount = dose_mg_kg * weight_kg
+            if frequency.lower().startswith("divided"):
+                token = frequency.split()[1].split("-")[0].upper() if len(frequency.split()) > 1 else "BID"
+                per_day = self._DOSES_PER_DAY.get(token, 2)
+                if max_dose:
+                    amount = min(amount, max_dose)
+                amount /= per_day
+                cap = max_dose / per_day if max_dose else None
+                frequency = token
+            else:
+                cap = max_dose
+                if cap:
+                    amount = min(amount, cap)
+            rounded = self._round_dose(amount)
+            if cap and rounded > cap:
+                rounded = int(cap)
+            return str(rounded), frequency
+        if med.get("fixed_dose_mg"):
+            return str(med["fixed_dose_mg"]), frequency
+        return None
+
+    def _select_acute_meds(self, medications: list, encounter_date: date | None) -> list[dict]:
+        """Pick at most one agent per choice group (PRN meds always included).
+
+        Entries sharing `choice_group` in conditions.yaml are alternatives
+        (e.g. AOM amoxicillin vs amoxicillin-clavulanate). The first entry is
+        first-line. An entry with `use_when.recent_class_days: N` replaces it
+        when the patient had a same-class drug (`drug_class`) prescribed within
+        the last N days (AAP 2013 AOM CPG: amoxicillin-clavulanate if
+        amoxicillin in the past 30 days or treatment failure). Entries without
+        `choice_group` fall back to grouping by the first clause of their
+        indication, as before.
+        """
+        groups: dict[str, list[dict]] = {}
+        order: list[str] = []
+        selected_prn: list[dict] = []
+        for med in medications:
+            if not isinstance(med, dict):
+                continue
+            if med.get("prn", False):
+                selected_prn.append(med)
+                continue
+            indication = med.get("indication") or "primary"
+            gkey = med.get("choice_group") or indication.lower().split(",")[0].strip()
+            if gkey not in groups:
+                groups[gkey] = []
+                order.append(gkey)
+            groups[gkey].append(med)
+
+        chosen: list[dict] = []
+        for gkey in order:
+            options = groups[gkey]
+            pick = options[0]
+            for alt in options[1:]:
+                days = (alt.get("use_when") or {}).get("recent_class_days")
+                if days and encounter_date and self._recent_class_rx(
+                        alt.get("drug_class") or self._med_class(alt.get("agent", "")),
+                        encounter_date, days):
+                    pick = alt
+                    break
+            chosen.append(pick)
+        return chosen + selected_prn
+
+    def _recent_class_rx(self, drug_class: str | None, on: date, days: int) -> bool:
+        if not drug_class:
+            return False
+        for d, agent in self._rx_history:
+            if 0 <= (on - d).days <= days and self._med_class(agent) == drug_class:
+                return True
+        return False
+
     def _generate_acute_illness_plan(
         self,
         reason: str,
@@ -3595,29 +4029,13 @@ VITAL SIGNS:
             instructions = treatment.get('patient_instructions', [])
 
             if medications or instructions:
-                # Filter medications to select appropriate ones (Bug 3 fix)
-                # Group by indication - alternatives have similar indications
-                # Select ONE medication per indication group
-                selected_meds = []
-                seen_indications = set()
-
-                for med in medications:
-                    if not isinstance(med, dict):
-                        continue
-                    indication = med.get('indication', 'primary')
-                    # Normalize indication for grouping
-                    ind_key = indication.lower().split(',')[0].strip() if indication else 'primary'
-
-                    # Skip if we already have a medication for this indication
-                    if ind_key in seen_indications and not med.get('prn', False):
-                        continue
-
-                    # For PRN medications, always include them
-                    if med.get('prn', False):
-                        selected_meds.append(med)
-                    else:
-                        selected_meds.append(med)
-                        seen_indications.add(ind_key)
+                dob = getattr(self, "_current_dob", None)
+                rx_age = (calendar_months_between(dob, encounter_date)
+                          if dob and encounter_date else age_months)
+                eligible = [m for m in medications if isinstance(m, dict) and not (
+                    m.get('age_min_months') and rx_age is not None
+                    and rx_age < m['age_min_months'])]
+                selected_meds = self._select_acute_meds(eligible, encounter_date)
 
                 # Generate medication plan items and prescriptions
                 for med in selected_meds:
@@ -3626,33 +4044,22 @@ VITAL SIGNS:
 
                     agent = med.get('agent', '')
                     rxnorm = med.get('rxnorm', '')
-                    dose_mg_kg = med.get('dose_mg_kg')
-                    max_dose_mg = med.get('max_dose_mg')
-                    fixed_dose = med.get('fixed_dose_mg')
                     frequency = med.get('frequency', '')
                     duration = med.get('duration_days')
                     route = med.get('route', 'oral')
                     indication = med.get('indication')
                     is_prn = med.get('prn', False)
-                    age_min = med.get('age_min_months')
 
                     if not agent:
                         continue
 
-                    # Check age minimum
-                    if age_min and age_months and age_months < age_min:
-                        continue
+                    # age_min_months already applied above using calendar
+                    # age on the prescribing date (same as the invariants).
 
                     # Calculate dose with clinical rounding
-                    if dose_mg_kg and weight_kg:
-                        dose = dose_mg_kg * weight_kg
-                        if max_dose_mg:
-                            dose = min(dose, max_dose_mg)
-                        rounded_dose = self._round_dose(dose)
-                        dose_str = str(rounded_dose)
-                        dose_unit = "mg"
-                    elif fixed_dose:
-                        dose_str = str(fixed_dose)
+                    dose = self._dose_from_def(med, weight_kg)
+                    if dose is not None:
+                        dose_str, frequency = dose
                         dose_unit = "mg"
                     else:
                         dose_str = "per package"
@@ -3672,6 +4079,7 @@ VITAL SIGNS:
 
                     # Create prescription (non-PRN meds only for now)
                     if rxnorm and encounter_date:
+                        self._rx_history.append((encounter_date, agent))
                         prescriptions.append(Medication(
                             code=CodeableConcept(
                                 system="http://www.nlm.nih.gov/research/umls/rxnorm",
@@ -3686,6 +4094,7 @@ VITAL SIGNS:
                             status=MedicationStatus.ACTIVE,
                             start_date=encounter_date,
                             prn=is_prn,
+                            prn_reason=(indication or "symptoms") if is_prn else None,
                             indication=indication,
                         ))
 
@@ -4242,7 +4651,9 @@ VITAL SIGNS:
             # Extract diagnoses as resolved conditions
             if encounter.assessment:
                 for assessment in encounter.assessment:
-                    if not assessment.diagnosis:
+                    # Only the visit's primary diagnosis becomes a resolved
+                    # problem; secondary lines restate chronic problems.
+                    if not assessment.diagnosis or not assessment.is_primary:
                         continue
 
                     diagnosis_lower = assessment.diagnosis.lower().strip()
@@ -4250,12 +4661,16 @@ VITAL SIGNS:
                         continue
                     seen_diagnoses.add(diagnosis_lower)
 
-                    # Get ICD-10 code
-                    code_info = acute_icd_codes.get(diagnosis_lower, ("R69", assessment.diagnosis))
+                    # Get ICD-10 code: local table, then conditions.yaml /
+                    # aliases / supplemental table. Never R69.
+                    code_info = acute_icd_codes.get(diagnosis_lower) or \
+                        self._resolve_icd10(assessment.diagnosis)
 
-                    # Calculate resolution date (typically 7-14 days after encounter for acute)
-                    resolution_days = self.rng.randint(7, 14)
-                    resolution_date = encounter.date.date() + timedelta(days=resolution_days)
+                    # Resolution: typically 7-14 days after an acute visit.
+                    # An episode that would end after today is still active.
+                    onset = encounter.date.date() if isinstance(encounter.date, datetime) else encounter.date
+                    resolution_date = onset + timedelta(days=self.rng.randint(7, 14))
+                    still_active = resolution_date > self.today
 
                     resolved_condition = Condition(
                         display_name=assessment.diagnosis,
@@ -4264,9 +4679,9 @@ VITAL SIGNS:
                             code=code_info[0],
                             display=code_info[1],
                         ),
-                        clinical_status=ConditionStatus.RESOLVED,
-                        onset_date=encounter.date.date() if isinstance(encounter.date, datetime) else encounter.date,
-                        abatement_date=resolution_date,
+                        clinical_status=ConditionStatus.ACTIVE if still_active else ConditionStatus.RESOLVED,
+                        onset_date=onset,
+                        abatement_date=None if still_active else resolution_date,
                     )
                     resolved_conditions.append(resolved_condition)
 
@@ -4291,7 +4706,14 @@ VITAL SIGNS:
                         course_days = 10 if "amox" in rx.display_name.lower() else 7
                         end_date = rx.start_date + timedelta(days=course_days)
 
+                    if end_date > self.today:
+                        new_status = MedicationStatus.ACTIVE
+
                     past_med = Medication(
+                        id=rx.id,
+                        prescribed_at_encounter=encounter.id,
+                        prn_reason=rx.prn_reason,
+                        instructions=rx.instructions,
                         code=rx.code,
                         display_name=rx.display_name,
                         status=new_status,
@@ -4303,9 +4725,28 @@ VITAL SIGNS:
                         start_date=rx.start_date,
                         end_date=end_date,
                         indication=rx.indication,
-                        discontinuation_reason="Course completed" if new_status == MedicationStatus.COMPLETED else "No longer needed",
+                        discontinuation_reason=(
+                            None if new_status == MedicationStatus.ACTIVE
+                            else "Course completed" if new_status == MedicationStatus.COMPLETED
+                            else "No longer needed"),
                     )
                     past_medications.append(past_med)
+
+        # A new course in the same drug class replaces the earlier one (e.g.
+        # amoxicillin failure -> amoxicillin-clavulanate): stop the earlier
+        # course the day the new one starts so two never overlap.
+        by_class: dict[str, list[Medication]] = {}
+        for med in past_medications:
+            cls = self._med_class(med.display_name)
+            if cls and not med.prn:
+                by_class.setdefault(cls, []).append(med)
+        for meds in by_class.values():
+            meds.sort(key=lambda m: m.start_date)
+            for prev, nxt in zip(meds, meds[1:]):
+                if prev.end_date and prev.end_date > nxt.start_date:
+                    prev.end_date = nxt.start_date
+                    prev.status = MedicationStatus.STOPPED
+                    prev.discontinuation_reason = f"Changed to {nxt.display_name}"
 
         return resolved_conditions, past_medications
 
@@ -4409,6 +4850,12 @@ VITAL SIGNS:
         demographics = patient.demographics
         age_months = demographics.age_months
         sex = "male" if demographics.sex_at_birth == Sex.MALE else "female"
+        self._current_dob = demographics.date_of_birth
+        self.today = self._today_override or date.today()
+        # Prior prescriptions inform class-aware choices (e.g. AOM after
+        # recent amoxicillin gets amoxicillin-clavulanate).
+        self._rx_history = [(m.start_date, m.display_name) for m in patient.medication_list] + [
+            (rx.start_date, rx.display_name) for e in patient.encounters for rx in e.prescriptions]
 
         # Determine visit type (with fallback)
         if visit_type is None:

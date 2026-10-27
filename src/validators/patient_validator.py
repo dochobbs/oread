@@ -42,6 +42,7 @@ class PatientValidator:
   CONDITIONS_REQUIRING_MEDS = {
     "leukemia": ["mercaptopurine", "methotrexate", "vincristine", "chemotherapy", "6-mp"],
     "lymphoma": ["chemotherapy", "rituximab", "prednisone"],
+    # ADA Standards of Care 2026 S14: basal + rapid-acting insulin, glucagon.
     "type 1 diabetes": ["insulin"],
     "type 2 diabetes": ["metformin", "insulin", "glipizide", "jardiance"],
     "hypothyroidism": ["levothyroxine", "synthroid"],
@@ -49,7 +50,10 @@ class PatientValidator:
     "seizure": ["levetiracetam", "keppra", "valproic", "lamotrigine", "phenobarbital"],
     "epilepsy": ["levetiracetam", "keppra", "valproic", "lamotrigine", "phenobarbital"],
     "asthma": ["albuterol", "fluticasone", "budesonide", "montelukast"],
-    "adhd": ["methylphenidate", "adderall", "vyvanse", "strattera", "guanfacine"],
+    # ADHD is intentionally absent: AAP ADHD CPG 2019 (KAS 5a) makes behavior
+    # therapy first-line at ages 4-5, so an unmedicated preschooler is correct.
+    # AAP 2017 epinephrine clinical report: every food-allergic child carries one.
+    "food allergy": ["epinephrine"],
     "kawasaki": ["aspirin"],
     "kawasaki disease": ["aspirin"],
   }
@@ -75,8 +79,11 @@ class PatientValidator:
   CONDITIONS_REQUIRING_LABS = {
     "leukemia": ["cbc", "complete blood count", "metabolic panel", "cmp"],
     "lymphoma": ["cbc", "complete blood count", "metabolic panel"],
-    "type 1 diabetes": ["hemoglobin a1c", "hba1c", "glucose"],
-    "type 2 diabetes": ["hemoglobin a1c", "hba1c", "glucose", "lipid"],
+    # ADA Standards of Care 2026 S6/S14: HbA1c every 3 months in youth with
+    # diabetes; at least annually with prediabetes.
+    "type 1 diabetes": ["hemoglobin a1c", "hba1c"],
+    "type 2 diabetes": ["hemoglobin a1c", "hba1c"],
+    "prediabetes": ["hemoglobin a1c", "hba1c"],
     "hypothyroidism": ["tsh", "thyroid"],
     "chronic kidney disease": ["creatinine", "bun", "gfr", "cmp"],
   }

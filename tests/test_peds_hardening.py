@@ -91,3 +91,67 @@ def test_gate_boundary_is_inclusive_and_shared(gate, dob):
         top = add_months(dob, max_m)
         assert issues(top) == []
         assert issues(top + timedelta(days=1))
+
+
+# --------------------------------------------------------------------------- #
+# Dosing tables (src/engines/peds_dosing.py)                                  #
+# --------------------------------------------------------------------------- #
+
+from src.engines import peds_dosing as pd  # noqa: E402
+
+
+@pytest.mark.parametrize("kg,mg", [(6.0, "0.1"), (14.9, "0.1"), (15.0, "0.15"),
+                                   (29.9, "0.15"), (30.0, "0.3"), (60.0, "0.3")])
+def test_epinephrine_weight_bands(kg, mg):
+    assert pd.epinephrine(kg)[0].dose_quantity == mg
+
+
+def test_cetirizine_age_bands():
+    assert pd.cetirizine(5) == []
+    assert pd.cetirizine(12)[0].dose_quantity == "2.5"
+    assert pd.cetirizine(48)[0].dose_quantity == "2.5"
+    assert pd.cetirizine(80)[0].dose_quantity == "10"
+
+
+def test_levetiracetam_never_exceeds_label_ceiling():
+    for age, kg in [(2, 4.0), (10, 8.5), (60, 18.0), (150, 40.0), (200, 70.0)]:
+        rx = pd.levetiracetam(age, kg)[0]
+        daily = float(rx.dose_quantity) * 2
+        assert daily <= 3000
+        if age < 192:
+            assert daily / kg <= pd._band(pd.LEV_MAX_MG_KG_DAY, age)
+
+
+def test_one_ssri_for_anxiety_and_depression():
+    assert [r.agent for r in pd.ssri(150, depression=True, anxiety=True)] == ["Fluoxetine"]
+    assert [r.agent for r in pd.ssri(80, depression=False, anxiety=True)] == ["Sertraline"]
+    assert pd.ssri(50, depression=False, anxiety=True) == []
+
+
+def test_preschool_stimulant_starts_low():
+    rx = pd.methylphenidate(54)[0]
+    assert float(rx.dose_quantity) * 2 <= 10
+    assert pd.methylphenidate(80)[0].dose_quantity == "18"
+
+
+def test_aom_amox_clav_only_after_recent_amoxicillin():
+    from datetime import timedelta
+    e = PedsEngine(use_llm=False, today=date(2026, 10, 27))
+    meds = e._conditions["otitis_media"]["treatment"]["medications"]
+    d = date(2026, 1, 10)
+    e._rx_history = []
+    assert [m["agent"] for m in e._select_acute_meds(meds, d) if not m.get("prn")] == ["Amoxicillin"]
+    e._rx_history = [(d - timedelta(days=12), "Amoxicillin")]
+    assert [m["agent"] for m in e._select_acute_meds(meds, d) if not m.get("prn")] == \
+        ["Amoxicillin-Clavulanate"]
+    e._rx_history = [(d - timedelta(days=45), "Amoxicillin")]
+    assert [m["agent"] for m in e._select_acute_meds(meds, d) if not m.get("prn")] == ["Amoxicillin"]
+
+
+def test_divided_daily_dose_is_split():
+    e = PedsEngine(use_llm=False)
+    amox = e._conditions["otitis_media"]["treatment"]["medications"][0]
+    dose, freq = e._dose_from_def(amox, 10.0)  # 90 mg/kg/day -> 450 mg BID
+    assert (dose, freq) == ("450", "BID")
+    dose, _ = e._dose_from_def(amox, 60.0)  # capped at 4000 mg/day -> 2000 BID
+    assert dose == "2000"

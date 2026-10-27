@@ -17,9 +17,8 @@ Generates 10 patients testing all major features:
 Exports all to a single markdown file for evaluation.
 """
 
-import os
 import sys
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 # Force unbuffered output
@@ -27,7 +26,7 @@ sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
 # Ensure we can import from src
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))  # project root
 
 from src.engines import PedsEngine
 from src.models import GenerationSeed

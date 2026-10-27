@@ -5480,11 +5480,11 @@ VITAL SIGNS:
                 ("Hydrocortisone 1% Cream", "310466", "Apply thin layer", "application", "BID", "topical")
             ],
             "asthma": [
-                ("Albuterol HFA Inhaler", "351137", "1-2", "puffs", "Q4-6H PRN", "inhaled"),
-                ("Fluticasone Propionate HFA", "315926", "1-2", "puffs", "BID", "inhaled"),
+                ("Albuterol HFA Inhaler", "435", "1-2", "puffs", "Q4-6H PRN", "inhaled"),
+                ("Fluticasone Propionate HFA", "41126", "1-2", "puffs", "BID", "inhaled"),
             ],
             "reactive airway disease": [
-                ("Albuterol HFA Inhaler", "351137", "1-2", "puffs", "Q4-6H PRN", "inhaled")
+                ("Albuterol HFA Inhaler", "435", "1-2", "puffs", "Q4-6H PRN", "inhaled")
             ],
             "allergic rhinitis": [
                 ("Cetirizine", "203152", "5-10", "mg", "once daily", "oral"),

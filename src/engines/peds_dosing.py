@@ -97,7 +97,9 @@ def levetiracetam(age_months: int, weight_kg: float) -> list[Rx]:
     # exceed the mg/kg ceiling.
     mg = max(10, math.floor(per_dose / 10) * 10)
     instructions = f"{mg / LEV_SOLUTION_MG_PER_ML:g} mL of 100 mg/mL oral solution"
-  return [Rx("Levetiracetam", "310422", _fmt(mg), "mg", "BID",
+  # RxNorm 114477 = levetiracetam IN (RxNav 2026-10-27). The old 310422 was
+  # a remapped fosinopril 20 MG tablet code.
+  return [Rx("Levetiracetam", "114477", _fmt(mg), "mg", "BID",
              instructions=instructions, drug_class="antiseizure")]
 
 
@@ -149,7 +151,7 @@ def methylphenidate(age_months: int) -> list[Rx]:
     return [Rx("Methylphenidate IR", "6901", _fmt(PRESCHOOL_MPH_IR_MG), "mg", "BID",
                instructions="2.5 mg tablet (half of 5 mg) in AM and early afternoon",
                drug_class="stimulant")]
-  return [Rx("Methylphenidate ER", "866924", _fmt(MPH_ER_START_MG), "mg", "daily in AM",
+  return [Rx("Methylphenidate ER", "6901", _fmt(MPH_ER_START_MG), "mg", "daily in AM",
              drug_class="stimulant")]
 
 
@@ -210,7 +212,7 @@ def type_1_diabetes(age_months: int, weight_kg: float) -> list[Rx]:
   isf = max(10, int(5 * round((1800 / tdd) / 5)))
   glucagon_mg = 0.5 if weight_kg < GLUCAGON_WEIGHT_CUTOFF_KG else 1.0
   return [
-    Rx("Insulin Glargine", "261551", str(basal), "units", "once daily at bedtime",
+    Rx("Insulin Glargine", "274783", str(basal), "units", "once daily at bedtime",
        route="subcutaneous", drug_class="basal insulin",
        instructions=f"{basal} units SC nightly (~{T1D_BASAL_FRACTION:.0%} of TDD "
                     f"{tdd:.0f} U/day at {weight_kg:.1f} kg)"),
@@ -291,7 +293,7 @@ SMART_MIN_AGE_MONTHS = 60
 
 
 def _albuterol() -> Rx:
-  return Rx("Albuterol HFA Inhaler", "351137", "2", "puffs", "Q4H PRN",
+  return Rx("Albuterol HFA Inhaler", "435", "2", "puffs", "Q4H PRN",
             route="inhaled", prn=True, prn_reason="cough, wheeze or shortness of breath",
             drug_class="SABA",
             instructions="90 mcg/puff with spacer; 2 puffs every 4 hours as needed")
@@ -305,8 +307,8 @@ def asthma(age_months: int, severity: str) -> list[Rx]:
       strength, puffs, max_puffs = "160/4.5", "2", 12
     else:
       strength, puffs, max_puffs = "80/4.5", "1", 8
-    # RxNorm: ingredient-level budesonide code; combination SCD unverified.
-    return [Rx(f"Budesonide-Formoterol HFA {strength} mcg", "19831", puffs, "puffs",
+    # RxNorm 389132 = budesonide / formoterol MIN (RxNav 2026-10-27).
+    return [Rx(f"Budesonide-Formoterol HFA {strength} mcg", "389132", puffs, "puffs",
                "BID and PRN", route="inhaled", drug_class="ICS-LABA",
                instructions=f"SMART: {puffs} puff(s) twice daily plus 1 puff as needed "
                             f"for symptoms; max {max_puffs} puffs/day")]
@@ -316,7 +318,7 @@ def asthma(age_months: int, severity: str) -> list[Rx]:
     ics = Rx("Budesonide Inhalation Suspension", "19831", mg, "mg", "BID via nebulizer",
              route="inhaled", drug_class="ICS")
   else:
-    ics = Rx("Fluticasone Propionate HFA 44 mcg", "966524", "2", "puffs", "BID",
+    ics = Rx("Fluticasone Propionate HFA 44 mcg", "41126", "2", "puffs", "BID",
              route="inhaled", drug_class="ICS",
              instructions="176 mcg/day (low dose) with spacer; rinse mouth after use")
   return [ics, _albuterol()]

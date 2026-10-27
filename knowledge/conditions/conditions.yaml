@@ -161,7 +161,7 @@ otitis_media:
         choice_group: "antibiotic"
         drug_class: "aminopenicillin"
       - agent: "Amoxicillin-Clavulanate"
-        rxnorm: "1043"
+        rxnorm: "19711"
         dose_mg_kg: 90
         max_dose_mg: 4000
         frequency: "divided BID"
@@ -584,21 +584,21 @@ conjunctivitis:
     approach: "varies_by_etiology"
     medications:
       - agent: "Erythromycin Ophthalmic Ointment"
-        rxnorm: "310134"
+        rxnorm: "4053"
         frequency: "Apply 0.5 inch ribbon QID"
         duration_days: 7
         route: "ophthalmic"
         indication: "bacterial conjunctivitis"
         choice_group: "ophthalmic antibiotic"
       - agent: "Polymyxin B-Trimethoprim Ophthalmic"
-        rxnorm: "197879"
+        rxnorm: "219314"
         frequency: "1-2 drops Q3H for 7-10 days"
         duration_days: 7
         route: "ophthalmic"
         indication: "bacterial conjunctivitis, alternative"
         choice_group: "ophthalmic antibiotic"
       - agent: "Ofloxacin Ophthalmic"
-        rxnorm: "198214"
+        rxnorm: "7623"
         frequency: "1-2 drops Q2-4H"
         duration_days: 7
         route: "ophthalmic"
@@ -930,7 +930,7 @@ urinary_tract_infection:
       # cephalexin 50-100 mg/kg/day in 4 doses; TMP-SMX 8 mg/kg/day TMP in 2
       # doses. Max 2000 mg/day cephalexin kept from prior entry (unverified).
       - agent: "Cephalexin"
-        rxnorm: "2393"
+        rxnorm: "2231"
         dose_mg_kg: 50
         max_dose_mg: 2000
         choice_group: "antibiotic"
@@ -939,7 +939,7 @@ urinary_tract_infection:
         route: "oral"
         indication: "first-line empiric therapy"
       - agent: "Trimethoprim-Sulfamethoxazole"
-        rxnorm: "10829"
+        rxnorm: "10831"
         dose_mg_kg: 8
         max_dose_mg: 320
         frequency: "divided BID"
@@ -1136,13 +1136,13 @@ asthma:
       moderate_persistent: "J45.40"
     medications:
       - agent: "Albuterol HFA Inhaler"
-        rxnorm: "351137"
+        rxnorm: "435"
         frequency: "1-2 puffs Q4-6H PRN"
         route: "inhaled"
         indication: "rescue medication for acute symptoms"
         prn: true
       - agent: "Fluticasone Propionate HFA"
-        rxnorm: "966524"
+        rxnorm: "41126"
         frequency: "2 puffs (44 mcg) BID"
         route: "inhaled"
         indication: "low-dose ICS controller for mild persistent asthma, age >= 4 y"
@@ -1156,7 +1156,7 @@ asthma:
         choice_group: "controller"
         age_min_months: 12  # PULMICORT RESPULES labeled 12 mo - 8 y
       - agent: "Budesonide-Formoterol HFA"
-        rxnorm: "19831"  # ingredient-level budesonide; combination SCD unverified
+        rxnorm: "389132"  # RxNorm MIN budesonide / formoterol (verified RxNav 2026-10-27)
         frequency: "1-2 puffs BID and PRN (SMART)"
         route: "inhaled"
         indication: "SMART for moderate persistent asthma, age >= 5 y"
@@ -1229,7 +1229,7 @@ reactive_airway_disease:
     approach: "rescue_medication"
     medications:
       - agent: "Albuterol HFA Inhaler"
-        rxnorm: "351137"
+        rxnorm: "435"
         frequency: "1-2 puffs Q4-6H PRN"
         route: "inhaled"
         indication: "rescue medication for wheeze episodes"
@@ -1360,17 +1360,17 @@ eczema:
     approach: "emollient_plus_steroids"
     medications:
       - agent: "Hydrocortisone 1% Cream"
-        rxnorm: "310323"
+        rxnorm: "5492"
         frequency: "Apply BID to affected areas"
         route: "topical"
         indication: "mild eczema, face/intertriginous areas"
       - agent: "Triamcinolone 0.1% Cream"
-        rxnorm: "310316"
+        rxnorm: "10759"
         frequency: "Apply BID to affected areas"
         route: "topical"
         indication: "moderate eczema, body"
       - agent: "Tacrolimus 0.03% Ointment"
-        rxnorm: "835901"
+        rxnorm: "42316"
         frequency: "Apply BID to affected areas"
         route: "topical"
         indication: "steroid-sparing for face/sensitive areas"
@@ -1912,7 +1912,7 @@ type_1_diabetes:
         required: true
         notes: "Basal-bolus regimen or insulin pump therapy"
       - agent: "Insulin Glargine"
-        rxnorm: "261551"
+        rxnorm: "274783"
         dose_description: "Based on weight and blood glucose patterns"
         frequency: "Once daily"
         route: "subcutaneous"

@@ -1318,7 +1318,7 @@ Examples:
 
             # Generate growth measurement if well-child or appropriate
             if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN):
-                weight, height, hc, bmi = growth.generate_measurement(months_old)
+                weight, height, hc, bmi = growth.generate_measurement(days_old / 30.4375)
                 growth_data.append(GrowthMeasurement(
                     date=stub.date,
                     age_in_days=days_old,
@@ -2278,7 +2278,7 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         from knowledge.growth.cdc_2000 import (
             generate_normal_vitals, calculate_weight_percentile,
             calculate_height_percentile, calculate_hc_percentile,
-            calculate_bmi_percentile
+            calculate_bmi_percentile, age_in_months
         )
         
         sex = "male" if demographics.sex_at_birth == Sex.MALE else "female"
@@ -2310,10 +2310,12 @@ IMPORTANT: Do NOT include any of these claims (they are not supported by structu
         growth_percentiles = None
         if latest_growth and latest_growth.weight_kg:
             try:
-                weight_result = calculate_weight_percentile(latest_growth.weight_kg, age_months, sex)
-                height_result = calculate_height_percentile(latest_growth.height_cm, age_months, sex) if latest_growth.height_cm else None
-                hc_result = calculate_hc_percentile(latest_growth.head_circumference_cm, age_months, sex) if latest_growth.head_circumference_cm and age_months <= 36 else None
-                bmi_result = calculate_bmi_percentile(latest_growth.bmi, age_months, sex) if latest_growth.bmi and age_months >= 24 else None
+                # Percentiles at the measurement's own fractional age.
+                m_age = age_in_months(latest_growth.age_in_days)
+                weight_result = calculate_weight_percentile(latest_growth.weight_kg, m_age, sex)
+                height_result = calculate_height_percentile(latest_growth.height_cm, m_age, sex) if latest_growth.height_cm else None
+                hc_result = calculate_hc_percentile(latest_growth.head_circumference_cm, m_age, sex) if latest_growth.head_circumference_cm and m_age <= 36 else None
+                bmi_result = calculate_bmi_percentile(latest_growth.bmi, m_age, sex) if latest_growth.bmi and m_age >= 24 else None
                 
                 growth_percentiles = GrowthPercentiles(
                     weight_percentile=weight_result.percentile,

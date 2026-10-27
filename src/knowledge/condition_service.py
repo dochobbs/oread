@@ -1,12 +1,17 @@
 """
 Condition Knowledge Service.
 
-Provides unified access to condition definitions from multiple sources:
-1. Curated YAML (authoritative, no network calls)
-2. Disk cache (previously retrieved conditions)
-3. Athena knowledge service (curated remote knowledge, port 9105)
-4. Web search (grounded retrieval for unknown conditions)
-5. LLM knowledge (fallback when web search unavailable)
+Provides unified access to condition definitions from multiple sources,
+in precedence order:
+1. Curated local YAML (authoritative for Oread, no network calls)
+2. Athena knowledge service (curated remote knowledge, port 9105)
+3. Web search + LLM structuring (Exa grounding)
+4. LLM knowledge only
+
+The disk cache is not a precedence layer of its own. A cached Athena
+definition is served directly. A cached web-search or LLM definition is
+provisional: Athena is asked first, and an Athena hit replaces it. LLM-only
+definitions are flagged `needs_verification` and cached for one day only.
 
 The service handles the complexity of multi-source retrieval so the
 rest of the system can just call `get_condition(name)`.
@@ -15,9 +20,17 @@ rest of the system can just call `get_condition(name)`.
 from __future__ import annotations
 
 import json
+import logging
 import re
+from datetime import timedelta
 from pathlib import Path
-from typing import Callable, Any, TYPE_CHECKING
+from typing import Callable, Any
+
+logger = logging.getLogger(__name__)
+
+# LLM-only (ungrounded) definitions expire quickly so a later Athena or
+# web-grounded lookup gets a chance to replace them.
+LLM_ONLY_CACHE_TTL = timedelta(days=1)
 
 
 def _repair_json(json_str: str) -> str:
@@ -67,9 +80,6 @@ from .models import (
 )
 from .cache import ConditionCache
 from .athena_source import athena_condition_to_definition, fetch_condition_from_athena
-
-if TYPE_CHECKING:
-  from src.llm.client import LLMClient
 
 # Type for web search function
 WebSearchFn = Callable[[str], list[dict]]  # query -> list of {url, title, snippet}
@@ -156,24 +166,49 @@ class ConditionKnowledgeService:
 
     Returns raw Athena payload or None (unreachable / unknown / disabled).
     """
+    # Athena keys are snake_case ("otitis_media"), lookups are free text.
+    # Also keeps "/", "?" and "#" out of the request path.
+    athena_key = re.sub(r"[^a-z0-9]+", "_", normalized_name.lower()).strip("_")
+    if not athena_key:
+      return None
     try:
       if self._athena_lookup is not None:
-        return self._athena_lookup(normalized_name)
+        return self._athena_lookup(athena_key)
       return fetch_condition_from_athena(
-        normalized_name, specialty=self.athena_specialty
+        athena_key, specialty=self.athena_specialty
       )
     except Exception:
       return None
+
+  def _yaml_result(self, yaml_key: str) -> ConditionLookupResult:
+    return ConditionLookupResult(
+      found=True,
+      definition=self._yaml_to_definition(yaml_key),
+      source="yaml",
+      cached=False,
+    )
+
+  @staticmethod
+  def _warn_unverified(name: str, definition: ConditionDefinition) -> None:
+    """Consumer of `needs_verification`: surface unverified codes in logs."""
+    if definition.needs_verification:
+      logger.warning(
+        "Condition '%s' uses an unverified %s definition (ICD-10 %s); "
+        "codes need clinician review",
+        name, definition.source, definition.icd10_primary,
+      )
 
   def get_condition(self, name: str) -> ConditionLookupResult:
     """
     Get a condition definition by name.
 
-    Tries sources in order:
-    1. Curated YAML
-    2. Disk cache
-    3. Web search + LLM structuring
-    4. LLM knowledge only
+    Precedence (D4: local YAML is authoritative for Oread):
+    1. Curated local YAML
+    2. Cached Athena definition
+    3. Live Athena (replaces any cached web-search/LLM definition)
+    4. Cached web-search/LLM definition (Athena missed or is down)
+    5. Web search + LLM structuring
+    6. LLM knowledge only (needs_verification, 1-day cache TTL)
 
     Returns ConditionLookupResult with found=True/False and definition if found.
     """
@@ -182,35 +217,37 @@ class ConditionKnowledgeService:
     # Layer 1: Check curated YAML
     yaml_key = self._name_to_key.get(normalized)
     if yaml_key:
-      definition = self._yaml_to_definition(yaml_key)
-      return ConditionLookupResult(
-        found=True,
-        definition=definition,
-        source="yaml",
-        cached=False,
-      )
+      return self._yaml_result(yaml_key)
 
-    # Layer 2: Check cache
+    # Cache: an Athena definition is final; anything else is provisional
+    # and only served if Athena can't answer.
+    provisional: ConditionDefinition | None = None
     cached_data = self.cache.get(normalized)
     if cached_data:
       try:
-        definition = ConditionDefinition.model_validate(cached_data)
-        return ConditionLookupResult(
-          found=True,
-          definition=definition,
-          source="cache",
-          cached=True,
-        )
+        cached_def = ConditionDefinition.model_validate(cached_data)
+        if cached_def.source == "athena":
+          return ConditionLookupResult(
+            found=True,
+            definition=cached_def,
+            source="cache",
+            cached=True,
+          )
+        provisional = cached_def
       except Exception:
         pass  # Invalid cache entry, continue to retrieval
 
-    # Layer 2.5: Athena knowledge service (curated remote knowledge).
+    # Layer 2: Athena knowledge service (curated remote knowledge).
     # Fills gaps in local YAML (e.g. IM conditions) before falling back
-    # to ungrounded web search / LLM retrieval.
+    # to web search / LLM retrieval, and overrides their cached output.
     athena_data = self._lookup_athena(normalized)
     if athena_data:
       try:
         definition = athena_condition_to_definition(athena_data)
+        # An Athena hit on a condition Oread defines locally (reached via
+        # a name the YAML index doesn't know) still uses local content.
+        if definition.condition_key in self._name_to_key.values():
+          return self._yaml_result(definition.condition_key)
         self.cache.set(normalized, definition.model_dump())
         return ConditionLookupResult(
           found=True,
@@ -221,12 +258,22 @@ class ConditionKnowledgeService:
       except Exception:
         pass  # Mapping failure: fall through to web search
 
+    if provisional is not None:
+      self._warn_unverified(name, provisional)
+      return ConditionLookupResult(
+        found=True,
+        definition=provisional,
+        source="cache",
+        cached=True,
+      )
+
     # Layer 3: Web search + LLM (if web search available and LLM available)
     if self.web_search and self.llm:
       definition = self._retrieve_via_web_search(name)
       if definition:
         # Cache for future use
         self.cache.set(normalized, definition.model_dump())
+        self._warn_unverified(name, definition)
         return ConditionLookupResult(
           found=True,
           definition=definition,
@@ -238,10 +285,13 @@ class ConditionKnowledgeService:
     if self.llm:
       definition = self._retrieve_via_llm_only(name)
       if definition:
-        # Cache but mark as lower confidence
+        # Lower confidence, flagged, and short-lived in the cache.
         definition.confidence = 0.7
         definition.needs_verification = True
-        self.cache.set(normalized, definition.model_dump())
+        self.cache.set(
+          normalized, definition.model_dump(), ttl=LLM_ONLY_CACHE_TTL
+        )
+        self._warn_unverified(name, definition)
         return ConditionLookupResult(
           found=True,
           definition=definition,
@@ -545,6 +595,7 @@ IMPORTANT:
         prompt,
         system="You are a pediatric medical knowledge system. Provide accurate, structured condition information in valid JSON format. Always use real ICD-10-CM, SNOMED-CT, LOINC, and RxNorm codes - never invent codes. Numeric fields must be numbers (not strings like 'N/A').",
         temperature=0.1,  # Very low temperature for structured output
+        require_complete=True,  # truncated JSON must not become a definition
       )
 
       # Parse JSON from response
@@ -564,7 +615,7 @@ IMPORTANT:
 
       try:
         data = json.loads(json_str)
-      except json.JSONDecodeError as parse_error:
+      except json.JSONDecodeError:
         # Second attempt: more aggressive repair
         # Remove any remaining problematic patterns
         json_str = re.sub(r',\s*,', ',', json_str)  # Double commas

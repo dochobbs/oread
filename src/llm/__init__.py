@@ -2,6 +2,24 @@
 LLM integration for SynthPatient.
 """
 
-from .client import LLMClient, PromptBuilder, get_client, llm_enabled, set_client
+from .client import (
+    DEFAULT_MODEL,
+    LLMClient,
+    LLMResponseError,
+    PromptBuilder,
+    get_client,
+    llm_enabled,
+    resolve_model,
+    set_client,
+)
 
-__all__ = ["LLMClient", "PromptBuilder", "get_client", "llm_enabled", "set_client"]
+__all__ = [
+    "DEFAULT_MODEL",
+    "LLMClient",
+    "LLMResponseError",
+    "PromptBuilder",
+    "get_client",
+    "llm_enabled",
+    "resolve_model",
+    "set_client",
+]

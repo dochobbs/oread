@@ -60,8 +60,8 @@ oread/
 │   ├── conditions/        # Condition definitions
 │   │   ├── conditions.yaml # Main conditions with SNOMED/RxNorm/LOINC + progression rules
 │   │   └── disease_arcs.yaml # Disease arc definitions for Time Travel
-│   ├── growth/            # CDC 2000 growth charts
-│   └── immunizations/     # AAP vaccine schedule
+│   ├── growth/            # WHO 0-24mo, CDC 2000 2-20y, CDC 2022 extended BMI (data/ = vendored source CSVs)
+│   └── immunizations/     # 2026 AAP schedule (rules engine: src/engines/immunizations.py)
 │
 ├── src/db/                # Database layer (Supabase)
 │   ├── client.py          # Supabase connection
@@ -205,7 +205,7 @@ The engine now includes comprehensive validation to ensure clinical accuracy:
 - `_validate_condition_age()` - Validates onset age against min/max constraints
 - Temporal validation - No dates before DOB or after today
 - Medication coherence - Required meds for conditions (T1D→insulin, Kawasaki→aspirin)
-- ICD-10 validation - No R69 fallback codes (uses Exa web search for unknowns)
+- ICD-10 validation - no R69 fallback: an uncodable condition raises (`_resolve_icd10`)
 
 **Key Files:**
 - `src/validators/patient_validator.py` - Validation logic
@@ -352,6 +352,20 @@ pytest --cov=src tests/
 pytest tests/test_engine.py
 ```
 
+## Runtime Modes (October 2026)
+
+`src/runtime_config.py` picks the mode; defaults to `platform` when Supabase is configured, else `standalone`.
+
+| | Standalone | Platform |
+|---|---|---|
+| Auth | None (single local user) | Bearer token on every patient route; Metis sends one |
+| Bind | Loopback only; refuses `0.0.0.0` | Any |
+| Accounts/panels | 501 | Supabase-backed, queries run as the caller (RLS) |
+
+Env: `OREAD_MODE`, `OREAD_HOST`, `OREAD_PORT`, `OREAD_CORS_ORIGINS` (comma list, no `*`), `OREAD_MAX_PATIENTS`, `OREAD_MAX_JOBS`, `OREAD_MAX_CONCURRENT_GENERATIONS`, `OREAD_GENERATION_QUEUE_TIMEOUT`.
+
+Generated patients live in an in-memory, owner-scoped LRU store (`src/store.py`); a restart loses them. Never sign in on the shared Supabase client: use `new_anon_client()` for auth flows and `user.db()` for per-user queries.
+
 ## Environment
 
 - Python 3.11+
@@ -366,6 +380,20 @@ After significant changes, update:
 2. `CLAUDE.md` - This file (dev context)
 3. `docs/CONDITION_SCHEMA.md` - If schema changes
 4. `docs/ARCHITECTURE.md` - If system design changes
+
+## Clinical Hardening (October 2026)
+
+Goal spec and progress: `docs/superpowers/specs/2026-10-27-oread-clinical-hardening-goal.md`.
+
+- **Clinical invariant suite** (`tests/invariants.py`, `tests/test_clinical_invariants.py`): generates a seeded peds + adult cohort and asserts on content (vaccine series/ages, duplicate therapy, mg/kg ceilings, required meds, resolution, codes, vitals/HPI, FHIR R4B validity, C-CDA structure, cross-format parity, standalone mode). `OREAD_COHORT=full` for 120 peds + 40 adults. Known bugs go in as `xfail(strict=True)` and the marker is removed with the fix.
+- **Immunizations**: due-as-of-visit rules (`src/engines/immunizations.py`) with min age / interval / max age and catch-up; 2026 AAP schedule.
+- **Peds dosing**: `src/engines/peds_dosing.py` (weight/age-based, sourced). RxNorm codes pinned by `tests/test_rxnorm_codes.py`; verify new codes on RxNav before adding.
+- **Adult engine**: `adult/adult_meds.py` + `adult_medications.yaml` (verified RxCUIs, per-drug sig), `adult/adult_labs.py` (component panels, LOINC).
+- **Models**: clinical models are `extra="forbid"`; load stored records with `Patient.from_stored()`.
+- **Exporters**: shared `sig.py`, `codes.py`, `measurements.py`; C-CDA 2.1 / FHIR R4 conformant; refusals, PRN, resolution encoded.
+- **Reproducibility**: per-engine `self.rng` and injectable `self.today`; same seed gives the same patient.
+- **No-LLM mode** writes templated HPI and narrative notes; messiness applies to both.
+- Conditions are coded ICD-10-CM (SNOMED only where the YAML has it).
 
 ## Recent Changes (January 2026)
 

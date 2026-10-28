@@ -1,0 +1,1808 @@
+# =============================================================================
+# Adult Medication Table
+# =============================================================================
+#
+# Keyed by the drug-name portion of the med strings in adult_conditions.yaml
+# ("lisinopril 10mg" -> "lisinopril"; "fluticasone nasal spray" -> its own key).
+#
+# Fields
+#   rxnorm:     RxCUI. Ingredient (IN), precise ingredient (PIN) or
+#               multiple-ingredient (MIN) concept. Every code was resolved and
+#               its name/term type confirmed against RxNav
+#               (https://rxnav.nlm.nih.gov/REST/rxcui/<id>/properties.json)
+#               on 2026-10-27. Do not add a drug without doing the same.
+#   rxnorm_name: RxNorm concept name, for audit.
+#   display:    Base display name in the chart.
+#   classes:    Therapeutic classes for duplicate-therapy checks. Two active
+#               drugs sharing a class are never prescribed together.
+#   route / frequency / prn / instructions: from the FDA label (DailyMed) for
+#               the usual adult maintenance regimen unless a source says
+#               otherwise.
+#   unit:       Unit to use when the condition string has none
+#               ("budesonide/formoterol 160/4.5" -> mcg).
+#   dose:       Dose to use when the condition string has none
+#               ("fluticasone nasal spray"). [quantity, unit].
+#   course_days: Finite course; the med is recorded as completed afterwards.
+#   by_strength: Overrides keyed by the strength token in the condition
+#               string (e.g. naltrexone 380mg is the monthly IM depot).
+#   by_condition: Overrides keyed by condition (pramipexole for RLS is dosed
+#               once at night, for Parkinson's three times daily).
+#   female_only_for: Conditions where this drug is used only in females
+#               (spironolactone for acne is an anti-androgen).
+#
+# Drugs with no verifiable RxNorm code are deliberately absent and are skipped
+# by the engine: "areds2 vitamins" (a multi-ingredient supplement with no
+# single RxNorm concept) and "phototherapy" (a procedure, not a drug).
+# =============================================================================
+
+acamprosate:
+  rxnorm: "82819"
+  rxnorm_name: acamprosate
+  display: Acamprosate
+  classes: [aud_med]
+  route: oral
+  frequency: three times daily
+  instructions: Two 333 mg tablets (666 mg) three times daily.
+  by_strength:
+    333mg: {dose: ["666", "mg"]}
+
+acetaminophen:
+  rxnorm: "161"
+  rxnorm_name: acetaminophen
+  display: Acetaminophen
+  classes: [acetaminophen]
+  route: oral
+  frequency: every 6 hours as needed
+  prn: true
+  instructions: Do not exceed 3,000 mg per day.
+
+adalimumab:
+  rxnorm: "327361"
+  rxnorm_name: adalimumab
+  display: Adalimumab
+  classes: [advanced_immunomodulator]
+  route: subcutaneous
+  frequency: every 2 weeks
+  # Humira label: RA/PsO/CD/UC maintenance 40 mg every other week; HS 40 mg weekly.
+  by_condition:
+    hidradenitis_suppurativa: {frequency: once weekly}
+
+adapalene gel:
+  rxnorm: "60223"
+  rxnorm_name: adapalene
+  display: Adapalene 0.1% gel
+  classes: [topical_retinoid]
+  route: topical
+  frequency: once daily at bedtime
+  dose: ["1", "application"]
+
+albuterol inhaler:
+  rxnorm: "435"
+  rxnorm_name: albuterol
+  display: Albuterol HFA 90 mcg/actuation
+  classes: [saba]
+  route: inhaled
+  frequency: every 4-6 hours as needed
+  prn: true
+  dose: ["2", "puffs"]
+
+alendronate:
+  rxnorm: "46041"
+  rxnorm_name: alendronate
+  display: Alendronate
+  classes: [antiresorptive]
+  route: oral
+  frequency: once weekly
+  instructions: Take with plain water on an empty stomach; remain upright 30 minutes.
+
+alfuzosin:
+  rxnorm: "17300"
+  rxnorm_name: alfuzosin
+  display: Alfuzosin ER
+  classes: [alpha_blocker]
+  route: oral
+  frequency: once daily after the same meal
+
+allopurinol:
+  rxnorm: "519"
+  rxnorm_name: allopurinol
+  display: Allopurinol
+  classes: [urate_lowering]
+  route: oral
+  frequency: once daily
+
+alosetron:
+  rxnorm: "85248"
+  rxnorm_name: alosetron
+  display: Alosetron
+  classes: [ibs_d_agent]
+  route: oral
+  frequency: twice daily
+
+amantadine:
+  rxnorm: "620"
+  rxnorm_name: amantadine
+  display: Amantadine
+  classes: [amantadine]
+  route: oral
+  frequency: twice daily
+
+amitriptyline:
+  rxnorm: "704"
+  rxnorm_name: amitriptyline
+  display: Amitriptyline
+  classes: [tca]
+  route: oral
+  frequency: once daily at bedtime
+
+amlodipine:
+  rxnorm: "17767"
+  rxnorm_name: amlodipine
+  display: Amlodipine
+  classes: [dhp_ccb]
+  route: oral
+  frequency: once daily
+
+amphetamine/dextroamphetamine:
+  rxnorm: "822929"
+  rxnorm_name: amphetamine aspartate / amphetamine sulfate / dextroamphetamine saccharate / dextroamphetamine sulfate
+  display: Amphetamine/dextroamphetamine ER
+  classes: [stimulant]
+  route: oral
+  frequency: once daily in the morning
+
+apixaban:
+  rxnorm: "1364430"
+  rxnorm_name: apixaban
+  display: Apixaban
+  classes: [anticoagulant]
+  route: oral
+  frequency: twice daily
+
+apremilast:
+  rxnorm: "1492727"
+  rxnorm_name: apremilast
+  display: Apremilast
+  classes: [advanced_immunomodulator]
+  route: oral
+  frequency: twice daily
+
+aripiprazole:
+  rxnorm: "89013"
+  rxnorm_name: aripiprazole
+  display: Aripiprazole
+  classes: [antipsychotic]
+  route: oral
+  frequency: once daily
+
+armodafinil:
+  rxnorm: "641465"
+  rxnorm_name: armodafinil
+  display: Armodafinil
+  classes: [wake_promoter]
+  route: oral
+  frequency: once daily in the morning
+
+aspirin:
+  rxnorm: "1191"
+  rxnorm_name: aspirin
+  display: Aspirin
+  classes: [aspirin]
+  route: oral
+  frequency: once daily
+
+atomoxetine:
+  rxnorm: "38400"
+  rxnorm_name: atomoxetine
+  display: Atomoxetine
+  classes: [adhd_nonstimulant]
+  route: oral
+  frequency: once daily
+
+atorvastatin:
+  rxnorm: "83367"
+  rxnorm_name: atorvastatin
+  display: Atorvastatin
+  classes: [statin]
+  route: oral
+  frequency: once daily
+
+azathioprine:
+  rxnorm: "1256"
+  rxnorm_name: azathioprine
+  display: Azathioprine
+  classes: [antimetabolite_immunosuppressant]
+  route: oral
+  frequency: once daily
+
+azelaic acid gel:
+  rxnorm: "18602"
+  rxnorm_name: azelaic acid
+  display: Azelaic acid 15% gel
+  classes: [topical_rosacea]
+  route: topical
+  frequency: twice daily
+  dose: ["1", "application"]
+
+azelastine nasal spray:
+  rxnorm: "18603"
+  rxnorm_name: azelastine
+  display: Azelastine 0.1% nasal spray
+  classes: [nasal_antihistamine]
+  route: nasal
+  frequency: twice daily
+  dose: ["1", "spray each nostril"]
+
+benzoyl peroxide gel:
+  rxnorm: "1418"
+  rxnorm_name: benzoyl peroxide
+  display: Benzoyl peroxide 5% gel
+  classes: [benzoyl_peroxide]
+  route: topical
+  frequency: once daily
+  dose: ["1", "application"]
+
+bictegravir/emtricitabine/tenofovir:
+  rxnorm: "1996259"
+  rxnorm_name: bictegravir / emtricitabine / tenofovir alafenamide
+  display: Bictegravir/emtricitabine/tenofovir alafenamide
+  classes: [art_regimen]
+  route: oral
+  frequency: once daily
+  dose: ["50/200/25", "mg"]
+
+brimonidine:
+  rxnorm: "134615"
+  rxnorm_name: brimonidine
+  display: Brimonidine ophthalmic
+  classes: [glaucoma_alpha_agonist]
+  route: ophthalmic
+  frequency: three times daily
+  instructions: One drop in each affected eye about 8 hours apart.
+
+budesonide:
+  rxnorm: "19831"
+  rxnorm_name: budesonide
+  display: Budesonide EC
+  classes: [systemic_steroid]
+  route: oral
+  frequency: once daily in the morning
+
+budesonide/formoterol:
+  rxnorm: "389132"
+  rxnorm_name: budesonide / formoterol
+  display: Budesonide/formoterol HFA
+  classes: [ics, laba]
+  route: inhaled
+  frequency: two puffs twice daily
+  unit: mcg
+
+buprenorphine/naloxone:
+  rxnorm: "352364"
+  rxnorm_name: buprenorphine / naloxone
+  display: Buprenorphine/naloxone SL film
+  classes: [oud_med]
+  route: sublingual
+  frequency: once daily
+
+bupropion:
+  rxnorm: "42347"
+  rxnorm_name: bupropion
+  display: Bupropion XL
+  classes: [bupropion]
+  route: oral
+  frequency: once daily in the morning
+
+buspirone:
+  rxnorm: "1827"
+  rxnorm_name: buspirone
+  display: Buspirone
+  classes: [buspirone]
+  route: oral
+  frequency: twice daily
+
+calcipotriene cream:
+  rxnorm: "29365"
+  rxnorm_name: calcipotriene
+  display: Calcipotriene 0.005% cream
+  classes: [topical_vitamin_d]
+  route: topical
+  frequency: twice daily
+  dose: ["1", "application"]
+
+calcium/vitamin_d:
+  rxnorm: "608343"
+  rxnorm_name: calcium carbonate / cholecalciferol
+  display: Calcium carbonate/cholecalciferol
+  classes: [calcium_supplement]
+  route: oral
+  frequency: once daily
+  unit: mg/IU
+  by_strength:
+    600/400: {frequency: twice daily with meals}
+
+carbamazepine:
+  rxnorm: "2002"
+  rxnorm_name: carbamazepine
+  display: Carbamazepine
+  classes: [carbamazepine]
+  route: oral
+  frequency: twice daily
+
+carbidopa/levodopa:
+  rxnorm: "103990"
+  rxnorm_name: carbidopa / levodopa
+  display: Carbidopa/levodopa
+  classes: [levodopa]
+  route: oral
+  frequency: three times daily
+  unit: mg
+  by_strength:
+    50/200: {display: Carbidopa/levodopa ER, frequency: twice daily}
+
+carvedilol:
+  rxnorm: "20352"
+  rxnorm_name: carvedilol
+  display: Carvedilol
+  classes: [beta_blocker]
+  route: oral
+  frequency: twice daily with food
+
+cetirizine:
+  rxnorm: "20610"
+  rxnorm_name: cetirizine
+  display: Cetirizine
+  classes: [oral_antihistamine]
+  route: oral
+  frequency: once daily
+
+cevimeline:
+  rxnorm: "44281"
+  rxnorm_name: cevimeline
+  display: Cevimeline
+  classes: [secretagogue]
+  route: oral
+  frequency: three times daily
+
+cholecalciferol:
+  rxnorm: "2418"
+  rxnorm_name: cholecalciferol
+  display: Cholecalciferol (vitamin D3)
+  classes: [vitamin_d]
+  route: oral
+  frequency: once daily
+  by_strength:
+    50000IU: {frequency: once weekly, course_days: 56}
+
+cilostazol:
+  rxnorm: "21107"
+  rxnorm_name: cilostazol
+  display: Cilostazol
+  classes: [cilostazol]
+  route: oral
+  frequency: twice daily
+  instructions: Take 30 minutes before or 2 hours after breakfast and dinner.
+
+clindamycin gel:
+  rxnorm: "2582"
+  rxnorm_name: clindamycin
+  display: Clindamycin 1% gel
+  classes: [topical_antibiotic]
+  route: topical
+  frequency: twice daily
+  dose: ["1", "application"]
+
+clobetasol cream:
+  rxnorm: "2590"
+  rxnorm_name: clobetasol
+  display: Clobetasol 0.05% cream
+  classes: [topical_steroid]
+  route: topical
+  frequency: twice daily
+  dose: ["1", "application"]
+  instructions: Limit continuous use to 2 consecutive weeks (FDA label).
+
+clopidogrel:
+  rxnorm: "32968"
+  rxnorm_name: clopidogrel
+  display: Clopidogrel
+  classes: [p2y12_inhibitor]
+  route: oral
+  frequency: once daily
+
+colchicine:
+  rxnorm: "2683"
+  rxnorm_name: colchicine
+  display: Colchicine
+  classes: [colchicine]
+  route: oral
+  frequency: once daily
+
+conjugated_estrogens:
+  rxnorm: "4099"
+  rxnorm_name: estrogens, conjugated (USP)
+  display: Conjugated estrogens
+  classes: [estrogen]
+  route: oral
+  frequency: once daily
+
+cyclobenzaprine:
+  rxnorm: "21949"
+  rxnorm_name: cyclobenzaprine
+  display: Cyclobenzaprine
+  classes: [muscle_relaxant]
+  route: oral
+  frequency: three times daily as needed
+  prn: true
+
+denosumab:
+  rxnorm: "993449"
+  rxnorm_name: denosumab
+  display: Denosumab
+  classes: [antiresorptive]
+  route: subcutaneous
+  frequency: every 6 months
+
+diclofenac gel:
+  rxnorm: "3355"
+  rxnorm_name: diclofenac
+  display: Diclofenac 1% gel
+  classes: [topical_nsaid]
+  route: topical
+  frequency: four times daily
+  dose: ["4", "g"]
+
+dicyclomine:
+  rxnorm: "3361"
+  rxnorm_name: dicyclomine
+  display: Dicyclomine
+  classes: [gi_antispasmodic]
+  route: oral
+  frequency: four times daily as needed
+  prn: true
+
+digoxin:
+  rxnorm: "3407"
+  rxnorm_name: digoxin
+  display: Digoxin
+  classes: [digoxin]
+  route: oral
+  frequency: once daily
+
+diltiazem:
+  rxnorm: "3443"
+  rxnorm_name: diltiazem
+  display: Diltiazem ER
+  classes: [non_dhp_ccb]
+  route: oral
+  frequency: once daily
+
+dimethyl fumarate:
+  rxnorm: "1373478"
+  rxnorm_name: dimethyl fumarate
+  display: Dimethyl fumarate
+  classes: [ms_dmt]
+  route: oral
+  frequency: twice daily
+
+disulfiram:
+  rxnorm: "3554"
+  rxnorm_name: disulfiram
+  display: Disulfiram
+  classes: [aud_med_disulfiram]
+  route: oral
+  frequency: once daily
+
+docusate:
+  rxnorm: "82003"
+  rxnorm_name: docusate
+  display: Docusate sodium
+  classes: [stool_softener]
+  route: oral
+  frequency: twice daily
+
+dolutegravir/lamivudine:
+  rxnorm: "2122518"
+  rxnorm_name: dolutegravir / lamivudine
+  display: Dolutegravir/lamivudine
+  classes: [art_regimen]
+  route: oral
+  frequency: once daily
+  dose: ["50/300", "mg"]
+
+donepezil:
+  rxnorm: "135447"
+  rxnorm_name: donepezil
+  display: Donepezil
+  classes: [cholinesterase_inhibitor]
+  route: oral
+  frequency: once daily at bedtime
+
+doxycycline:
+  rxnorm: "3640"
+  rxnorm_name: doxycycline
+  display: Doxycycline
+  classes: [tetracycline]
+  route: oral
+  frequency: twice daily
+  by_strength:
+    40mg: {display: Doxycycline 40 mg modified-release, frequency: once daily}
+
+duloxetine:
+  rxnorm: "72625"
+  rxnorm_name: duloxetine
+  display: Duloxetine
+  classes: [serotonergic_antidepressant]
+  route: oral
+  frequency: once daily
+
+dupilumab:
+  rxnorm: "1876376"
+  rxnorm_name: dupilumab
+  display: Dupilumab
+  classes: [advanced_immunomodulator]
+  route: subcutaneous
+  frequency: every 2 weeks
+
+dutasteride:
+  rxnorm: "228790"
+  rxnorm_name: dutasteride
+  display: Dutasteride
+  classes: [five_ari]
+  route: oral
+  frequency: once daily
+
+elvitegravir/cobicistat/emtricitabine/tenofovir:
+  rxnorm: "1721612"
+  rxnorm_name: cobicistat / elvitegravir / emtricitabine / tenofovir alafenamide
+  display: Elvitegravir/cobicistat/emtricitabine/tenofovir alafenamide
+  classes: [art_regimen]
+  route: oral
+  frequency: once daily with food
+  dose: ["150/150/200/10", "mg"]
+
+empagliflozin:
+  rxnorm: "1545653"
+  rxnorm_name: empagliflozin
+  display: Empagliflozin
+  classes: [sglt2_inhibitor]
+  route: oral
+  frequency: once daily
+
+entecavir:
+  rxnorm: "306266"
+  rxnorm_name: entecavir
+  display: Entecavir
+  classes: [hbv_nucleoside]
+  route: oral
+  frequency: once daily on an empty stomach
+
+erenumab:
+  rxnorm: "2045613"
+  rxnorm_name: erenumab
+  display: Erenumab
+  classes: [cgrp_mab]
+  route: subcutaneous
+  frequency: once monthly
+
+escitalopram:
+  rxnorm: "321988"
+  rxnorm_name: escitalopram
+  display: Escitalopram
+  classes: [serotonergic_antidepressant]
+  route: oral
+  frequency: once daily
+
+esomeprazole:
+  rxnorm: "283742"
+  rxnorm_name: esomeprazole
+  display: Esomeprazole
+  classes: [ppi]
+  route: oral
+  frequency: once daily before breakfast
+
+estradiol:
+  rxnorm: "4083"
+  rxnorm_name: estradiol
+  display: Estradiol
+  classes: [estrogen]
+  route: oral
+  frequency: once daily
+
+estradiol patch:
+  rxnorm: "4083"
+  rxnorm_name: estradiol
+  display: Estradiol transdermal patch
+  classes: [estrogen]
+  route: transdermal
+  frequency: twice weekly
+  unit: mg/24 hr
+
+eszopiclone:
+  rxnorm: "461016"
+  rxnorm_name: eszopiclone
+  display: Eszopiclone
+  classes: [hypnotic]
+  route: oral
+  frequency: once nightly at bedtime
+
+etanercept:
+  rxnorm: "214555"
+  rxnorm_name: etanercept
+  display: Etanercept
+  classes: [advanced_immunomodulator]
+  route: subcutaneous
+  frequency: once weekly
+
+ezetimibe:
+  rxnorm: "341248"
+  rxnorm_name: ezetimibe
+  display: Ezetimibe
+  classes: [ezetimibe]
+  route: oral
+  frequency: once daily
+
+famotidine:
+  rxnorm: "4278"
+  rxnorm_name: famotidine
+  display: Famotidine
+  classes: [h2_blocker]
+  route: oral
+  frequency: twice daily
+  by_strength:
+    40mg: {frequency: once daily at bedtime}
+
+febuxostat:
+  rxnorm: "73689"
+  rxnorm_name: febuxostat
+  display: Febuxostat
+  classes: [urate_lowering]
+  route: oral
+  frequency: once daily
+
+ferrous_sulfate:
+  rxnorm: "24947"
+  rxnorm_name: ferrous sulfate
+  display: Ferrous sulfate
+  classes: [oral_iron]
+  route: oral
+  frequency: once daily
+
+fexofenadine:
+  rxnorm: "87636"
+  rxnorm_name: fexofenadine
+  display: Fexofenadine
+  classes: [oral_antihistamine]
+  route: oral
+  frequency: once daily
+
+finasteride:
+  rxnorm: "25025"
+  rxnorm_name: finasteride
+  display: Finasteride
+  classes: [five_ari]
+  route: oral
+  frequency: once daily
+
+fingolimod:
+  rxnorm: "1012892"
+  rxnorm_name: fingolimod
+  display: Fingolimod
+  classes: [ms_dmt]
+  route: oral
+  frequency: once daily
+
+fluoxetine:
+  rxnorm: "4493"
+  rxnorm_name: fluoxetine
+  display: Fluoxetine
+  classes: [serotonergic_antidepressant]
+  route: oral
+  frequency: once daily in the morning
+
+fluticasone:
+  rxnorm: "41126"
+  rxnorm_name: fluticasone
+  display: Fluticasone propionate HFA
+  classes: [ics]
+  route: inhaled
+  frequency: two puffs twice daily
+
+fluticasone nasal spray:
+  rxnorm: "41126"
+  rxnorm_name: fluticasone
+  display: Fluticasone propionate 50 mcg nasal spray
+  classes: [nasal_steroid]
+  route: nasal
+  frequency: once daily
+  dose: ["2", "sprays each nostril"]
+
+fluticasone/salmeterol:
+  rxnorm: "284635"
+  rxnorm_name: fluticasone / salmeterol
+  display: Fluticasone/salmeterol DPI
+  classes: [ics, laba]
+  route: inhaled
+  frequency: one inhalation twice daily
+  unit: mcg
+
+folic_acid:
+  rxnorm: "4511"
+  rxnorm_name: folic acid
+  display: Folic acid
+  classes: [folic_acid]
+  route: oral
+  frequency: once daily
+
+fremanezumab:
+  rxnorm: "2056691"
+  rxnorm_name: fremanezumab
+  display: Fremanezumab
+  classes: [cgrp_mab]
+  route: subcutaneous
+  frequency: once monthly
+
+furosemide:
+  rxnorm: "4603"
+  rxnorm_name: furosemide
+  display: Furosemide
+  classes: [loop_diuretic]
+  route: oral
+  frequency: once daily
+
+gabapentin:
+  rxnorm: "25480"
+  rxnorm_name: gabapentin
+  display: Gabapentin
+  classes: [gabapentinoid]
+  route: oral
+  frequency: three times daily
+
+glatiramer acetate:
+  rxnorm: "214582"
+  rxnorm_name: glatiramer
+  display: Glatiramer acetate
+  classes: [ms_dmt]
+  route: subcutaneous
+  frequency: three times weekly
+  dose: ["40", "mg"]
+
+glecaprevir/pibrentasvir:
+  rxnorm: "1940702"
+  rxnorm_name: glecaprevir / pibrentasvir
+  display: Glecaprevir/pibrentasvir
+  classes: [hcv_daa]
+  route: oral
+  frequency: once daily with food
+  dose: ["300/120", "mg"]
+  instructions: Three 100/40 mg tablets once daily for 8 weeks.
+  course_days: 56
+
+glipizide:
+  rxnorm: "4821"
+  rxnorm_name: glipizide
+  display: Glipizide
+  classes: [sulfonylurea]
+  route: oral
+  frequency: once daily before breakfast
+
+hydrochlorothiazide:
+  rxnorm: "5487"
+  rxnorm_name: hydrochlorothiazide
+  display: Hydrochlorothiazide
+  classes: [thiazide]
+  route: oral
+  frequency: once daily
+
+hydrocortisone cream:
+  rxnorm: "5492"
+  rxnorm_name: hydrocortisone
+  display: Hydrocortisone 2.5% cream
+  classes: [topical_steroid]
+  route: topical
+  frequency: twice daily
+  dose: ["1", "application"]
+
+hydroxychloroquine:
+  rxnorm: "5521"
+  rxnorm_name: hydroxychloroquine
+  display: Hydroxychloroquine
+  classes: [hydroxychloroquine]
+  route: oral
+  frequency: twice daily
+  # AAO 2016 retinopathy guideline: keep <= 5 mg/kg actual body weight/day.
+  instructions: Keep total daily dose at or below 5 mg/kg actual body weight.
+
+hydroxyzine:
+  rxnorm: "5553"
+  rxnorm_name: hydroxyzine
+  display: Hydroxyzine
+  classes: [sedating_antihistamine]
+  route: oral
+  frequency: three times daily as needed
+  prn: true
+
+hyoscyamine:
+  rxnorm: "153970"
+  rxnorm_name: hyoscyamine
+  display: Hyoscyamine
+  classes: [gi_antispasmodic]
+  route: sublingual
+  frequency: every 4 hours as needed
+  prn: true
+
+ibuprofen:
+  rxnorm: "5640"
+  rxnorm_name: ibuprofen
+  display: Ibuprofen
+  classes: [nsaid]
+  route: oral
+  frequency: three times daily as needed with food
+  prn: true
+
+infliximab:
+  rxnorm: "191831"
+  rxnorm_name: infliximab
+  display: Infliximab
+  classes: [advanced_immunomodulator]
+  route: intravenous
+  frequency: every 8 weeks
+  # Remicade label: 5 mg/kg IV at weeks 0, 2 and 6, then every 8 weeks.
+  instructions: 5 mg/kg IV induction at weeks 0, 2 and 6, then every 8 weeks.
+
+insulin glargine:
+  rxnorm: "274783"
+  rxnorm_name: insulin glargine
+  display: Insulin glargine U-100
+  classes: [basal_insulin]
+  route: subcutaneous
+  frequency: once daily at the same time each day
+
+interferon beta-1a:
+  rxnorm: "75917"
+  rxnorm_name: interferon beta-1a
+  display: Interferon beta-1a
+  classes: [ms_dmt]
+  route: intramuscular
+  frequency: once weekly
+  dose: ["30", "mcg"]
+
+ipratropium/albuterol inhaler:
+  rxnorm: "214199"
+  rxnorm_name: albuterol / ipratropium
+  display: Ipratropium/albuterol soft mist inhaler 20/100 mcg
+  classes: [saba, inhaled_antimuscarinic]
+  route: inhaled
+  frequency: four times daily
+  dose: ["1", "inhalation"]
+
+iron_polysaccharide:
+  rxnorm: "105669"
+  rxnorm_name: polysaccharide iron complex
+  display: Polysaccharide iron complex
+  classes: [oral_iron]
+  route: oral
+  frequency: once daily
+
+isosorbide mononitrate:
+  rxnorm: "28004"
+  rxnorm_name: isosorbide mononitrate
+  display: Isosorbide mononitrate ER
+  classes: [nitrate]
+  route: oral
+  frequency: once daily in the morning
+
+ivermectin cream:
+  rxnorm: "6069"
+  rxnorm_name: ivermectin
+  display: Ivermectin 1% cream
+  classes: [topical_rosacea]
+  route: topical
+  frequency: once daily
+  dose: ["1", "application"]
+
+lactulose:
+  rxnorm: "6218"
+  rxnorm_name: lactulose
+  display: Lactulose 10 g/15 mL solution
+  classes: [lactulose]
+  route: oral
+  # AASLD/EASL 2014 hepatic encephalopathy guideline: titrate to 2-3 soft stools/day.
+  frequency: twice daily
+  instructions: Titrate to 2-3 soft bowel movements per day.
+
+lamotrigine:
+  rxnorm: "28439"
+  rxnorm_name: lamotrigine
+  display: Lamotrigine
+  classes: [lamotrigine]
+  route: oral
+  frequency: twice daily
+  by_strength:
+    25mg: {frequency: once daily}
+
+latanoprost:
+  rxnorm: "43611"
+  rxnorm_name: latanoprost
+  display: Latanoprost ophthalmic
+  classes: [prostaglandin_analog_eye]
+  route: ophthalmic
+  frequency: once daily in the evening
+  instructions: One drop in each affected eye.
+
+leuprolide depot:
+  rxnorm: "42375"
+  rxnorm_name: leuprolide
+  display: Leuprolide acetate depot
+  classes: [gnrh_agonist]
+  route: intramuscular
+  frequency: once monthly
+  dose: ["3.75", "mg"]
+  # Lupron Depot 3.75 mg label: endometriosis course limited to 6 months
+  # without add-back therapy.
+  course_days: 180
+
+levetiracetam:
+  rxnorm: "114477"
+  rxnorm_name: levetiracetam
+  display: Levetiracetam
+  classes: [levetiracetam]
+  route: oral
+  frequency: twice daily
+
+levothyroxine:
+  rxnorm: "10582"
+  rxnorm_name: levothyroxine
+  display: Levothyroxine
+  classes: [thyroid_hormone]
+  route: oral
+  frequency: once daily before breakfast
+  instructions: Take on an empty stomach 30-60 minutes before breakfast.
+
+linaclotide:
+  rxnorm: "1307404"
+  rxnorm_name: linaclotide
+  display: Linaclotide
+  classes: [secretagogue_gi]
+  route: oral
+  frequency: once daily before breakfast
+
+lisdexamfetamine:
+  rxnorm: "700810"
+  rxnorm_name: lisdexamfetamine
+  display: Lisdexamfetamine
+  classes: [stimulant]
+  route: oral
+  frequency: once daily in the morning
+
+lisinopril:
+  rxnorm: "29046"
+  rxnorm_name: lisinopril
+  display: Lisinopril
+  classes: [raas_inhibitor]
+  route: oral
+  frequency: once daily
+
+lithium:
+  rxnorm: "42351"
+  rxnorm_name: lithium carbonate
+  display: Lithium carbonate
+  classes: [lithium]
+  route: oral
+  frequency: twice daily
+  by_strength:
+    450mg: {display: Lithium carbonate ER}
+
+loratadine:
+  rxnorm: "28889"
+  rxnorm_name: loratadine
+  display: Loratadine
+  classes: [oral_antihistamine]
+  route: oral
+  frequency: once daily
+
+losartan:
+  rxnorm: "52175"
+  rxnorm_name: losartan
+  display: Losartan
+  classes: [raas_inhibitor]
+  route: oral
+  frequency: once daily
+
+lubiprostone:
+  rxnorm: "623033"
+  rxnorm_name: lubiprostone
+  display: Lubiprostone
+  classes: [secretagogue_gi]
+  route: oral
+  frequency: twice daily with food
+
+medroxyprogesterone:
+  rxnorm: "6691"
+  rxnorm_name: medroxyprogesterone
+  display: Medroxyprogesterone acetate
+  classes: [progestin]
+  route: oral
+  frequency: once daily
+
+melatonin:
+  rxnorm: "6711"
+  rxnorm_name: melatonin
+  display: Melatonin
+  classes: [melatonin]
+  route: oral
+  frequency: once nightly at bedtime
+
+meloxicam:
+  rxnorm: "41493"
+  rxnorm_name: meloxicam
+  display: Meloxicam
+  classes: [nsaid]
+  route: oral
+  frequency: once daily
+
+memantine:
+  rxnorm: "6719"
+  rxnorm_name: memantine
+  display: Memantine
+  classes: [memantine]
+  route: oral
+  frequency: twice daily
+
+mesalamine:
+  rxnorm: "52582"
+  rxnorm_name: mesalamine
+  display: Mesalamine
+  classes: [aminosalicylate]
+  route: oral
+  frequency: three times daily
+  by_strength:
+    2.4g: {display: Mesalamine delayed-release (MMX), frequency: once daily with a meal}
+
+metformin:
+  rxnorm: "6809"
+  rxnorm_name: metformin
+  display: Metformin
+  classes: [biguanide]
+  route: oral
+  frequency: twice daily with meals
+
+methimazole:
+  rxnorm: "6835"
+  rxnorm_name: methimazole
+  display: Methimazole
+  classes: [antithyroid]
+  route: oral
+  frequency: once daily
+
+methocarbamol:
+  rxnorm: "6845"
+  rxnorm_name: methocarbamol
+  display: Methocarbamol
+  classes: [muscle_relaxant]
+  route: oral
+  frequency: four times daily as needed
+  prn: true
+
+methotrexate:
+  rxnorm: "6851"
+  rxnorm_name: methotrexate
+  display: Methotrexate
+  classes: [methotrexate]
+  route: oral
+  # ACR 2021 RA guideline; FDA label: weekly, never daily (dosing-error warning).
+  frequency: once weekly
+  instructions: Once weekly on the same day each week. Take with daily folic acid.
+  pair_with: folic_acid 1mg
+
+methylphenidate:
+  rxnorm: "6901"
+  rxnorm_name: methylphenidate
+  display: Methylphenidate
+  classes: [stimulant]
+  route: oral
+  frequency: twice daily
+  by_strength:
+    18mg: {display: Methylphenidate ER (OROS), frequency: once daily in the morning}
+    36mg: {display: Methylphenidate ER (OROS), frequency: once daily in the morning}
+
+metoprolol:
+  rxnorm: "6918"
+  rxnorm_name: metoprolol
+  display: Metoprolol succinate ER
+  classes: [beta_blocker]
+  route: oral
+  frequency: once daily
+
+metronidazole gel:
+  rxnorm: "6922"
+  rxnorm_name: metronidazole
+  display: Metronidazole 1% gel
+  classes: [topical_rosacea]
+  route: topical
+  frequency: once daily
+  dose: ["1", "application"]
+
+milnacipran:
+  rxnorm: "588250"
+  rxnorm_name: milnacipran
+  display: Milnacipran
+  classes: [serotonergic_antidepressant]
+  route: oral
+  frequency: twice daily
+
+minoxidil:
+  rxnorm: "6984"
+  rxnorm_name: minoxidil
+  display: Minoxidil 5% topical solution
+  classes: [topical_minoxidil]
+  route: topical
+  frequency: twice daily
+  dose: ["1", "mL"]
+
+mirabegron:
+  rxnorm: "1300786"
+  rxnorm_name: mirabegron
+  display: Mirabegron ER
+  classes: [beta3_agonist]
+  route: oral
+  frequency: once daily
+
+mirtazapine:
+  rxnorm: "15996"
+  rxnorm_name: mirtazapine
+  display: Mirtazapine
+  classes: [mirtazapine]
+  route: oral
+  frequency: once daily at bedtime
+
+modafinil:
+  rxnorm: "30125"
+  rxnorm_name: modafinil
+  display: Modafinil
+  classes: [wake_promoter]
+  route: oral
+  frequency: once daily in the morning
+
+mometasone nasal spray:
+  rxnorm: "108118"
+  rxnorm_name: mometasone
+  display: Mometasone 50 mcg nasal spray
+  classes: [nasal_steroid]
+  route: nasal
+  frequency: once daily
+  dose: ["2", "sprays each nostril"]
+
+montelukast:
+  rxnorm: "88249"
+  rxnorm_name: montelukast
+  display: Montelukast
+  classes: [leukotriene_antagonist]
+  route: oral
+  frequency: once daily in the evening
+
+mycophenolate:
+  rxnorm: "68149"
+  rxnorm_name: mycophenolate mofetil
+  display: Mycophenolate mofetil
+  classes: [antimetabolite_immunosuppressant]
+  route: oral
+  frequency: twice daily
+
+naltrexone:
+  rxnorm: "7243"
+  rxnorm_name: naltrexone
+  display: Naltrexone
+  classes: [oud_med]
+  route: oral
+  frequency: once daily
+  by_strength:
+    380mg: {display: Naltrexone ER injectable suspension, route: intramuscular, frequency: every 4 weeks}
+
+naproxen:
+  rxnorm: "7258"
+  rxnorm_name: naproxen
+  display: Naproxen
+  classes: [nsaid]
+  route: oral
+  frequency: twice daily as needed with food
+  prn: true
+
+norethindrone:
+  rxnorm: "31983"
+  rxnorm_name: norethindrone acetate
+  display: Norethindrone acetate
+  classes: [progestin]
+  route: oral
+  frequency: once daily
+
+norgestimate/ethinyl_estradiol:
+  rxnorm: "214559"
+  rxnorm_name: ethinyl estradiol / norgestimate
+  display: Norgestimate/ethinyl estradiol
+  classes: [estrogen, combined_hormonal_contraceptive]
+  route: oral
+  frequency: once daily
+  unit: mg
+
+omalizumab:
+  rxnorm: "302379"
+  rxnorm_name: omalizumab
+  display: Omalizumab
+  classes: [advanced_immunomodulator]
+  route: subcutaneous
+  frequency: every 4 weeks
+
+omeprazole:
+  rxnorm: "7646"
+  rxnorm_name: omeprazole
+  display: Omeprazole
+  classes: [ppi]
+  route: oral
+  frequency: once daily before breakfast
+
+orlistat:
+  rxnorm: "37925"
+  rxnorm_name: orlistat
+  display: Orlistat
+  classes: [anti_obesity_oral]
+  route: oral
+  frequency: three times daily with fat-containing meals
+
+oxybutynin:
+  rxnorm: "32675"
+  rxnorm_name: oxybutynin
+  display: Oxybutynin
+  classes: [bladder_antimuscarinic]
+  route: oral
+  frequency: twice daily
+
+pantoprazole:
+  rxnorm: "40790"
+  rxnorm_name: pantoprazole
+  display: Pantoprazole
+  classes: [ppi]
+  route: oral
+  frequency: once daily before breakfast
+
+paroxetine:
+  rxnorm: "32937"
+  rxnorm_name: paroxetine
+  display: Paroxetine
+  classes: [serotonergic_antidepressant]
+  route: oral
+  frequency: once daily
+
+pentosan polysulfate:
+  rxnorm: "155046"
+  rxnorm_name: pentosan polysulfate
+  display: Pentosan polysulfate sodium
+  classes: [pentosan]
+  route: oral
+  frequency: three times daily
+
+phentermine:
+  rxnorm: "8152"
+  rxnorm_name: phentermine
+  display: Phentermine
+  classes: [anti_obesity_oral]
+  route: oral
+  frequency: once daily in the morning
+  # FDA label: short-term adjunct (a few weeks).
+  course_days: 84
+
+pilocarpine:
+  rxnorm: "8328"
+  rxnorm_name: pilocarpine
+  display: Pilocarpine
+  classes: [secretagogue]
+  route: oral
+  frequency: four times daily
+
+pimecrolimus cream:
+  rxnorm: "321952"
+  rxnorm_name: pimecrolimus
+  display: Pimecrolimus 1% cream
+  classes: [topical_calcineurin_inhibitor]
+  route: topical
+  frequency: twice daily
+  dose: ["1", "application"]
+
+pioglitazone:
+  rxnorm: "33738"
+  rxnorm_name: pioglitazone
+  display: Pioglitazone
+  classes: [tzd]
+  route: oral
+  frequency: once daily
+
+polyethylene glycol:
+  rxnorm: "221147"
+  rxnorm_name: polyethylene glycol 3350
+  display: Polyethylene glycol 3350
+  classes: [osmotic_laxative]
+  route: oral
+  frequency: once daily dissolved in 8 oz of liquid
+
+potassium_citrate:
+  rxnorm: "54993"
+  rxnorm_name: potassium citrate
+  display: Potassium citrate ER
+  classes: [potassium_citrate]
+  route: oral
+  frequency: three times daily with meals
+
+pramipexole:
+  rxnorm: "746741"
+  rxnorm_name: pramipexole
+  display: Pramipexole
+  classes: [dopamine_agonist]
+  route: oral
+  frequency: three times daily
+  by_condition:
+    restless_leg_syndrome: {frequency: once daily 2-3 hours before bedtime}
+
+pravastatin:
+  rxnorm: "42463"
+  rxnorm_name: pravastatin
+  display: Pravastatin
+  classes: [statin]
+  route: oral
+  frequency: once daily
+
+prazosin:
+  rxnorm: "8629"
+  rxnorm_name: prazosin
+  display: Prazosin
+  classes: [alpha_blocker]
+  route: oral
+  frequency: once nightly at bedtime
+
+prednisone:
+  rxnorm: "8640"
+  rxnorm_name: prednisone
+  display: Prednisone
+  classes: [systemic_steroid]
+  route: oral
+  frequency: once daily in the morning
+
+pregabalin:
+  rxnorm: "187832"
+  rxnorm_name: pregabalin
+  display: Pregabalin
+  classes: [gabapentinoid]
+  route: oral
+  frequency: twice daily
+
+primidone:
+  rxnorm: "8691"
+  rxnorm_name: primidone
+  display: Primidone
+  classes: [primidone]
+  route: oral
+  frequency: once daily at bedtime
+
+propranolol:
+  rxnorm: "8787"
+  rxnorm_name: propranolol
+  display: Propranolol
+  classes: [beta_blocker]
+  route: oral
+  frequency: twice daily
+
+prucalopride:
+  rxnorm: "2107310"
+  rxnorm_name: prucalopride
+  display: Prucalopride
+  classes: [prokinetic]
+  route: oral
+  frequency: once daily
+
+quetiapine:
+  rxnorm: "51272"
+  rxnorm_name: quetiapine
+  display: Quetiapine
+  classes: [antipsychotic]
+  route: oral
+  frequency: once daily at bedtime
+
+rasagiline:
+  rxnorm: "134748"
+  rxnorm_name: rasagiline
+  display: Rasagiline
+  classes: [mao_b_inhibitor]
+  route: oral
+  frequency: once daily
+
+rifaximin:
+  rxnorm: "35619"
+  rxnorm_name: rifaximin
+  display: Rifaximin
+  classes: [rifaximin]
+  route: oral
+  frequency: three times daily
+  # Xifaxan label, IBS-D: 550 mg three times daily for 14 days.
+  course_days: 14
+
+risedronate:
+  rxnorm: "73056"
+  rxnorm_name: risedronate
+  display: Risedronate
+  classes: [antiresorptive]
+  route: oral
+  frequency: once weekly
+  instructions: Take with plain water on an empty stomach; remain upright 30 minutes.
+
+rivaroxaban:
+  rxnorm: "1114195"
+  rxnorm_name: rivaroxaban
+  display: Rivaroxaban
+  classes: [anticoagulant]
+  route: oral
+  frequency: once daily with the evening meal
+
+rivastigmine:
+  rxnorm: "183379"
+  rxnorm_name: rivastigmine
+  display: Rivastigmine transdermal patch
+  classes: [cholinesterase_inhibitor]
+  route: transdermal
+  frequency: once daily (replace patch every 24 hours)
+  unit: mg/24 hr
+
+rizatriptan:
+  rxnorm: "88014"
+  rxnorm_name: rizatriptan
+  display: Rizatriptan
+  classes: [triptan]
+  route: oral
+  frequency: at migraine onset; may repeat in 2 hours (max 30 mg/24 h)
+  prn: true
+
+ropinirole:
+  rxnorm: "72302"
+  rxnorm_name: ropinirole
+  display: Ropinirole
+  classes: [dopamine_agonist]
+  route: oral
+  frequency: once daily 1-3 hours before bedtime
+
+rosuvastatin:
+  rxnorm: "301542"
+  rxnorm_name: rosuvastatin
+  display: Rosuvastatin
+  classes: [statin]
+  route: oral
+  frequency: once daily
+
+sacubitril/valsartan:
+  rxnorm: "1656339"
+  rxnorm_name: sacubitril / valsartan
+  display: Sacubitril/valsartan
+  classes: [raas_inhibitor]
+  route: oral
+  frequency: twice daily
+
+saline irrigation:
+  rxnorm: "9863"
+  rxnorm_name: sodium chloride
+  display: Sodium chloride nasal irrigation
+  classes: [saline_irrigation]
+  route: nasal
+  frequency: once to twice daily
+  dose: ["240", "mL"]
+
+semaglutide:
+  rxnorm: "1991302"
+  rxnorm_name: semaglutide
+  display: Semaglutide
+  classes: [incretin]
+  route: subcutaneous
+  frequency: once weekly
+
+senna:
+  rxnorm: "36387"
+  rxnorm_name: sennosides, USP
+  display: Sennosides
+  classes: [stimulant_laxative]
+  route: oral
+  frequency: once daily at bedtime
+
+sertraline:
+  rxnorm: "36437"
+  rxnorm_name: sertraline
+  display: Sertraline
+  classes: [serotonergic_antidepressant]
+  route: oral
+  frequency: once daily
+
+sildenafil:
+  rxnorm: "136411"
+  rxnorm_name: sildenafil
+  display: Sildenafil
+  classes: [pde5_inhibitor]
+  route: oral
+  frequency: as needed about 1 hour before sexual activity, max once daily
+  prn: true
+
+silodosin:
+  rxnorm: "720825"
+  rxnorm_name: silodosin
+  display: Silodosin
+  classes: [alpha_blocker]
+  route: oral
+  frequency: once daily with a meal
+
+simvastatin:
+  rxnorm: "36567"
+  rxnorm_name: simvastatin
+  display: Simvastatin
+  classes: [statin]
+  route: oral
+  frequency: once daily in the evening
+
+sitagliptin:
+  rxnorm: "593411"
+  rxnorm_name: sitagliptin
+  display: Sitagliptin
+  # ADA Standards of Care: do not combine a DPP-4 inhibitor with a GLP-1 RA.
+  classes: [incretin]
+  route: oral
+  frequency: once daily
+
+sodium oxybate:
+  rxnorm: "9899"
+  rxnorm_name: sodium oxybate
+  display: Sodium oxybate oral solution
+  classes: [oxybate]
+  route: oral
+  frequency: at bedtime and again 2.5-4 hours later
+  dose: ["4.5", "g"]
+  instructions: 2.25 g at bedtime and 2.25 g 2.5-4 hours later.
+
+sodium_bicarbonate:
+  rxnorm: "36676"
+  rxnorm_name: sodium bicarbonate
+  display: Sodium bicarbonate
+  classes: [alkali]
+  route: oral
+  frequency: twice daily
+
+sofosbuvir/velpatasvir:
+  rxnorm: "1799211"
+  rxnorm_name: sofosbuvir / velpatasvir
+  display: Sofosbuvir/velpatasvir
+  classes: [hcv_daa]
+  route: oral
+  frequency: once daily
+  dose: ["400/100", "mg"]
+  course_days: 84
+
+solifenacin:
+  rxnorm: "322167"
+  rxnorm_name: solifenacin
+  display: Solifenacin
+  classes: [bladder_antimuscarinic]
+  route: oral
+  frequency: once daily
+
+spironolactone:
+  rxnorm: "9997"
+  rxnorm_name: spironolactone
+  display: Spironolactone
+  classes: [mra]
+  route: oral
+  frequency: once daily
+  female_only_for: [acne, pcos]
+
+sulfasalazine:
+  rxnorm: "9524"
+  rxnorm_name: sulfasalazine
+  display: Sulfasalazine DR
+  classes: [aminosalicylate]
+  route: oral
+  frequency: twice daily
+
+sumatriptan:
+  rxnorm: "37418"
+  rxnorm_name: sumatriptan
+  display: Sumatriptan
+  classes: [triptan]
+  route: oral
+  frequency: at migraine onset; may repeat in 2 hours (max 200 mg/24 h)
+  prn: true
+
+suvorexant:
+  rxnorm: "1547099"
+  rxnorm_name: suvorexant
+  display: Suvorexant
+  classes: [hypnotic]
+  route: oral
+  frequency: once nightly within 30 minutes of bedtime
+
+tacrolimus ointment:
+  rxnorm: "42316"
+  rxnorm_name: tacrolimus
+  display: Tacrolimus 0.1% ointment
+  classes: [topical_calcineurin_inhibitor]
+  route: topical
+  frequency: twice daily
+  dose: ["1", "application"]
+
+tadalafil:
+  rxnorm: "358263"
+  rxnorm_name: tadalafil
+  display: Tadalafil
+  classes: [pde5_inhibitor]
+  route: oral
+  frequency: as needed before sexual activity, max once daily
+  prn: true
+  by_strength:
+    5mg: {frequency: once daily, prn: false}
+
+tamsulosin:
+  rxnorm: "77492"
+  rxnorm_name: tamsulosin
+  display: Tamsulosin
+  classes: [alpha_blocker]
+  route: oral
+  frequency: once daily 30 minutes after the same meal
+
+tenofovir:
+  rxnorm: "300195"
+  rxnorm_name: tenofovir disoproxil
+  display: Tenofovir disoproxil fumarate
+  classes: [hbv_nucleoside]
+  route: oral
+  frequency: once daily
+
+timolol:
+  rxnorm: "10600"
+  rxnorm_name: timolol
+  display: Timolol ophthalmic
+  classes: [glaucoma_beta_blocker]
+  route: ophthalmic
+  frequency: twice daily
+  instructions: One drop in each affected eye.
+
+tiotropium:
+  rxnorm: "69120"
+  rxnorm_name: tiotropium
+  display: Tiotropium inhalation capsule
+  classes: [inhaled_antimuscarinic]
+  route: inhaled
+  frequency: one capsule inhaled once daily
+
+tirzepatide:
+  rxnorm: "2601723"
+  rxnorm_name: tirzepatide
+  display: Tirzepatide
+  classes: [incretin]
+  route: subcutaneous
+  frequency: once weekly
+
+tofacitinib:
+  rxnorm: "1357536"
+  rxnorm_name: tofacitinib
+  display: Tofacitinib
+  classes: [advanced_immunomodulator]
+  route: oral
+  frequency: twice daily
+
+tolterodine:
+  rxnorm: "119565"
+  rxnorm_name: tolterodine
+  display: Tolterodine
+  classes: [bladder_antimuscarinic]
+  route: oral
+  frequency: twice daily
+  by_strength:
+    4mg: {display: Tolterodine ER, frequency: once daily}
+
+topiramate:
+  rxnorm: "38404"
+  rxnorm_name: topiramate
+  display: Topiramate
+  classes: [topiramate]
+  route: oral
+  frequency: twice daily
+  by_strength:
+    25mg: {frequency: once daily at bedtime}
+
+trazodone:
+  rxnorm: "10737"
+  rxnorm_name: trazodone
+  display: Trazodone
+  classes: [trazodone]
+  route: oral
+  frequency: once nightly at bedtime
+
+tretinoin cream:
+  rxnorm: "10753"
+  rxnorm_name: tretinoin
+  display: Tretinoin 0.025% cream
+  classes: [topical_retinoid]
+  route: topical
+  frequency: once daily at bedtime
+  dose: ["1", "application"]
+
+triamcinolone cream:
+  rxnorm: "10759"
+  rxnorm_name: triamcinolone
+  display: Triamcinolone 0.1% cream
+  classes: [topical_steroid]
+  route: topical
+  frequency: twice daily
+  dose: ["1", "application"]
+
+triamcinolone injection:
+  rxnorm: "10759"
+  rxnorm_name: triamcinolone
+  display: Triamcinolone acetonide 10 mg/mL intralesional injection
+  classes: [intralesional_steroid]
+  route: intralesional
+  frequency: every 4-6 weeks
+  dose: ["10", "mg/mL"]
+
+valproate:
+  rxnorm: "11118"
+  rxnorm_name: valproic acid
+  display: Divalproex sodium DR
+  classes: [valproate]
+  route: oral
+  frequency: twice daily
+
+vedolizumab:
+  rxnorm: "1538097"
+  rxnorm_name: vedolizumab
+  display: Vedolizumab
+  classes: [advanced_immunomodulator]
+  route: intravenous
+  frequency: every 8 weeks
+  # Entyvio label: 300 mg IV at weeks 0, 2 and 6, then every 8 weeks.
+  instructions: 300 mg IV at weeks 0, 2 and 6, then every 8 weeks.
+
+venlafaxine:
+  rxnorm: "39786"
+  rxnorm_name: venlafaxine
+  display: Venlafaxine ER
+  classes: [serotonergic_antidepressant]
+  route: oral
+  frequency: once daily with food
+
+vitamin_b12:
+  rxnorm: "11248"
+  rxnorm_name: vitamin B12
+  display: Cyanocobalamin (vitamin B12)
+  classes: [vitamin_b12]
+  route: oral
+  frequency: once daily
+
+vitamin_e:
+  rxnorm: "11256"
+  rxnorm_name: vitamin E
+  display: Vitamin E
+  classes: [vitamin_e]
+  route: oral
+  # AASLD 2023 MASLD guidance: vitamin E 800 IU/day in selected adults
+  # without diabetes with biopsy-proven MASH.
+  frequency: once daily
+
+warfarin:
+  rxnorm: "11289"
+  rxnorm_name: warfarin
+  display: Warfarin
+  classes: [anticoagulant]
+  route: oral
+  frequency: once daily in the evening
+  instructions: Dose adjusted to INR goal 2.0-3.0.
+
+zolpidem:
+  rxnorm: "39993"
+  rxnorm_name: zolpidem
+  display: Zolpidem
+  classes: [hypnotic]
+  route: oral
+  frequency: once nightly immediately before bedtime
+  # FDA 2013 label change: 5 mg starting dose for women.
+  female_max_mg: 5

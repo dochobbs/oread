@@ -2622,7 +2622,7 @@
             lucide.createIcons();
 
             try {
-                const response = await fetch('/api/auth/login', {
+                const response = await fetch('api/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, password })
@@ -2669,7 +2669,7 @@
             lucide.createIcons();
 
             try {
-                const response = await fetch('/api/auth/signup', {
+                const response = await fetch('api/auth/signup', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, password, learner_level: learnerLevel })
@@ -2702,7 +2702,7 @@
 
         async function handleLogout() {
             try {
-                await fetch('/api/auth/logout', {
+                await fetch('api/auth/logout', {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${authToken}`
@@ -2781,6 +2781,12 @@
             setupAuthListeners();
             setupThemeListeners();
             lucide.createIcons();
+
+            // Deep link: ?patient=<id> opens that patient (used by Metis's EXPORT link)
+            const linkedPatient = new URLSearchParams(window.location.search).get('patient');
+            if (linkedPatient) {
+                showPatientDetail(linkedPatient);
+            }
         });
 
         function setupThemeListeners() {
@@ -2873,8 +2879,9 @@
             if (!confirmed) return;
 
             try {
-                const response = await fetch(`/api/patients/${selectedPatientId}`, {
-                    method: 'DELETE'
+                const response = await fetch(`api/patients/${selectedPatientId}`, {
+                    method: 'DELETE',
+                    headers: authHeaders()
                 });
 
                 if (response.ok) {
@@ -2897,7 +2904,7 @@
         
         async function loadPatients() {
             try {
-                const response = await fetch('/api/patients?limit=50');
+                const response = await fetch('api/patients?limit=50', { headers: authHeaders() });
                 const data = await response.json();
                 patients = data.patients;
                 renderPatientsList();
@@ -2914,7 +2921,7 @@
 
             try {
                 // Start the async generation job
-                const response = await fetch('/api/generate/quick', { method: 'POST' });
+                const response = await fetch('api/generate/quick', { method: 'POST', headers: authHeaders() });
                 const job = await response.json();
                 const jobId = job.job_id;
 
@@ -2925,14 +2932,14 @@
 
                 const poll = async () => {
                     try {
-                        const statusResp = await fetch(`/api/jobs/${jobId}`);
+                        const statusResp = await fetch(`api/jobs/${jobId}`, { headers: authHeaders() });
                         const status = await statusResp.json();
 
                         if (status.status === 'completed') {
                             // Success! Load the patient
                             quickGenerateBtn.innerHTML = '<i data-lucide="check" class="icon"></i> Done!';
                             lucide.createIcons();
-                            const patientResp = await fetch(`/api/patients/${status.patient_id}`);
+                            const patientResp = await fetch(`api/patients/${status.patient_id}`, { headers: authHeaders() });
                             const patientSummary = {
                                 id: status.patient_id,
                                 name: status.patient_name,
@@ -3024,9 +3031,9 @@
             lucide.createIcons();
 
             try {
-                const response = await fetch('/api/generate', {
+                const response = await fetch('api/generate', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', ...authHeaders() },
                     body: JSON.stringify(requestBody)
                 });
                 const patient = await response.json();
@@ -3088,7 +3095,7 @@
             selectedPatientId = patientId;
             
             try {
-                const response = await fetch(`/api/patients/${patientId}`);
+                const response = await fetch(`api/patients/${patientId}`, { headers: authHeaders() });
                 const patient = await response.json();
                 
                 // Update header
@@ -3213,7 +3220,7 @@
                 }
 
                 // Load markdown for full record
-                const mdResponse = await fetch(`/api/patients/${patientId}?format=markdown`);
+                const mdResponse = await fetch(`api/patients/${patientId}?format=markdown`, { headers: authHeaders() });
                 const mdData = await mdResponse.json();
                 document.getElementById('markdown-content').innerHTML = renderMarkdown(mdData.markdown);
 
@@ -3237,7 +3244,26 @@
         
         async function exportPatient(format) {
             if (!selectedPatientId) return;
-            window.open(`/api/patients/${selectedPatientId}/export/${format}`, '_blank');
+            // fetch, not window.open: a new tab can't carry the bearer token
+            try {
+                const response = await fetch(
+                    `api/patients/${selectedPatientId}/export/${format}`,
+                    { headers: authHeaders() }
+                );
+                if (!response.ok) throw new Error(`Export failed (${response.status})`);
+                const disposition = response.headers.get('Content-Disposition') || '';
+                const match = disposition.match(/filename="?([^";]+)"?/);
+                const url = URL.createObjectURL(await response.blob());
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = match ? match[1] : `${selectedPatientId}.${format}`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('Failed to export patient:', error);
+            }
         }
         
         // Utility functions
@@ -3530,7 +3556,7 @@
 
             try {
                 const response = await fetch(
-                    `/api/panels/${currentPanelId}/patients/${patientId}/timeline`,
+                    `api/panels/${currentPanelId}/patients/${patientId}/timeline`,
                     {
                         headers: {
                             'Authorization': `Bearer ${authToken}`,
@@ -3680,7 +3706,7 @@
             }
 
             try {
-                const response = await fetch('/api/panels', {
+                const response = await fetch('api/panels', {
                     headers: authHeaders()
                 });
                 const data = await response.json();
@@ -3729,7 +3755,7 @@
             if (!name) return;
 
             try {
-                const response = await fetch('/api/panels', {
+                const response = await fetch('api/panels', {
                     method: 'POST',
                     headers: {
                         ...authHeaders(),
@@ -3756,7 +3782,7 @@
 
         async function viewPanel(panelId) {
             try {
-                const response = await fetch(`/api/panels/${panelId}`, {
+                const response = await fetch(`api/panels/${panelId}`, {
                     headers: authHeaders()
                 });
 
@@ -3834,7 +3860,7 @@
         async function showPanelPatientDetail(patientId) {
             // Load full patient data from panel and show detail view
             try {
-                const response = await fetch(`/api/panels/${currentPanel.id}/patients/${patientId}`, {
+                const response = await fetch(`api/panels/${currentPanel.id}/patients/${patientId}`, {
                     headers: authHeaders()
                 });
                 if (response.ok) {
@@ -3976,7 +4002,7 @@
 
             // Load markdown for full record
             try {
-                const mdResponse = await fetch(`/api/patients/${patient.id}?format=markdown`);
+                const mdResponse = await fetch(`api/patients/${patient.id}?format=markdown`, { headers: authHeaders() });
                 const mdData = await mdResponse.json();
                 document.getElementById('markdown-content').innerHTML = renderMarkdown(mdData.markdown);
             } catch (e) {
@@ -4025,7 +4051,7 @@
             lucide.createIcons();
 
             try {
-                const response = await fetch(`/api/panels/${currentPanel.id}/generate`, {
+                const response = await fetch(`api/panels/${currentPanel.id}/generate`, {
                     method: 'POST',
                     headers: {
                         ...authHeaders(),
@@ -4061,7 +4087,7 @@
             if (!confirmed) return;
 
             try {
-                const response = await fetch(`/api/panels/${currentPanel.id}`, {
+                const response = await fetch(`api/panels/${currentPanel.id}`, {
                     method: 'DELETE',
                     headers: authHeaders()
                 });
@@ -4090,7 +4116,7 @@
             }
 
             try {
-                const response = await fetch(`/api/panels/${currentPanel.id}/patients/${patientId}/encounters`, {
+                const response = await fetch(`api/panels/${currentPanel.id}/patients/${patientId}/encounters`, {
                     method: 'POST',
                     headers: {
                         ...authHeaders(),

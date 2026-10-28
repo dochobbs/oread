@@ -1,243 +1,226 @@
-# AAP/CDC Recommended Immunization Schedule (2024)
-# Reference: https://www.cdc.gov/vaccines/schedules/
+# AAP Recommended Child and Adolescent Immunization Schedule, United States, 2026
+#
+# Source (D1 = AAP, not CDC):
+#   American Academy of Pediatrics. Recommended Child and Adolescent Immunization
+#   Schedule for Ages 18 Years or Younger, United States, 2026. Updated
+#   September 2, 2026. https://www.aap.org/ImmunizationSchedule
+#   (PDF: https://downloads.aap.org/AAP/PDF/AAP-Immunization-Schedule.pdf,
+#   retrieved 2026-10-27). Policy statement: Pediatrics 2026;157(3):e2025075754.
+# CVX codes: CDC IIS CVX and CVX-to-trade-name tables, retrieved 2026-10-27,
+#   https://www2a.cdc.gov/vaccines/iis/iisstandards/vaccines.asp?rpt=cvx
+#   https://www2a.cdc.gov/vaccines/iis/iisstandards/vaccines.asp?rpt=tradename
+#
+# The due-dose rules (minimum ages, minimum intervals, maximum ages, catch-up
+# branches) live in src/engines/immunizations.py with a citation next to each
+# number. This file holds the products the engine records and the CVX -> antigen
+# map used to read a history (combination vaccines count toward each antigen).
+#
+# Product eras (`from` / `until`, ISO dates) keep historical doses plausible
+# for older patients. Era boundaries marked "era: unverified" are from general
+# knowledge of US licensure and were NOT re-verified against FDA records in
+# the 2026-10-27 pass.
 
-# Vaccine definitions with CVX codes
-vaccines:
+antigens:
   HepB:
     name: Hepatitis B
-    cvx_code: "08"
+    routine: "3 doses: birth (within 24 h), 1-2 mo, 6-18 mo"
     series_doses: 3
-    brand_examples: ["Engerix-B", "Recombivax HB"]
-    
+    products:
+      - {cvx: "08", description: "Hep B, adolescent or pediatric", brands: [Engerix-B, Recombivax HB]}
+
   RV:
     name: Rotavirus
-    cvx_code: "122"  # RV5 (Rotateq)
-    series_doses: 3  # or 2 for RV1
-    brand_examples: ["RotaTeq", "Rotarix"]
-    notes: "RotaTeq (RV5) is 3 doses; Rotarix (RV1) is 2 doses"
-    
+    routine: "RV5 3 doses at 2, 4, 6 mo (RV1 2 doses at 2, 4 mo). Dose 1 by 14w6d; no dose after 8m0d"
+    series_doses: 3
+    products:
+      - {cvx: "116", description: "rotavirus, pentavalent", brands: [RotaTeq]}
+
   DTaP:
-    name: Diphtheria, Tetanus, Pertussis
-    cvx_code: "20"
+    name: Diphtheria, Tetanus, and acellular Pertussis
+    routine: "5 doses at 2, 4, 6, 15-18 mo, 4-6 y (age < 7 y)"
     series_doses: 5
-    brand_examples: ["Daptacel", "Infanrix"]
-    
+    products:
+      - {cvx: "20", description: "DTaP", brands: [Infanrix]}
+
   Hib:
     name: Haemophilus influenzae type b
-    cvx_code: "17"
-    series_doses: 4  # or 3 depending on brand
-    brand_examples: ["ActHIB", "PedvaxHIB"]
-    
+    routine: "PRP-T 4 doses at 2, 4, 6, 12-15 mo (PedvaxHIB PRP-OMP: 2, 4, 12-15 mo)"
+    series_doses: 4
+    products:
+      - {cvx: "48", description: "Hib (PRP-T)", brands: [ActHIB]}
+
   PCV:
     name: Pneumococcal conjugate
-    cvx_code: "152"  # PCV15
+    routine: "PCV15 or PCV20, 4 doses at 2, 4, 6, 12-15 mo"
     series_doses: 4
-    brand_examples: ["Vaxneuvance", "Prevnar 20"]
-    
+    products:
+      # era: unverified (PCV13 replaced PCV7 in 2010)
+      - {cvx: "100", description: "pneumococcal conjugate PCV 7", brands: [Prevnar], until: "2010-03-01"}
+      # era: PCV20 pediatric approval announced 2023-04-26 (Pfizer press release);
+      # the 2023-07-01 switch-over date is an engine choice.
+      - {cvx: "133", description: "Pneumococcal conjugate PCV 13", brands: [Prevnar 13], from: "2010-03-01", until: "2023-07-01"}
+      - {cvx: "216", description: "Pneumococcal conjugate PCV20", brands: [Prevnar 20], from: "2023-07-01"}
+    # PCV15 (CVX 215, Vaxneuvance) is equally recommended by AAP 2026; the
+    # engine records PCV20. Do NOT use CVX 152: it is "unspecified formulation".
+
   IPV:
     name: Inactivated Poliovirus
-    cvx_code: "10"
+    routine: "4 doses at 2, 4, 6-18 mo, 4-6 y (final dose >= 4 y and >= 6 mo after prior)"
     series_doses: 4
-    brand_examples: ["IPOL"]
-    
-  Influenza:
-    name: Influenza (Flu)
-    cvx_code: "158"  # IIV4
-    series_doses: yearly
-    brand_examples: ["Fluzone", "FluLaval", "Fluarix"]
-    notes: "Annual vaccination; 2 doses first year for children 6mo-8yr"
-    
+    products:
+      - {cvx: "10", description: "IPV", brands: [IPOL]}
+
   MMR:
     name: Measles, Mumps, Rubella
-    cvx_code: "03"
+    routine: "2 doses at 12-15 mo, 4-6 y"
     series_doses: 2
-    brand_examples: ["M-M-R II", "Priorix"]
-    
+    products:
+      - {cvx: "03", description: "MMR", brands: [M-M-R II, Priorix]}
+
   VAR:
     name: Varicella
-    cvx_code: "21"
+    routine: "2 doses at 12-15 mo, 4-6 y"
     series_doses: 2
-    brand_examples: ["Varivax"]
-    
+    products:
+      - {cvx: "21", description: "varicella", brands: [Varivax]}
+
   HepA:
     name: Hepatitis A
-    cvx_code: "83"
+    routine: "2 doses at 12-23 mo, >= 6 mo apart"
     series_doses: 2
-    brand_examples: ["Havrix", "Vaqta"]
-    
+    products:
+      - {cvx: "83", description: "Hep A, ped/adol, 2 dose", brands: [Havrix, Vaqta]}
+
+  Tdap:
+    name: Tetanus, Diphtheria, acellular Pertussis (Tdap)
+    routine: "1 dose at 11-12 y; catch-up from 7 y"
+    products:
+      - {cvx: "115", description: "Tdap", brands: [Boostrix, Adacel]}
+
   HPV:
     name: Human Papillomavirus
-    cvx_code: "165"  # HPV9
-    series_doses: 2  # or 3 if started ≥15yo
-    brand_examples: ["Gardasil 9"]
-    notes: "2 doses if started before 15yo; 3 doses if 15yo or older"
-    
+    routine: "Start 9-12 y (AAP 2026). 2 doses (0, 6-12 mo) if started 9-14 y; 3 doses if started >= 15 y"
+    products:
+      # era: HPV9 licensed December 2014 (unverified this pass)
+      - {cvx: "62", description: "HPV, quadrivalent", brands: [Gardasil], until: "2015-01-01"}
+      - {cvx: "165", description: "HPV9", brands: [Gardasil 9], from: "2015-01-01"}
+
   MenACWY:
     name: Meningococcal ACWY
-    cvx_code: "147"
+    routine: "2 doses at 11-12 y and 16 y"
     series_doses: 2
-    brand_examples: ["Menactra", "Menveo"]
-    
+    products:
+      # Menactra (CVX 114) is discontinued; AAP 2026 lists Menveo and MenQuadfi.
+      - {cvx: "136", description: "Meningococcal MCV4O", brands: [Menveo]}
+
   MenB:
     name: Meningococcal B
-    cvx_code: "164"
-    series_doses: 2
-    brand_examples: ["Bexsero", "Trumenba"]
-    notes: "Shared clinical decision-making for ages 16-23"
-    
-  Tdap:
-    name: Tetanus, Diphtheria, Pertussis (adolescent/adult)
-    cvx_code: "115"
-    series_doses: 1  # then Td boosters
-    brand_examples: ["Boostrix", "Adacel"]
-    
+    routine: "Shared clinical decision-making, 16-23 y (preferred 16-18 y). Not generated by default."
+    products:
+      - {cvx: "163", description: "meningococcal B, OMV", brands: [Bexsero]}
+      - {cvx: "162", description: "meningococcal B, recombinant", brands: [Trumenba]}
+
+  MenABCWY:
+    name: Meningococcal ABCWY
+    routine: ">= 10 y as an alternative when MenACWY and MenB are given the same day (SCDM). Not generated."
+    products:
+      - {cvx: "316", description: "MenACWY-TT/MenB-FHbp", brands: [Penbraya]}
+      - {cvx: "328", description: "MenACWY-CRM/MenB-4C", brands: [Penmenvy]}
+
+  Flu:
+    name: Influenza
+    routine: "Annually from 6 mo; 2 doses >= 4 wk apart for 6 mo-8 y with < 2 prior doses before July 1"
+    products:
+      # US seasonal vaccines were trivalent before 2013-14, quadrivalent
+      # 2013-14 through 2023-24, trivalent again from 2024-25.
+      # era: unverified (both transitions)
+      - {cvx: "140", description: "Influenza, split virus, trivalent, PF", brands: [Fluzone, Fluarix, FluLaval, Afluria], until: "2013-08-01"}
+      - {cvx: "150", description: "Influenza, split virus, quadrivalent, PF", brands: [Fluzone Quadrivalent, Fluarix Quadrivalent], from: "2013-08-01", until: "2024-08-01"}
+      - {cvx: "140", description: "Influenza, split virus, trivalent, PF", brands: [Fluzone, Fluarix, FluLaval, Afluria], from: "2024-08-01"}
+
   COVID19:
     name: COVID-19
-    cvx_code: "300"
-    series_doses: varies
-    brand_examples: ["Pfizer-BioNTech", "Moderna"]
-    notes: "Schedule varies by age and prior vaccination"
+    routine: "Everyone 6-23 mo: 2 doses Spikevax 0, 4-8 wk if unvaccinated, then 1 dose of current vaccine >= 8 wk later. 2-18 y: risk groups, or if parent desires (not generated)."
+    products:
+      # CVX 311 = Spikevax 25 mcg/0.25 mL, 6 mo-11 y; code dated 2023-09-06.
+      # Doses are only generated on or after 2023-09-11. Applying the 2026 AAP
+      # age rule to 2023-2025 dates is a simplification (2023-25 guidance
+      # covered all ages >= 6 mo).
+      - {cvx: "311", description: "COVID-19, mRNA, LNP-S, PF, 25 mcg/0.25 mL", brands: [Spikevax], from: "2023-09-11"}
 
-# Schedule by age
-# Format: list of vaccines due at each time point
-schedule:
-  birth:
-    - vaccine: HepB
-      dose_number: 1
-      notes: "Within 24 hours of birth"
-      
-  1_month:
-    - vaccine: HepB
-      dose_number: 2
-      window_start_months: 1
-      window_end_months: 2
-      
-  2_months:
-    - vaccine: DTaP
-      dose_number: 1
-    - vaccine: Hib
-      dose_number: 1
-    - vaccine: PCV
-      dose_number: 1
-    - vaccine: IPV
-      dose_number: 1
-    - vaccine: RV
-      dose_number: 1
-      
-  4_months:
-    - vaccine: DTaP
-      dose_number: 2
-    - vaccine: Hib
-      dose_number: 2
-    - vaccine: PCV
-      dose_number: 2
-    - vaccine: IPV
-      dose_number: 2
-    - vaccine: RV
-      dose_number: 2
-      
-  6_months:
-    - vaccine: DTaP
-      dose_number: 3
-    - vaccine: Hib
-      dose_number: 3
-      notes: "Dose 3 depends on brand; may be at 12-15 months"
-    - vaccine: PCV
-      dose_number: 3
-    - vaccine: IPV
-      dose_number: 3
-      notes: "May be given 6-18 months"
-    - vaccine: RV
-      dose_number: 3
-      notes: "If RotaTeq; Rotarix series complete at 4mo"
-    - vaccine: HepB
-      dose_number: 3
-      window_start_months: 6
-      window_end_months: 18
-    - vaccine: Influenza
-      dose_number: 1
-      notes: "Annual flu shot starts at 6 months; 2 doses first season"
-      
-  12_months:
-    - vaccine: MMR
-      dose_number: 1
-      window_start_months: 12
-      window_end_months: 15
-    - vaccine: VAR
-      dose_number: 1
-      window_start_months: 12
-      window_end_months: 15
-    - vaccine: HepA
-      dose_number: 1
-      window_start_months: 12
-      window_end_months: 23
-    - vaccine: PCV
-      dose_number: 4
-      window_start_months: 12
-      window_end_months: 15
-    - vaccine: Hib
-      dose_number: 4
-      window_start_months: 12
-      window_end_months: 15
-      notes: "Booster dose"
-      
-  15_months:
-    - vaccine: DTaP
-      dose_number: 4
-      window_start_months: 15
-      window_end_months: 18
-      
-  18_months:
-    - vaccine: HepA
-      dose_number: 2
-      notes: "6 months after dose 1"
-      
-  4_years:
-    - vaccine: DTaP
-      dose_number: 5
-      window_start_months: 48
-      window_end_months: 72
-    - vaccine: IPV
-      dose_number: 4
-      window_start_months: 48
-      window_end_months: 72
-    - vaccine: MMR
-      dose_number: 2
-      window_start_months: 48
-      window_end_months: 72
-    - vaccine: VAR
-      dose_number: 2
-      window_start_months: 48
-      window_end_months: 72
-      
-  11_years:
-    - vaccine: Tdap
-      dose_number: 1
-      window_start_months: 132
-      window_end_months: 144
-    - vaccine: HPV
-      dose_number: 1
-      window_start_months: 132
-      window_end_months: 144
-      notes: "2-dose series if started before 15yo"
-    - vaccine: MenACWY
-      dose_number: 1
-      window_start_months: 132
-      window_end_months: 144
-      
-  12_years:
-    - vaccine: HPV
-      dose_number: 2
-      notes: "6-12 months after dose 1"
-      
-  16_years:
-    - vaccine: MenACWY
-      dose_number: 2
-      window_start_months: 192
-      window_end_months: 216
-    - vaccine: MenB
-      dose_number: 1
-      notes: "Shared clinical decision-making; may give 16-23yo"
+  RSVmAb:
+    name: RSV monoclonal antibody
+    routine: "1 dose for infants < 8 mo in or entering their first RSV season (Oct-Mar) unless maternal RSV vaccine >= 14 d before delivery"
+    products:
+      # Nirsevimab dose by weight per FDA label: 50 mg (0.5 mL) if < 5 kg,
+      # 100 mg (1 mL) if >= 5 kg. First US season 2023-24.
+      - {cvx: "306", description: "RSV, mAb, nirsevimab-alip, 0.5 mL, neonate to 24 months", brands: [Beyfortus], from: "2023-10-01", max_weight_kg: 5.0}
+      - {cvx: "307", description: "RSV, mAb, nirsevimab-alip, 1 mL, neonate to 24 months", brands: [Beyfortus], from: "2023-10-01", min_weight_kg: 5.0}
+    # Clesrovimab (Enflonsia) CVX 332 is an equal AAP 2026 option; not emitted.
+
+# CVX -> antigens, for reading an immunization history. Combination vaccines
+# count toward each component. Keep in sync with tests/invariants.py CVX_GROUPS.
+cvx_antigens:
+  "08": [HepB]
+  "43": [HepB]
+  "44": [HepB]
+  "45": [HepB]
+  "116": [RV]
+  "119": [RV]
+  "122": [RV]
+  "20": [DTaP]
+  "106": [DTaP]
+  "107": [DTaP]
+  "17": [Hib]
+  "46": [Hib]
+  "47": [Hib]
+  "48": [Hib]
+  "49": [Hib]
+  "100": [PCV]
+  "133": [PCV]
+  "152": [PCV]
+  "215": [PCV]
+  "216": [PCV]
+  "10": [IPV]
+  "89": [IPV]
+  "03": [MMR]
+  "94": [MMR, VAR]
+  "21": [VAR]
+  "83": [HepA]
+  "85": [HepA]
+  "62": [HPV]
+  "165": [HPV]
+  "114": [MenACWY]
+  "136": [MenACWY]
+  "147": [MenACWY]
+  "203": [MenACWY]
+  "162": [MenB]
+  "163": [MenB]
+  "164": [MenB]
+  "316": [MenACWY, MenB]
+  "328": [MenACWY, MenB]
+  "115": [Tdap]
+  "88": [Flu]
+  "111": [Flu]
+  "140": [Flu]
+  "141": [Flu]
+  "150": [Flu]
+  "153": [Flu]
+  "155": [Flu]
+  "158": [Flu]
+  "161": [Flu]
+  "171": [Flu]
+  "186": [Flu]
+  "320": [Flu]
+  "311": [COVID19]
+  "312": [COVID19]
+  "306": [RSVmAb]
+  "307": [RSVmAb]
+  "332": [RSVmAb]
+  "110": [DTaP, HepB, IPV]
+  "120": [DTaP, Hib, IPV]
+  "130": [DTaP, IPV]
+  "146": [DTaP, IPV, Hib, HepB]
 
 # Well-child visit schedule (AAP Bright Futures)
 well_child_schedule:

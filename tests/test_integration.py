@@ -79,8 +79,9 @@ class TestGrowth:
     def test_weight_percentile(self):
         from knowledge.growth.cdc_2000 import calculate_weight_percentile
         
-        # 12-month-old male, ~10kg should be around 50th percentile
-        result = calculate_weight_percentile(10.0, 12, "male")
+        # 12-month-old male: WHO weight-for-age median is 9.6479 kg
+        # (WHO-Boys-Weight-for-age-Percentiles.csv, month 12)
+        result = calculate_weight_percentile(9.65, 12, "male")
         
         assert 40 < result.percentile < 60
         assert -0.5 < result.z_score < 0.5

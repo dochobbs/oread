@@ -44,28 +44,47 @@ class ConditionCache:
       with open(path, 'r') as f:
         data = json.load(f)
 
-      # Check TTL
+      # Check TTL (per-entry TTL wins over the cache default)
       cached_at = datetime.fromisoformat(data.get("_cached_at", "2000-01-01"))
-      if datetime.now() - cached_at > self.ttl:
+      ttl_seconds = data.get("_ttl_seconds")
+      ttl = timedelta(seconds=ttl_seconds) if ttl_seconds is not None else self.ttl
+      if datetime.now() - cached_at > ttl:
         path.unlink()  # Expired, delete
         return None
 
       return data.get("definition")
-    except (json.JSONDecodeError, KeyError):
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
       return None
 
-  def set(self, condition_name: str, definition: dict) -> None:
-    """Cache a condition definition."""
+  def set(
+    self,
+    condition_name: str,
+    definition: dict,
+    ttl: timedelta | None = None,
+  ) -> None:
+    """Cache a condition definition.
+
+    Args:
+      condition_name: Normalized lookup name.
+      definition: Serialized ConditionDefinition.
+      ttl: Optional per-entry TTL (e.g. short-lived LLM-only definitions);
+        defaults to the cache-wide TTL.
+    """
     path = self._get_cache_path(condition_name)
 
-    data = {
+    data: dict[str, Any] = {
       "_cached_at": datetime.now().isoformat(),
       "_condition_name": condition_name,
       "definition": definition,
     }
+    if ttl is not None:
+      data["_ttl_seconds"] = ttl.total_seconds()
 
-    with open(path, 'w') as f:
+    # Atomic write: a crash mid-write must not leave a corrupt entry.
+    tmp_path = path.with_suffix(".tmp")
+    with open(tmp_path, 'w') as f:
       json.dump(data, f, indent=2)
+    tmp_path.replace(path)
 
   def invalidate(self, condition_name: str) -> bool:
     """Remove a cached entry."""

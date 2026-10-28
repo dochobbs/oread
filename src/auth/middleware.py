@@ -4,21 +4,18 @@ Auth middleware for FastAPI.
 Provides dependency injection for authenticated routes.
 """
 
-import os
+import logging
 from typing import Optional
 from dataclasses import dataclass
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, JWTError
 
-from src.db.client import get_client, is_configured
+from src import runtime_config
+from src.db.client import get_client, get_user_client, is_configured
 from src.db.repositories import UserRepository
 
-
-# Supabase JWT settings
-SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET")
-ALGORITHM = "HS256"
+logger = logging.getLogger("oread.auth")
 
 # HTTP Bearer scheme for Authorization header
 security = HTTPBearer(auto_error=False)
@@ -31,14 +28,23 @@ class AuthenticatedUser:
   email: str
   role: str = "learner"
   learner_level: Optional[str] = None
+  token: Optional[str] = None
+
+  def db(self):
+    """Supabase client whose queries run as this user (RLS applies)."""
+    if not self.token:
+      raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    return get_user_client(self.token)
+
+
+# The single user of a standalone (no-auth, loopback-only) server.
+LOCAL_USER = AuthenticatedUser(id="local", email="local@localhost", role="admin")
 
 
 def decode_token(token: str) -> dict:
   """
-  Decode and verify a Supabase JWT token.
-
-  Note: Supabase tokens are signed with the JWT secret from project settings.
-  For simplicity, we verify the token by calling Supabase's auth.getUser().
+  Verify a Supabase JWT by asking Supabase (auth.get_user), which checks
+  signature and expiry server-side. Does not attach a session to the client.
   """
   if not is_configured():
     raise HTTPException(
@@ -63,10 +69,13 @@ def decode_token(token: str) -> dict:
       "email": user_response.user.email,
     }
 
-  except Exception as e:
+  except HTTPException:
+    raise
+  except Exception:
+    logger.info("Token validation failed", exc_info=True)
     raise HTTPException(
       status_code=status.HTTP_401_UNAUTHORIZED,
-      detail=f"Token validation failed: {str(e)}"
+      detail="Invalid or expired token"
     )
 
 
@@ -86,10 +95,11 @@ async def get_current_user(
       headers={"WWW-Authenticate": "Bearer"},
     )
 
-  token_data = decode_token(credentials.credentials)
+  token = credentials.credentials
+  token_data = decode_token(token)
 
-  # Get user profile from database
-  user_repo = UserRepository()
+  # Get user profile from database, querying as this user
+  user_repo = UserRepository(client=get_user_client(token))
   user_profile = user_repo.get_by_id(token_data["sub"])
 
   if user_profile:
@@ -98,6 +108,7 @@ async def get_current_user(
       email=token_data["email"],
       role=user_profile.get("role", "learner"),
       learner_level=user_profile.get("learner_level"),
+      token=token,
     )
   else:
     # User exists in auth but not in profiles table
@@ -109,11 +120,12 @@ async def get_current_user(
         email=token_data["email"],
       )
     except Exception:
-      pass  # Profile creation failed, continue anyway
+      logger.warning("Profile auto-create failed for %s", token_data["sub"], exc_info=True)
 
     return AuthenticatedUser(
       id=token_data["sub"],
       email=token_data["email"],
+      token=token,
     )
 
 
@@ -130,9 +142,10 @@ async def get_current_user_optional(
     return None
 
   try:
-    token_data = decode_token(credentials.credentials)
+    token = credentials.credentials
+    token_data = decode_token(token)
 
-    user_repo = UserRepository()
+    user_repo = UserRepository(client=get_user_client(token))
     user_profile = user_repo.get_by_id(token_data["sub"])
 
     if user_profile:
@@ -141,17 +154,49 @@ async def get_current_user_optional(
         email=token_data["email"],
         role=user_profile.get("role", "learner"),
         learner_level=user_profile.get("learner_level"),
+        token=token,
       )
     else:
       return AuthenticatedUser(
         id=token_data["sub"],
         email=token_data["email"],
+        token=token,
       )
 
   except HTTPException:
     return None
   except Exception:
     return None
+
+
+async def require_user(
+  credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+) -> AuthenticatedUser:
+  """
+  Mode-aware auth for patient routes.
+
+  Standalone: returns LOCAL_USER (the server is loopback-only).
+  Platform: requires a valid bearer token, same as get_current_user.
+  """
+  if not runtime_config.current().is_platform:
+    return LOCAL_USER
+  return await get_current_user(credentials)
+
+
+async def require_platform_user(
+  credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+) -> AuthenticatedUser:
+  """
+  Auth for features that need Supabase (accounts, panels).
+
+  Standalone: 501, since there is no database to back them.
+  """
+  if not runtime_config.current().is_platform:
+    raise HTTPException(
+      status_code=status.HTTP_501_NOT_IMPLEMENTED,
+      detail="Requires platform mode (Supabase). This Oread runs standalone.",
+    )
+  return await get_current_user(credentials)
 
 
 async def get_admin_user(

@@ -9,16 +9,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import json
+import logging
 import os
 import sys
 import threading
 import random
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Depends
+from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,13 +32,19 @@ project_root = Path(__file__).parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src import runtime_config
 from src.models import GenerationSeed, Sex, ComplexityTier, Patient
 from src.engines import PedsEngine
-from adult.adult_engine import AdultEngine as AdultEngineImpl
+from adult.adult_engine import AdultEngine as AdultEngineImpl, infer_age_from_description
 from src.exporters import export_json, export_json_summary, export_markdown, export_fhir, export_ccda, patient_to_context
-from src.auth import get_current_user, get_current_user_optional, AuthenticatedUser
-from src.db.client import get_client, get_admin_client, is_configured as db_configured
+from src.auth import AuthenticatedUser, require_platform_user, require_user
+from src.db.client import new_anon_client, is_configured as db_configured
 from src.db.repositories import UserRepository, PanelRepository, PatientRepository
+from src.store import BoundedStore
+
+logger = logging.getLogger("oread.server")
+
+RUNTIME = runtime_config.current()
 
 
 # Create FastAPI app
@@ -48,52 +57,77 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def _validate_config():
-    """Warn loudly on missing optional config; don't fail (engine works without
-    LLM, and Supabase is optional in standalone mode)."""
-    import sys as _sys
+    """Refuse unsafe mode/bind combinations; warn on missing optional config."""
+    runtime_config.check_config(RUNTIME)
+    logger.warning("Oread starting in %s mode", RUNTIME.mode)
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        print(
-            "WARN: ANTHROPIC_API_KEY not set. LLM-powered narrative generation "
-            "will be disabled; patients are generated rule-based only.",
-            file=_sys.stderr,
+        logger.warning(
+            "ANTHROPIC_API_KEY not set. LLM-powered narrative generation "
+            "will be disabled; patients are generated rule-based only."
         )
-    if not (os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_ANON_KEY")):
-        print(
-            "WARN: Supabase not configured (SUPABASE_URL + SUPABASE_ANON_KEY). "
-            "Auth and panel persistence disabled; /api/generate runs stateless.",
-            file=_sys.stderr,
+    if not RUNTIME.is_platform:
+        logger.warning(
+            "Standalone mode: no authentication, loopback only. "
+            "Accounts and panels are unavailable."
         )
 
 
-# Add CORS middleware
+# CORS: explicit origins only. Auth uses bearer tokens, not cookies, so
+# credentials are never needed cross-origin.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=RUNTIME.cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "X-Metis-User"],
 )
 
-# Initialize engine
-peds_engine = PedsEngine()
+# In-memory, owner-scoped, size-bounded storage (lost on restart; spec D3)
+patients_store: BoundedStore[Patient] = BoundedStore(RUNTIME.max_patients)
+generation_jobs: BoundedStore[dict] = BoundedStore(RUNTIME.max_jobs)
 
-# In-memory storage for generated patients (for demo purposes)
-patients_store: dict[str, Patient] = {}
-generation_jobs: dict[str, dict] = {}
+# Generation is CPU- and LLM-bound. Cap how many run at once so one large
+# request can't starve the rest; handlers run in FastAPI's threadpool.
+_generation_slots = threading.BoundedSemaphore(RUNTIME.max_concurrent_generations)
+_quick_executor = ThreadPoolExecutor(
+    max_workers=RUNTIME.max_concurrent_generations, thread_name_prefix="oread-quick"
+)
+
+
+@contextmanager
+def _generation_slot(wait_s: Optional[float] = None):
+    """Hold one generation slot; 503 if none frees up within the queue timeout."""
+    timeout = RUNTIME.generation_queue_timeout_s if wait_s is None else wait_s
+    if not _generation_slots.acquire(timeout=timeout):
+        raise HTTPException(status_code=503, detail="Generator busy; try again shortly")
+    try:
+        yield
+    finally:
+        _generation_slots.release()
+
+
+def _owned_patient(patient_id: str, user: AuthenticatedUser) -> Patient:
+    """Fetch a patient the user owns, or 404 (never reveal others' IDs)."""
+    patient = patients_store.get(patient_id, user.id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return patient
 
 
 # Request/Response models
 class GenerateRequest(BaseModel):
     """Request model for patient generation."""
     age: Optional[int] = Field(None, ge=0, le=120, description="Patient age in years")
-    age_months: Optional[int] = Field(None, ge=0, description="Patient age in months")
-    sex: Optional[str] = Field(None, description="Patient sex (male/female)")
-    conditions: Optional[list[str]] = Field(None, description="List of conditions to include")
-    complexity_tier: Optional[str] = Field(None, description="Complexity tier (tier-0 to tier-3)")
-    encounter_count: Optional[int] = Field(None, ge=1, description="Number of encounters")
+    age_months: Optional[int] = Field(None, ge=0, le=1440, description="Patient age in months")
+    sex: Optional[Sex] = Field(None, description="Patient sex")
+    conditions: Optional[list[str]] = Field(None, max_length=20, description="List of conditions to include")
+    complexity_tier: Optional[ComplexityTier] = Field(None, description="Complexity tier (tier-0 to tier-5)")
+    encounter_count: Optional[int] = Field(None, ge=1, le=500, description="Number of encounters")
     random_seed: Optional[int] = Field(None, description="Random seed for reproducibility")
-    description: Optional[str] = Field(None, description="Natural language description")
-    specialty: Optional[str] = Field(None, description="Specialty: pediatrics, internal_medicine, family_practice")
+    description: Optional[str] = Field(None, max_length=2000, description="Natural language description")
+    specialty: Optional[Literal["pediatrics", "internal_medicine", "family_practice"]] = Field(
+        None, description="Specialty"
+    )
     use_llm: bool = Field(True, description="Use LLM for natural narratives (default: True)")
     messiness_level: int = Field(0, ge=0, le=5, description="Chart messiness level (0=pristine to 5=hostile)")
 
@@ -156,30 +190,32 @@ class EncounterSummary(BaseModel):
     assessments: list[str]
 
 
-def _run_generation_job(job_id: str, age: int, use_llm: bool):
-    """Background task to generate a patient."""
-    try:
-        generation_jobs[job_id]["status"] = "running"
-        generation_jobs[job_id]["started_at"] = datetime.now().isoformat()
+def _run_generation_job(job: dict, owner_id: str, age: int, use_llm: bool):
+    """Background task to generate a patient. Mutates the stored job dict."""
+    with _generation_slots:  # queue behind interactive generations; no timeout
+        try:
+            job["status"] = "running"
+            job["started_at"] = datetime.now().isoformat()
 
-        seed = GenerationSeed(
-            age=age,
-            random_seed=random.randint(1, 1000000),
-        )
+            seed = GenerationSeed(
+                age=age,
+                random_seed=random.randint(1, 1000000),
+            )
 
-        engine = PedsEngine(use_llm=use_llm)
-        patient = engine.generate(seed)
-        patients_store[patient.id] = patient
+            engine = PedsEngine(use_llm=use_llm)
+            patient = engine.generate(seed)
+            patients_store.put(patient.id, patient, owner_id)
 
-        generation_jobs[job_id]["status"] = "completed"
-        generation_jobs[job_id]["patient_id"] = patient.id
-        generation_jobs[job_id]["patient_name"] = patient.demographics.full_name
-        generation_jobs[job_id]["completed_at"] = datetime.now().isoformat()
+            job["status"] = "completed"
+            job["patient_id"] = patient.id
+            job["patient_name"] = patient.demographics.full_name
+            job["completed_at"] = datetime.now().isoformat()
 
-    except Exception as e:
-        generation_jobs[job_id]["status"] = "failed"
-        generation_jobs[job_id]["error"] = str(e)
-        generation_jobs[job_id]["completed_at"] = datetime.now().isoformat()
+        except Exception:
+            logger.exception("Quick generation job failed")
+            job["status"] = "failed"
+            job["error"] = "Generation failed"
+            job["completed_at"] = datetime.now().isoformat()
 
 
 # Routes
@@ -199,11 +235,24 @@ async def health_check():
 
 
 @app.post("/api/generate", response_model=PatientSummary)
-async def generate_patient(request: GenerateRequest):
+def generate_patient(request: GenerateRequest, user: AuthenticatedUser = Depends(require_user)):
     """
     Generate a synthetic patient.
 
     Returns the patient summary immediately. Use /api/patients/{id} to get full data.
+    Sync handler: runs in the threadpool so generation never blocks the event loop.
+
+    Routing: AdultEngine for specialty internal_medicine; family_practice at
+    18+; any request aged 22+; and a request with no age whose description
+    implies an adult ("a 67-year-old", "elderly", "middle-aged", "adult").
+    Everything else goes to PedsEngine.
+
+    use_llm is honored by PedsEngine only. AdultEngine is template-driven and
+    ignores it (no LLM calls, no API key needed for adults).
+
+    Adult condition requests are checked before generation: an unknown
+    condition, or one impossible for the requested sex/age (PCOS in a male,
+    BPH at 25), returns 422.
     """
     # Build generation seed
     seed_params = {}
@@ -213,11 +262,11 @@ async def generate_patient(request: GenerateRequest):
     if request.age_months is not None:
         seed_params["age_months"] = request.age_months
     if request.sex:
-        seed_params["sex"] = Sex(request.sex)
+        seed_params["sex"] = request.sex
     if request.conditions:
         seed_params["conditions"] = request.conditions
     if request.complexity_tier:
-        seed_params["complexity_tier"] = ComplexityTier(request.complexity_tier)
+        seed_params["complexity_tier"] = request.complexity_tier
     if request.encounter_count:
         seed_params["encounter_count"] = request.encounter_count
     if request.random_seed:
@@ -231,6 +280,11 @@ async def generate_patient(request: GenerateRequest):
 
     # Route to appropriate engine based on age and specialty
     age_months = request.age_months or (request.age * 12 if request.age else None)
+    desc_adult, desc_age = (False, None)
+    if age_months is None and request.description:
+      desc_adult, desc_age = infer_age_from_description(request.description)
+      if desc_age is not None:
+        age_months = desc_age * 12
     use_adult = False
     if request.specialty == "internal_medicine":
       use_adult = True
@@ -238,20 +292,33 @@ async def generate_patient(request: GenerateRequest):
       use_adult = True
     elif age_months and age_months >= 264:  # > 22 years, auto-route to adult
       use_adult = True
+    elif desc_adult:  # "elderly", "middle-aged", "adult" with no number
+      use_adult = True
 
     if use_adult:
+      if request.conditions:
+        age_years = request.age if request.age is not None else (
+          request.age_months // 12 if request.age_months is not None else None)
+        try:
+          keys = AdultEngineImpl.resolve_conditions(request.conditions)
+          AdultEngineImpl.validate_conditions(keys, request.sex, age_years)
+        except ValueError as exc:
+          # Our own validation message about the request, not an internal error.
+          raise HTTPException(status_code=422, detail=str(exc))
       engine = AdultEngineImpl(use_llm=request.use_llm, messiness_level=request.messiness_level)
     else:
       engine = PedsEngine(use_llm=request.use_llm, messiness_level=request.messiness_level)
 
     # Generate patient
-    try:
-        patient = engine.generate(gen_seed)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    with _generation_slot():
+        try:
+            patient = engine.generate(gen_seed)
+        except Exception:
+            logger.exception("Patient generation failed")
+            raise HTTPException(status_code=500, detail="Patient generation failed")
 
     # Store patient
-    patients_store[patient.id] = patient
+    patients_store.put(patient.id, patient, user.id)
 
     # Return summary
     return PatientSummary(
@@ -269,17 +336,20 @@ async def generate_patient(request: GenerateRequest):
 
 
 @app.post("/api/generate/quick")
-async def quick_generate(use_llm: bool = Query(True, description="Use LLM for narratives")):
+async def quick_generate(
+    use_llm: bool = Query(True, description="Use LLM for narratives"),
+    user: AuthenticatedUser = Depends(require_user),
+):
     """
     Start async patient generation. Returns job_id immediately.
 
     Poll /api/jobs/{job_id} to check status. LLM generation takes ~2 minutes.
+    Jobs run on a bounded worker pool, never an unbounded thread per call.
     """
-    job_id = str(uuid4())[:8]
+    job_id = uuid4().hex
     age = random.randint(0, 18)
 
-    # Initialize job status
-    generation_jobs[job_id] = {
+    job = {
         "status": "pending",
         "patient_id": None,
         "patient_name": None,
@@ -289,25 +359,19 @@ async def quick_generate(use_llm: bool = Query(True, description="Use LLM for na
         "use_llm": use_llm,
         "age": age,
     }
-
-    # Start background thread
-    thread = threading.Thread(
-        target=_run_generation_job,
-        args=(job_id, age, use_llm),
-        daemon=True
-    )
-    thread.start()
+    generation_jobs.put(job_id, job, user.id)
+    _quick_executor.submit(_run_generation_job, job, user.id, age, use_llm)
 
     return {"job_id": job_id, "status": "pending", "message": "Generation started. Poll /api/jobs/{job_id} for status."}
 
 
 @app.get("/api/jobs/{job_id}")
-async def get_job_status(job_id: str):
+async def get_job_status(job_id: str, user: AuthenticatedUser = Depends(require_user)):
     """Check the status of a generation job."""
-    if job_id not in generation_jobs:
+    job = generation_jobs.get(job_id, user.id)
+    if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    job = generation_jobs[job_id]
     return GenerationStatus(
         job_id=job_id,
         status=job["status"],
@@ -323,9 +387,10 @@ async def get_job_status(job_id: str):
 async def list_patients(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    user: AuthenticatedUser = Depends(require_user),
 ):
-    """List all generated patients."""
-    patients_list = list(patients_store.values())
+    """List the current user's generated patients."""
+    patients_list = patients_store.values_for(user.id)
     patients_list.sort(key=lambda p: p.generated_at, reverse=True)
     
     total = len(patients_list)
@@ -340,17 +405,18 @@ async def list_patients(
 
 
 @app.get("/api/patients/{patient_id}")
-async def get_patient(patient_id: str, format: str = Query("json", pattern="^(json|fhir|markdown)$")):
+def get_patient(
+    patient_id: str,
+    format: str = Query("json", pattern="^(json|fhir|markdown)$"),
+    user: AuthenticatedUser = Depends(require_user),
+):
     """
     Get a patient by ID.
-    
+
     Supports multiple output formats: json, fhir, markdown.
     """
-    if patient_id not in patients_store:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    
-    patient = patients_store[patient_id]
-    
+    patient = _owned_patient(patient_id, user)
+
     if format == "json":
         return JSONResponse(content=json.loads(export_json(patient)))
     elif format == "fhir":
@@ -360,27 +426,21 @@ async def get_patient(patient_id: str, format: str = Query("json", pattern="^(js
 
 
 @app.get("/api/patients/{patient_id}/context")
-async def get_patient_context(patient_id: str):
+async def get_patient_context(patient_id: str, user: AuthenticatedUser = Depends(require_user)):
     """
     Get patient data in Echo's PatientContext format.
 
     Returns a flat structure suitable for Echo, Metis, and other services.
     """
-    if patient_id not in patients_store:
-        raise HTTPException(status_code=404, detail="Patient not found")
-
-    patient = patients_store[patient_id]
+    patient = _owned_patient(patient_id, user)
     return JSONResponse(content=patient_to_context(patient))
 
 
 @app.get("/api/patients/{patient_id}/encounters")
-async def get_patient_encounters(patient_id: str):
+async def get_patient_encounters(patient_id: str, user: AuthenticatedUser = Depends(require_user)):
     """Get all encounters for a patient."""
-    if patient_id not in patients_store:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    
-    patient = patients_store[patient_id]
-    
+    patient = _owned_patient(patient_id, user)
+
     encounters = []
     for enc in sorted(patient.encounters, key=lambda e: e.date, reverse=True):
         encounters.append({
@@ -397,12 +457,11 @@ async def get_patient_encounters(patient_id: str):
 
 
 @app.get("/api/patients/{patient_id}/encounters/{encounter_id}")
-async def get_encounter(patient_id: str, encounter_id: str):
+async def get_encounter(
+    patient_id: str, encounter_id: str, user: AuthenticatedUser = Depends(require_user)
+):
     """Get a specific encounter."""
-    if patient_id not in patients_store:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    
-    patient = patients_store[patient_id]
+    patient = _owned_patient(patient_id, user)
     encounter = patient.get_encounter_by_id(encounter_id)
     
     if not encounter:
@@ -412,17 +471,14 @@ async def get_encounter(patient_id: str, encounter_id: str):
 
 
 @app.get("/api/patients/{patient_id}/export/{format}")
-async def export_patient(patient_id: str, format: str):
+def export_patient(patient_id: str, format: str, user: AuthenticatedUser = Depends(require_user)):
     """
     Export a patient to a downloadable file.
-    
-    Formats: json, fhir, markdown
+
+    Formats: json, fhir, markdown, ccda
     """
-    if patient_id not in patients_store:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    
-    patient = patients_store[patient_id]
-    
+    patient = _owned_patient(patient_id, user)
+
     # Create temp file
     temp_dir = Path("/tmp/oread")
     temp_dir.mkdir(exist_ok=True)
@@ -454,12 +510,10 @@ async def export_patient(patient_id: str, format: str):
 
 
 @app.delete("/api/patients/{patient_id}")
-async def delete_patient(patient_id: str):
-    """Delete a patient from memory."""
-    if patient_id not in patients_store:
+async def delete_patient(patient_id: str, user: AuthenticatedUser = Depends(require_user)):
+    """Delete one of the current user's patients from memory."""
+    if not patients_store.delete(patient_id, user.id):
         raise HTTPException(status_code=404, detail="Patient not found")
-    
-    del patients_store[patient_id]
     return {"status": "deleted", "patient_id": patient_id}
 
 
@@ -506,9 +560,9 @@ async def list_conditions():
 
 
 @app.get("/api/stats")
-async def get_stats():
-    """Get generation statistics."""
-    patients = list(patients_store.values())
+async def get_stats(user: AuthenticatedUser = Depends(require_user)):
+    """Get generation statistics for the current user's patients."""
+    patients = patients_store.values_for(user.id)
     
     if not patients:
         return {
@@ -589,27 +643,30 @@ class UserProfile(BaseModel):
 
 
 @app.post("/api/auth/signup", response_model=AuthResponse)
-async def signup(request: SignUpRequest):
+def signup(request: SignUpRequest):
     """
     Create a new user account.
 
     Returns access token and user profile on success.
     """
-    if not db_configured():
-        raise HTTPException(status_code=503, detail="Database not configured")
+    _require_platform()
 
     try:
-        client = get_client()
+        # Fresh client: never attach a user session to the shared client
+        client = new_anon_client()
 
         # Sign up with Supabase Auth
         auth_response = client.sign_up(request.email, request.password)
 
         if not auth_response.user:
             raise HTTPException(status_code=400, detail="Signup failed")
+        if not auth_response.session:
+            # Email confirmation is on: the account exists but has no session yet
+            raise HTTPException(status_code=409, detail="Check your email to confirm your account, then log in")
 
         # Create user profile in our table (use admin client to bypass RLS)
         user_repo = UserRepository(use_admin=True)
-        profile = user_repo.create(
+        user_repo.create(
             user_id=auth_response.user.id,
             email=request.email,
             display_name=request.display_name,
@@ -631,22 +688,33 @@ async def signup(request: SignUpRequest):
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.info("Signup failed", exc_info=True)
+        raise HTTPException(status_code=400, detail="Signup failed")
+
+
+def _require_platform() -> None:
+    """Accounts and panels need Supabase; standalone answers 501."""
+    if not RUNTIME.is_platform or not db_configured():
+        raise HTTPException(
+            status_code=501,
+            detail="Requires platform mode (Supabase). This Oread runs standalone.",
+        )
 
 
 @app.post("/api/auth/login", response_model=AuthResponse)
-async def login(request: LoginRequest):
+def login(request: LoginRequest):
     """
     Log in an existing user.
 
     Returns access token and user profile on success.
     """
-    if not db_configured():
-        raise HTTPException(status_code=503, detail="Database not configured")
+    _require_platform()
 
     try:
-        client = get_client()
+        # Fresh client: signing in on the shared client would make every
+        # later query run as this user
+        client = new_anon_client()
 
         # Sign in with Supabase Auth
         auth_response = client.sign_in(request.email, request.password)
@@ -654,8 +722,8 @@ async def login(request: LoginRequest):
         if not auth_response.user or not auth_response.session:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        # Get user profile
-        user_repo = UserRepository()
+        # Get user profile (the fresh client now carries this user's session)
+        user_repo = UserRepository(client=client)
         profile = user_repo.get_by_id(auth_response.user.id)
 
         return AuthResponse(
@@ -672,25 +740,26 @@ async def login(request: LoginRequest):
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=str(e))
+    except Exception:
+        logger.info("Login failed", exc_info=True)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
 @app.post("/api/auth/logout")
-async def logout(user: AuthenticatedUser = Depends(get_current_user)):
-    """Log out the current user."""
-    try:
-        client = get_client()
-        client.sign_out()
-        return {"status": "logged_out"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+async def logout(user: AuthenticatedUser = Depends(require_platform_user)):
+    """
+    Log out the current user.
+
+    Tokens are stateless JWTs held by the client; logging out means the client
+    discards them. Nothing server-side is shared, so this affects only the caller.
+    """
+    return {"status": "logged_out"}
 
 
 @app.get("/api/auth/me", response_model=UserProfile)
-async def get_me(user: AuthenticatedUser = Depends(get_current_user)):
+def get_me(user: AuthenticatedUser = Depends(require_platform_user)):
     """Get the current user's profile."""
-    user_repo = UserRepository()
+    user_repo = UserRepository(client=user.db())
     profile = user_repo.get_by_id(user.id)
 
     return UserProfile(
@@ -704,14 +773,14 @@ async def get_me(user: AuthenticatedUser = Depends(get_current_user)):
 
 
 @app.patch("/api/auth/me")
-async def update_me(
+def update_me(
     display_name: Optional[str] = None,
     learner_level: Optional[str] = None,
     institution: Optional[str] = None,
-    user: AuthenticatedUser = Depends(get_current_user)
+    user: AuthenticatedUser = Depends(require_platform_user)
 ):
     """Update the current user's profile."""
-    user_repo = UserRepository()
+    user_repo = UserRepository(client=user.db())
 
     updates = {}
     if display_name is not None:
@@ -746,9 +815,9 @@ class GeneratePanelPatientsRequest(BaseModel):
         description="Natural language description for patient generation (e.g., 'toddlers with asthma and eczema')"
     )
     conditions: Optional[list[str]] = Field(None, description="Specific conditions to include")
-    min_age_months: Optional[int] = Field(None, ge=0, description="Minimum age in months")
-    max_age_months: Optional[int] = Field(None, le=216, description="Maximum age in months (max 18 years)")
-    complexity_tier: Optional[str] = Field(None, description="Complexity tier (tier-0 to tier-3)")
+    min_age_months: Optional[int] = Field(None, ge=0, le=216, description="Minimum age in months")
+    max_age_months: Optional[int] = Field(None, ge=0, le=216, description="Maximum age in months (max 18 years)")
+    complexity_tier: Optional[ComplexityTier] = Field(None, description="Complexity tier (tier-0 to tier-5)")
     use_llm: bool = Field(True, description="Use LLM for rich narrative content (default: True)")
 
 
@@ -763,9 +832,9 @@ class PanelResponse(BaseModel):
 
 
 @app.get("/api/panels")
-async def list_panels(user: AuthenticatedUser = Depends(get_current_user)):
+def list_panels(user: AuthenticatedUser = Depends(require_platform_user)):
     """List all panels for the current user."""
-    panel_repo = PanelRepository()
+    panel_repo = PanelRepository(client=user.db())
     panels = panel_repo.get_by_owner(user.id)
 
     return {
@@ -783,12 +852,12 @@ async def list_panels(user: AuthenticatedUser = Depends(get_current_user)):
 
 
 @app.post("/api/panels", response_model=PanelResponse)
-async def create_panel(
+def create_panel(
     request: CreatePanelRequest,
-    user: AuthenticatedUser = Depends(get_current_user)
+    user: AuthenticatedUser = Depends(require_platform_user)
 ):
     """Create a new patient panel."""
-    panel_repo = PanelRepository()
+    panel_repo = PanelRepository(client=user.db())
 
     panel = panel_repo.create(
         owner_id=user.id,
@@ -810,13 +879,13 @@ async def create_panel(
 
 
 @app.get("/api/panels/{panel_id}")
-async def get_panel(
+def get_panel(
     panel_id: str,
-    user: AuthenticatedUser = Depends(get_current_user)
+    user: AuthenticatedUser = Depends(require_platform_user)
 ):
     """Get a panel with its patients."""
-    panel_repo = PanelRepository()
-    patient_repo = PatientRepository()
+    panel_repo = PanelRepository(client=user.db())
+    patient_repo = PatientRepository(client=user.db())
 
     panel = panel_repo.get_by_id(panel_id)
     if not panel:
@@ -852,12 +921,12 @@ async def get_panel(
 
 
 @app.delete("/api/panels/{panel_id}")
-async def delete_panel(
+def delete_panel(
     panel_id: str,
-    user: AuthenticatedUser = Depends(get_current_user)
+    user: AuthenticatedUser = Depends(require_platform_user)
 ):
     """Delete a panel and all its patients."""
-    panel_repo = PanelRepository()
+    panel_repo = PanelRepository(client=user.db())
 
     panel = panel_repo.get_by_id(panel_id)
     if not panel:
@@ -871,10 +940,10 @@ async def delete_panel(
 
 
 @app.post("/api/panels/{panel_id}/generate")
-async def generate_panel_patients(
+def generate_panel_patients(
     panel_id: str,
     request: GeneratePanelPatientsRequest,
-    user: AuthenticatedUser = Depends(get_current_user)
+    user: AuthenticatedUser = Depends(require_platform_user)
 ):
     """
     Generate patients for a panel with optional natural language configuration.
@@ -885,8 +954,8 @@ async def generate_panel_patients(
     - {"count": 15, "conditions": ["eczema", "food allergy"], "max_age_months": 36}
     - {"count": 20, "description": "complex adolescents with ADHD and anxiety"}
     """
-    panel_repo = PanelRepository()
-    patient_repo = PatientRepository()
+    panel_repo = PanelRepository(client=user.db())
+    patient_repo = PatientRepository(client=user.db())
 
     panel = panel_repo.get_by_id(panel_id)
     if not panel:
@@ -899,53 +968,62 @@ async def generate_panel_patients(
     config = panel.get("config", {})
     min_age = request.min_age_months if request.min_age_months is not None else config.get("min_age_months", 0)
     max_age = request.max_age_months if request.max_age_months is not None else config.get("max_age_months", 216)
+    # Checked after merging with stored panel config, which the request model can't see
+    if not (0 <= min_age <= max_age <= 216):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Need 0 <= min_age_months <= max_age_months <= 216; got {min_age}..{max_age}",
+        )
 
     # Generate patients with LLM by default
     engine = PedsEngine(use_llm=request.use_llm)
     generated = []
 
-    for i in range(request.count):
-        age_months = random.randint(min_age, max_age)
+    # One slot for the whole batch: a 50-patient panel runs in this worker
+    # thread without blocking the event loop or other users' slots beyond one.
+    with _generation_slot():
+        for i in range(request.count):
+            age_months = random.randint(min_age, max_age)
 
-        # Build generation seed
-        seed_params = {"age_months": age_months}
+            # Build generation seed
+            seed_params = {"age_months": age_months}
 
-        if request.description:
-            seed_params["description"] = request.description
-        if request.conditions:
-            seed_params["conditions"] = request.conditions
-        if request.complexity_tier:
-            seed_params["complexity_tier"] = ComplexityTier(request.complexity_tier)
+            if request.description:
+                seed_params["description"] = request.description
+            if request.conditions:
+                seed_params["conditions"] = request.conditions
+            if request.complexity_tier:
+                seed_params["complexity_tier"] = request.complexity_tier
 
-        seed = GenerationSeed(**seed_params)
+            seed = GenerationSeed(**seed_params)
 
-        try:
-            patient = engine.generate(seed)
+            try:
+                patient = engine.generate(seed)
 
-            # Save to database
-            db_patient = patient_repo.create(
-                panel_id=panel_id,
-                demographics=patient.demographics.model_dump(mode="json"),
-                full_record=json.loads(export_json(patient)),
-                complexity_tier=patient.complexity_tier.value,
-                conditions=[c.display_name for c in patient.active_conditions],
-                age_months=age_months,
-            )
+                # Save to database
+                db_patient = patient_repo.create(
+                    panel_id=panel_id,
+                    demographics=patient.demographics.model_dump(mode="json"),
+                    full_record=json.loads(export_json(patient)),
+                    complexity_tier=patient.complexity_tier.value,
+                    conditions=[c.display_name for c in patient.active_conditions],
+                    age_months=age_months,
+                )
 
-            generated.append({
-                "id": db_patient["id"],
-                "name": patient.demographics.full_name,
-                "age_months": age_months,
-                "conditions": [c.display_name for c in patient.active_conditions],
-            })
+                generated.append({
+                    "id": db_patient["id"],
+                    "name": patient.demographics.full_name,
+                    "age_months": age_months,
+                    "conditions": [c.display_name for c in patient.active_conditions],
+                })
 
-            # Log progress for longer batches
-            if (i + 1) % 5 == 0:
-                print(f"Generated {i + 1}/{request.count} patients for panel {panel_id}")
+                # Log progress for longer batches
+                if (i + 1) % 5 == 0:
+                    print(f"Generated {i + 1}/{request.count} patients for panel {panel_id}")
 
-        except Exception as e:
-            # Log error but continue
-            print(f"Failed to generate patient {i + 1}: {e}")
+            except Exception:
+                # Log error but continue
+                logger.exception("Failed to generate panel patient %d", i + 1)
 
     return {
         "panel_id": panel_id,
@@ -959,10 +1037,10 @@ async def generate_panel_patients(
 # =============================================================================
 
 @app.get("/api/panels/{panel_id}/patients/{patient_id}")
-async def get_panel_patient(
+def get_panel_patient(
     panel_id: str,
     patient_id: str,
-    user: AuthenticatedUser = Depends(get_current_user)
+    user: AuthenticatedUser = Depends(require_platform_user)
 ):
     """
     Get full patient data from a panel.
@@ -970,8 +1048,8 @@ async def get_panel_patient(
     Returns the complete patient record including demographics, encounters,
     problem list, medications, immunizations, and messages.
     """
-    panel_repo = PanelRepository()
-    patient_repo = PatientRepository()
+    panel_repo = PanelRepository(client=user.db())
+    patient_repo = PatientRepository(client=user.db())
 
     # Verify panel access
     panel = panel_repo.get_by_id(panel_id)
@@ -1003,11 +1081,11 @@ async def get_panel_patient(
 # =============================================================================
 
 @app.post("/api/panels/{panel_id}/patients/{patient_id}/encounters", response_model=EncounterSummary)
-async def generate_encounter(
+def generate_encounter(
     panel_id: str,
     patient_id: str,
     request: GenerateEncounterRequest,
-    user: AuthenticatedUser = Depends(get_current_user)
+    user: AuthenticatedUser = Depends(require_platform_user)
 ):
     """
     Generate a new encounter for an existing patient.
@@ -1023,8 +1101,8 @@ async def generate_encounter(
     """
     from src.models import EncounterType
 
-    panel_repo = PanelRepository()
-    patient_repo = PatientRepository()
+    panel_repo = PanelRepository(client=user.db())
+    patient_repo = PatientRepository(client=user.db())
 
     # Verify panel access
     panel = panel_repo.get_by_id(panel_id)
@@ -1044,9 +1122,10 @@ async def generate_encounter(
 
     # Reconstruct Patient object from stored record
     try:
-        patient = Patient(**db_patient["full_record"])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load patient record: {e}")
+        patient = Patient.from_stored(db_patient["full_record"])
+    except Exception:
+        logger.exception("Stored patient %s failed to load", patient_id)
+        raise HTTPException(status_code=500, detail="Failed to load patient record")
 
     # Parse visit type if provided
     visit_type = None
@@ -1070,8 +1149,9 @@ async def generate_encounter(
             visit_type=visit_type,
             condition=request.condition,
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate encounter: {e}")
+    except Exception:
+        logger.exception("Encounter generation failed")
+        raise HTTPException(status_code=500, detail="Failed to generate encounter")
 
     # Add encounter to patient record
     patient.encounters.append(encounter)
@@ -1085,9 +1165,9 @@ async def generate_encounter(
         )
         if not result:
             print(f"Warning: Patient update returned None for {patient_id}")
-    except Exception as e:
+    except Exception:
         # Log but don't fail - encounter was generated successfully
-        print(f"Warning: Failed to persist encounter to database: {e}")
+        logger.exception("Failed to persist encounter to database")
 
     # Build response
     difficulty_config = difficulty_configs.get(request.difficulty_level, {})
@@ -1103,14 +1183,14 @@ async def generate_encounter(
 
 
 @app.get("/api/panels/{panel_id}/patients/{patient_id}/encounters")
-async def list_patient_encounters(
+def list_patient_encounters(
     panel_id: str,
     patient_id: str,
-    user: AuthenticatedUser = Depends(get_current_user)
+    user: AuthenticatedUser = Depends(require_platform_user)
 ):
     """List all encounters for a patient."""
-    panel_repo = PanelRepository()
-    patient_repo = PatientRepository()
+    panel_repo = PanelRepository(client=user.db())
+    patient_repo = PatientRepository(client=user.db())
 
     # Verify panel access
     panel = panel_repo.get_by_id(panel_id)
@@ -1148,15 +1228,15 @@ async def list_patient_encounters(
 
 
 @app.get("/api/panels/{panel_id}/patients/{patient_id}/encounters/{encounter_id}")
-async def get_encounter(
+def get_panel_patient_encounter(
     panel_id: str,
     patient_id: str,
     encounter_id: str,
-    user: AuthenticatedUser = Depends(get_current_user)
+    user: AuthenticatedUser = Depends(require_platform_user)
 ):
     """Get a specific encounter by ID."""
-    panel_repo = PanelRepository()
-    patient_repo = PatientRepository()
+    panel_repo = PanelRepository(client=user.db())
+    patient_repo = PatientRepository(client=user.db())
 
     # Verify panel access
     panel = panel_repo.get_by_id(panel_id)
@@ -1190,6 +1270,37 @@ async def get_encounter(
 # =============================================================================
 
 
+def _snapshot_to_dict(s) -> Optional[dict]:
+    """Serialize a TimeSnapshot (shared by both timeline endpoints)."""
+    if not s:
+        return None
+    return {
+        "age_months": s.age_months,
+        "date": s.date.isoformat(),
+        "active_conditions": [
+            {"display_name": c.display_name, "code": c.code.code if c.code else None}
+            for c in s.active_conditions
+        ],
+        "medications": [
+            {"name": m.display_name, "dosage": f"{m.dose_quantity} {m.dose_unit}"}
+            for m in s.medications
+        ],
+        "new_conditions": s.new_conditions,
+        "resolved_conditions": s.resolved_conditions,
+        "medication_changes": [
+            {"type": mc.type.value, "medication": mc.medication}
+            for mc in s.medication_changes
+        ],
+        "is_key_moment": s.is_key_moment,
+        "event_description": s.event_description,
+        "growth": {
+            "weight_kg": s.growth.weight_kg,
+            "height_cm": s.growth.height_cm,
+            "bmi": s.growth.bmi,
+        } if s.growth else None,
+    }
+
+
 class TimelineRequest(BaseModel):
     """Request model for timeline generation."""
     arc_names: list[str] | None = None
@@ -1197,12 +1308,12 @@ class TimelineRequest(BaseModel):
 
 
 @app.get("/api/panels/{panel_id}/patients/{patient_id}/timeline")
-async def get_patient_timeline(
+def get_patient_timeline(
     panel_id: str,
     patient_id: str,
     arc_names: str | None = None,
-    interval: int = 6,
-    user: AuthenticatedUser = Depends(get_current_user)
+    interval: int = Query(6, ge=1, le=60),
+    user: AuthenticatedUser = Depends(require_platform_user)
 ):
     """
     Get the patient's timeline showing disease progression over time.
@@ -1210,8 +1321,8 @@ async def get_patient_timeline(
     This is the core Time Travel API - it returns snapshots at different ages
     showing how conditions, medications, and clinical state evolved.
     """
-    panel_repo = PanelRepository()
-    patient_repo = PatientRepository()
+    panel_repo = PanelRepository(client=user.db())
+    patient_repo = PatientRepository(client=user.db())
 
     # Verify panel access
     panel = panel_repo.get_by_id(panel_id)
@@ -1233,9 +1344,10 @@ async def get_patient_timeline(
     full_record = db_patient.get("full_record", {})
     try:
         from src.models import Patient
-        patient = Patient(**full_record)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error loading patient: {str(e)}")
+        patient = Patient.from_stored(full_record)
+    except Exception:
+        logger.exception("Stored patient %s failed to load", patient_id)
+        raise HTTPException(status_code=500, detail="Error loading patient")
 
     # Parse arc_names from query param
     arc_list = arc_names.split(",") if arc_names else None
@@ -1253,34 +1365,7 @@ async def get_patient_timeline(
     return {
         "patient_id": patient_id,
         "current_age_months": patient.demographics.age_months,
-        "snapshots": [
-            {
-                "age_months": s.age_months,
-                "date": s.date.isoformat(),
-                "active_conditions": [
-                    {"display_name": c.display_name, "code": c.code.code if c.code else None}
-                    for c in s.active_conditions
-                ],
-                "medications": [
-                    {"name": m.display_name, "dosage": f"{m.dose_quantity} {m.dose_unit}"}
-                    for m in s.medications
-                ],
-                "new_conditions": s.new_conditions,
-                "resolved_conditions": s.resolved_conditions,
-                "medication_changes": [
-                    {"type": mc.type.value, "medication": mc.medication}
-                    for mc in s.medication_changes
-                ],
-                "is_key_moment": s.is_key_moment,
-                "event_description": s.event_description,
-                "growth": {
-                    "weight_kg": s.growth.weight_kg,
-                    "height_cm": s.growth.height_cm,
-                    "bmi": s.growth.bmi,
-                } if s.growth else None,
-            }
-            for s in snapshots
-        ],
+        "snapshots": [_snapshot_to_dict(s) for s in snapshots],
         "disease_arcs": [
             {
                 "id": arc.id,
@@ -1307,20 +1392,20 @@ async def get_patient_timeline(
 
 
 @app.get("/api/panels/{panel_id}/patients/{patient_id}/timeline/at/{age_months}")
-async def get_snapshot_at_age(
+def get_snapshot_at_age(
     panel_id: str,
     patient_id: str,
     age_months: int,
     arc_names: str | None = None,
-    user: AuthenticatedUser = Depends(get_current_user)
+    user: AuthenticatedUser = Depends(require_platform_user)
 ):
     """
     Get the patient's clinical state at a specific age.
 
     Returns the snapshot at that age plus the previous snapshot for comparison.
     """
-    panel_repo = PanelRepository()
-    patient_repo = PatientRepository()
+    panel_repo = PanelRepository(client=user.db())
+    patient_repo = PatientRepository(client=user.db())
 
     # Verify panel access
     panel = panel_repo.get_by_id(panel_id)
@@ -1342,9 +1427,10 @@ async def get_snapshot_at_age(
     full_record = db_patient.get("full_record", {})
     try:
         from src.models import Patient
-        patient = Patient(**full_record)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error loading patient: {str(e)}")
+        patient = Patient.from_stored(full_record)
+    except Exception:
+        logger.exception("Stored patient %s failed to load", patient_id)
+        raise HTTPException(status_code=500, detail="Error loading patient")
 
     # Validate age
     if age_months < 0 or age_months > patient.demographics.age_months:
@@ -1365,39 +1451,10 @@ async def get_snapshot_at_age(
         arc_names=arc_list,
     )
 
-    def snapshot_to_dict(s):
-        if not s:
-            return None
-        return {
-            "age_months": s.age_months,
-            "date": s.date.isoformat(),
-            "active_conditions": [
-                {"display_name": c.display_name, "code": c.code.code if c.code else None}
-                for c in s.active_conditions
-            ],
-            "medications": [
-                {"name": m.name, "dosage": m.dosage}
-                for m in s.medications
-            ],
-            "new_conditions": s.new_conditions,
-            "resolved_conditions": s.resolved_conditions,
-            "medication_changes": [
-                {"type": mc.type.value, "medication": mc.medication}
-                for mc in s.medication_changes
-            ],
-            "is_key_moment": s.is_key_moment,
-            "event_description": s.event_description,
-            "growth": {
-                "weight_kg": s.growth.weight_kg,
-                "height_cm": s.growth.height_cm,
-                "bmi": s.growth.bmi,
-            } if s.growth else None,
-        }
-
     return {
         "age_months": age_months,
-        "snapshot": snapshot_to_dict(snapshot),
-        "previous_snapshot": snapshot_to_dict(prev_snapshot),
+        "snapshot": _snapshot_to_dict(snapshot),
+        "previous_snapshot": _snapshot_to_dict(prev_snapshot),
         "changes": {
             "new_conditions": snapshot.new_conditions,
             "resolved_conditions": snapshot.resolved_conditions,
@@ -1415,10 +1472,12 @@ if web_dir.exists():
     app.mount("/static", StaticFiles(directory=str(web_dir)), name="static")
 
 
-def run_server(host: str = "0.0.0.0", port: int = 9104):
-    """Run the server."""
+def run_server(host: Optional[str] = None, port: Optional[int] = None):
+    """Run the server, refusing to expose a standalone (no-auth) server."""
     import uvicorn
-    uvicorn.run(app, host=host, port=port)
+    bind = host or RUNTIME.host
+    runtime_config.check_config(RUNTIME, host=bind)
+    uvicorn.run(app, host=bind, port=port or RUNTIME.port)
 
 
 if __name__ == "__main__":

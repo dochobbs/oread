@@ -10,7 +10,7 @@ from datetime import date
 from pathlib import Path
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))  # project root
 
 from src.engines.engine import PedsEngine
 from src.models.patient import GenerationSeed

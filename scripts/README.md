@@ -57,3 +57,21 @@ python scripts/generate_scripted_patient.py
 3. Pneumonia follow-up (9 days later, linked)
 4. Combined chronic care (asthma + T1D)
 5. Injury (laceration from bicycle fall)
+
+## qa_full_features.py / qa_stress.py
+
+Manual QA generators (formerly `test_full_features.py` / `test_stress.py` at the repo root). They write reports to `output/` and assert nothing; the automated equivalent is `tests/test_clinical_invariants.py`. `qa_stress.py` reads `output/files/oread_stress_test_batch.json`, which is not in the repo. Run from the repo root:
+
+```bash
+uv run python scripts/qa_full_features.py
+```
+
+## stress_peds.py
+
+Randomized peds stress test: every condition alone and in combinations (including requests below a condition's minimum age), ages 0-21 y, messiness 0-5, complexity tiers. Each patient gets the clinical invariants plus extra plausibility checks (vitals, growth, allergy conflicts, screening schedule, same-day duplicates), all four exports, a stored-record round trip, timeline snapshots and single-encounter generation.
+
+```bash
+uv run python scripts/stress_peds.py 800 20261027   # N patients, master seed
+```
+
+Last run (2026-10-27, three seeds, 3,800 patients): 0 crashes, 0 faults on clean charts.

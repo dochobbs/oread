@@ -5,7 +5,6 @@ Provides singleton access to Supabase client with proper configuration.
 """
 
 import os
-from functools import lru_cache
 from typing import Optional
 
 from supabase import create_client, Client
@@ -115,12 +114,38 @@ def get_config() -> SupabaseConfig:
   return _config
 
 
+def new_anon_client() -> SupabaseClient:
+  """
+  Create a fresh anon-key client.
+
+  Use for sign-in and sign-up. Signing in on a client attaches that user's
+  session to it, so doing it on the shared singleton would make every later
+  query run as whoever logged in last.
+  """
+  config = get_config()
+  config.validate()
+  return SupabaseClient(create_client(config.url, config.anon_key))
+
+
+def get_user_client(access_token: str) -> SupabaseClient:
+  """
+  Create a client whose database queries run as the token's user (RLS applies).
+
+  Args:
+    access_token: The caller's Supabase JWT.
+  """
+  client = new_anon_client()
+  client.client.postgrest.auth(access_token)
+  return client
+
+
 def get_client() -> SupabaseClient:
   """
-  Get the Supabase client (singleton).
+  Get the shared anon Supabase client (singleton).
 
-  Uses the anon key, which respects Row Level Security.
-  Use this for user-facing operations.
+  Uses the anon key, which respects Row Level Security. Never sign in on
+  this client; use new_anon_client() for auth flows and get_user_client()
+  for per-user queries. Safe for token verification (auth.get_user(jwt)).
   """
   global _client
   if _client is None:

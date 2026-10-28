@@ -6,7 +6,6 @@ Command-line interface for generating synthetic patient records.
 """
 
 import json
-import os
 import re
 import sys
 from pathlib import Path

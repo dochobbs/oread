@@ -3,6 +3,18 @@
 # Sources: CDC, AAP, NIH, PMC research papers
 # Last Updated: 2025-12-25
 # Schema Version: 2.0 - Enhanced with SNOMED, RxNorm, LOINC codes
+#
+# Medication dosing conventions (read by PedsEngine._dose_from_def):
+# - frequency "divided BID|TID|QID": dose_mg_kg and max_dose_mg are PER DAY and
+#   are split across the doses. Otherwise both are PER DOSE.
+# - choice_group: entries sharing a group are alternatives; the first is
+#   first-line and only one is prescribed. use_when.recent_class_days: N picks
+#   that alternative when a drug of the same drug_class was prescribed in the
+#   last N days.
+# - age_min_months: not prescribed below this calendar age.
+# Chronic maintenance regimens (insulin, levetiracetam, cetirizine, stimulants,
+# SSRIs, epinephrine, asthma controllers) are dosed by weight/age in
+# src/engines/peds_dosing.py, with sources cited there.
 
 # =============================================================================
 # ACUTE RESPIRATORY CONDITIONS
@@ -127,23 +139,38 @@ otitis_media:
 
   treatment:
     approach: "antibiotic_or_watchful_waiting"
+    # Source: AAP Clinical Practice Guideline, Diagnosis and Management of
+    # Acute Otitis Media (Lieberthal et al., Pediatrics 2013;131:e964), KAS 5:
+    # amoxicillin 80-90 mg/kg/day in 2 divided doses first-line;
+    # amoxicillin-clavulanate (90 mg/kg/day amoxicillin + 6.4 mg/kg/day
+    # clavulanate, 2 divided doses) if amoxicillin in the past 30 days,
+    # concurrent purulent conjunctivitis, or treatment failure at 48-72 h.
+    # Duration 10 days < 2 y (5-7 days may be used >= 6 y with mild disease).
+    # Max 4000 mg/day amoxicillin component: IDSA pediatric CAP guideline
+    # (Bradley et al., Clin Infect Dis 2011) high-dose amoxicillin maximum.
+    # Not modeled: concurrent purulent conjunctivitis as a trigger.
     medications:
       - agent: "Amoxicillin"
         rxnorm: "723"
         dose_mg_kg: 90
-        max_dose_mg: 3000
+        max_dose_mg: 4000
         frequency: "divided BID"
         duration_days: 10
         route: "oral"
         indication: "first-line for AOM"
+        choice_group: "antibiotic"
+        drug_class: "aminopenicillin"
       - agent: "Amoxicillin-Clavulanate"
-        rxnorm: "1043"
+        rxnorm: "19711"
         dose_mg_kg: 90
-        max_dose_mg: 3000
+        max_dose_mg: 4000
         frequency: "divided BID"
         duration_days: 10
         route: "oral"
-        indication: "if amoxicillin failure or recent antibiotic use"
+        indication: "amoxicillin in the past 30 days or treatment failure"
+        choice_group: "antibiotic"
+        drug_class: "aminopenicillin"
+        use_when: { recent_class_days: 30 }
       - agent: "Ibuprofen"
         rxnorm: "5640"
         dose_mg_kg: 10
@@ -379,6 +406,10 @@ pharyngitis:
         duration_days: 10
         route: "oral"
         indication: "Group A strep pharyngitis"
+        choice_group: "antibiotic"
+        # IDSA GAS pharyngitis guideline (Shulman et al., CID 2012): amoxicillin
+        # 50 mg/kg once daily (max 1000 mg) x 10 days; penicillin V 250 mg
+        # BID-TID for <= 27 kg.
       - agent: "Penicillin V"
         rxnorm: "7984"
         fixed_dose_mg: 250
@@ -386,6 +417,7 @@ pharyngitis:
         duration_days: 10
         route: "oral"
         indication: "alternative for Group A strep"
+        choice_group: "antibiotic"
       - agent: "Ibuprofen"
         rxnorm: "5640"
         dose_mg_kg: 10
@@ -457,6 +489,9 @@ viral_gastroenteritis:
         route: "oral"
         indication: "for persistent vomiting to enable oral rehydration"
         prn: true
+        # Not recommended < 6 months (AAP/IDSA pediatric AGE guidance; the
+        # pediatric ondansetron trials enrolled >= 6 months).
+        age_min_months: 6
     patient_instructions:
       - "Oral rehydration with small frequent amounts (1-2 tsp every 5 minutes)"
       - "Use Pedialyte or similar oral rehydration solution"
@@ -549,23 +584,26 @@ conjunctivitis:
     approach: "varies_by_etiology"
     medications:
       - agent: "Erythromycin Ophthalmic Ointment"
-        rxnorm: "310134"
+        rxnorm: "4053"
         frequency: "Apply 0.5 inch ribbon QID"
         duration_days: 7
         route: "ophthalmic"
         indication: "bacterial conjunctivitis"
+        choice_group: "ophthalmic antibiotic"
       - agent: "Polymyxin B-Trimethoprim Ophthalmic"
-        rxnorm: "197879"
+        rxnorm: "219314"
         frequency: "1-2 drops Q3H for 7-10 days"
         duration_days: 7
         route: "ophthalmic"
         indication: "bacterial conjunctivitis, alternative"
+        choice_group: "ophthalmic antibiotic"
       - agent: "Ofloxacin Ophthalmic"
-        rxnorm: "198214"
+        rxnorm: "7623"
         frequency: "1-2 drops Q2-4H"
         duration_days: 7
         route: "ophthalmic"
         indication: "bacterial conjunctivitis, contact lens wearers"
+        choice_group: "ophthalmic antibiotic"
     patient_instructions:
       - "Antibiotic drops for bacterial; supportive care for viral"
       - "Good hand hygiene to prevent spread"
@@ -762,14 +800,18 @@ pneumonia:
   treatment:
     approach: "antibiotic"
     medications:
+      # IDSA/PIDS pediatric CAP guideline (Bradley et al., CID 2011):
+      # amoxicillin 90 mg/kg/day in 2 doses (max 4 g/day) first-line;
+      # azithromycin for suspected atypical pathogens.
       - agent: "Amoxicillin"
         rxnorm: "723"
         dose_mg_kg: 90
         max_dose_mg: 4000
-        frequency: "divided TID"
+        frequency: "divided BID"
         duration_days: 7
         route: "oral"
         indication: "first-line for typical bacterial CAP"
+        choice_group: "antibiotic"
       - agent: "Azithromycin"
         rxnorm: "18631"
         dose_mg_kg: 10
@@ -778,6 +820,7 @@ pneumonia:
         duration_days: 5
         route: "oral"
         indication: "for atypical pathogens or penicillin allergy"
+        choice_group: "antibiotic"
       - agent: "Ibuprofen"
         rxnorm: "5640"
         dose_mg_kg: 10
@@ -883,22 +926,27 @@ urinary_tract_infection:
   treatment:
     approach: "antibiotic"
     medications:
+      # AAP UTI CPG 2-24 months (Pediatrics 2011;128:595, Table 2):
+      # cephalexin 50-100 mg/kg/day in 4 doses; TMP-SMX 8 mg/kg/day TMP in 2
+      # doses. Max 2000 mg/day cephalexin kept from prior entry (unverified).
       - agent: "Cephalexin"
-        rxnorm: "2393"
+        rxnorm: "2231"
         dose_mg_kg: 50
         max_dose_mg: 2000
-        frequency: "divided BID-QID"
+        choice_group: "antibiotic"
+        frequency: "divided QID"
         duration_days: 7
         route: "oral"
         indication: "first-line empiric therapy"
       - agent: "Trimethoprim-Sulfamethoxazole"
-        rxnorm: "10829"
+        rxnorm: "10831"
         dose_mg_kg: 8
         max_dose_mg: 320
         frequency: "divided BID"
         duration_days: 7
         route: "oral"
         indication: "alternative if susceptible"
+        choice_group: "antibiotic"
         age_min_months: 2
       - agent: "Nitrofurantoin"
         rxnorm: "7454"
@@ -908,6 +956,7 @@ urinary_tract_infection:
         duration_days: 7
         route: "oral"
         indication: "for lower tract infection only"
+        choice_group: "antibiotic"
         age_min_months: 1
     patient_instructions:
       - "Complete full course of antibiotics"
@@ -1073,23 +1122,52 @@ asthma:
 
   treatment:
     approach: "stepwise_management"
+    # Sources: NAEPP EPR-4 2020 Focused Updates; EPR-3 (2007) ICS dose tables;
+    # GINA 2024. Severity drives the step (doses in src/engines/peds_dosing.py):
+    #   intermittent (J45.20): SABA PRN
+    #   mild persistent (J45.30): daily low-dose ICS + SABA PRN
+    #     (budesonide nebulized < 4 y; fluticasone HFA >= 4 y)
+    #   moderate persistent (J45.40): 0-4 y daily medium-dose ICS + SABA PRN;
+    #     >= 5 y SMART with ICS-formoterol daily and as needed (EPR-4 recs 7-8),
+    #     max 8 puffs/day 5-11 y, 12 puffs/day >= 12 y; no separate SABA.
+    severity_codes:
+      intermittent: "J45.20"
+      mild_persistent: "J45.30"
+      moderate_persistent: "J45.40"
     medications:
       - agent: "Albuterol HFA Inhaler"
-        rxnorm: "351137"
+        rxnorm: "435"
         frequency: "1-2 puffs Q4-6H PRN"
         route: "inhaled"
         indication: "rescue medication for acute symptoms"
         prn: true
       - agent: "Fluticasone Propionate HFA"
-        rxnorm: "966524"
-        frequency: "1-2 puffs BID"
+        rxnorm: "41126"
+        frequency: "2 puffs (44 mcg) BID"
         route: "inhaled"
-        indication: "controller medication for persistent asthma"
+        indication: "low-dose ICS controller for mild persistent asthma, age >= 4 y"
+        choice_group: "controller"
+        age_min_months: 48  # FLOVENT HFA labeled >= 4 y
+      - agent: "Budesonide Inhalation Suspension"
+        rxnorm: "19831"
+        frequency: "0.25-0.5 mg BID via nebulizer"
+        route: "inhaled"
+        indication: "ICS controller for persistent asthma, age 12 mo - 4 y"
+        choice_group: "controller"
+        age_min_months: 12  # PULMICORT RESPULES labeled 12 mo - 8 y
+      - agent: "Budesonide-Formoterol HFA"
+        rxnorm: "389132"  # RxNorm MIN budesonide / formoterol (verified RxNav 2026-10-27)
+        frequency: "1-2 puffs BID and PRN (SMART)"
+        route: "inhaled"
+        indication: "SMART for moderate persistent asthma, age >= 5 y"
+        choice_group: "controller"
+        age_min_months: 60
       - agent: "Montelukast"
         rxnorm: "88249"
         frequency: "once daily at bedtime"
         route: "oral"
         indication: "add-on controller, exercise-induced asthma"
+        choice_group: "controller"
         dose_by_age:
           - { age_range: "12-23 months", dose: "4mg granules" }
           - { age_range: "2-5 years", dose: "4mg chewable" }
@@ -1114,7 +1192,7 @@ reactive_airway_disease:
   aliases: ["RAD", "Recurrent wheeze", "Post-viral wheeze"]
 
   billing_codes:
-    icd10: ["J45.20"]  # Often coded as mild intermittent asthma
+    icd10: ["J45.909"]  # ICD-10-CM index: "Disease, airway, reactive - see Asthma" -> J45.909 (NLM-verified 2026-10-27)
     snomed: "195967001"
 
   category: chronic
@@ -1151,7 +1229,7 @@ reactive_airway_disease:
     approach: "rescue_medication"
     medications:
       - agent: "Albuterol HFA Inhaler"
-        rxnorm: "351137"
+        rxnorm: "435"
         frequency: "1-2 puffs Q4-6H PRN"
         route: "inhaled"
         indication: "rescue medication for wheeze episodes"
@@ -1282,17 +1360,17 @@ eczema:
     approach: "emollient_plus_steroids"
     medications:
       - agent: "Hydrocortisone 1% Cream"
-        rxnorm: "310323"
+        rxnorm: "5492"
         frequency: "Apply BID to affected areas"
         route: "topical"
         indication: "mild eczema, face/intertriginous areas"
       - agent: "Triamcinolone 0.1% Cream"
-        rxnorm: "310316"
+        rxnorm: "10759"
         frequency: "Apply BID to affected areas"
         route: "topical"
         indication: "moderate eczema, body"
       - agent: "Tacrolimus 0.03% Ointment"
-        rxnorm: "835901"
+        rxnorm: "42316"
         frequency: "Apply BID to affected areas"
         route: "topical"
         indication: "steroid-sparing for face/sensitive areas"
@@ -1359,7 +1437,8 @@ allergic_rhinitis:
 food_allergy:
   display_name: "Food Allergy"
   aliases: ["Food hypersensitivity", "IgE-mediated food allergy"]
-  icd10: ["T78.1", "Z91.010"]
+  # Z91.01x = allergy status to food (chronic problem); T78.1 is non-billable.
+  icd10: ["Z91.018", "Z91.010"]
   category: chronic
   system: immunological
 
@@ -1385,6 +1464,16 @@ food_allergy:
 
   treatment:
     approach: "avoidance_plus_emergency_plan"
+    # AAP Clinical Report (Sicherer & Simons, Pediatrics 2017;139:e20164006)
+    # and device labels: 0.1 mg 7.5-15 kg, 0.15 mg 15-30 kg, 0.3 mg >= 30 kg,
+    # IM anterolateral thigh. Weight banding in src/engines/peds_dosing.py.
+    medications:
+      - agent: "Epinephrine Auto-Injector"
+        rxnorm: "3992"
+        frequency: "once PRN anaphylaxis; may repeat in 5-15 min"
+        route: "intramuscular"
+        indication: "anaphylaxis"
+        prn: true
     items:
       - category: "medication"
         description: "Epinephrine auto-injector prescribed; training provided"
@@ -1464,8 +1553,14 @@ adhd:
     items:
       - category: "education"
         description: "ADHD education; behavioral strategies discussed"
+      # AAP ADHD CPG 2019 (Wolraich et al.): ages 4-5 parent training in
+      # behavior management first, methylphenidate if insufficient (low dose,
+      # slow titration); ages >= 6 FDA-approved medication plus behavioral
+      # therapy. Doses in src/engines/peds_dosing.py.
+      - category: "education"
+        description: "Age 4-5: parent training in behavior management (PTBM) first-line"
       - category: "medication"
-        description: "Consider stimulant medication after age 6 (methylphenidate, amphetamines)"
+        description: "Methylphenidate if behavioral therapy insufficient (age 4-5, start low); stimulant + behavioral therapy at age >= 6"
       - category: "referral"
         description: "School evaluation for IEP/504 accommodations"
       - category: "follow-up"
@@ -1817,15 +1912,23 @@ type_1_diabetes:
         required: true
         notes: "Basal-bolus regimen or insulin pump therapy"
       - agent: "Insulin Glargine"
-        rxnorm: "261551"
+        rxnorm: "274783"
         dose_description: "Based on weight and blood glucose patterns"
         frequency: "Once daily"
         route: "subcutaneous"
       - agent: "Insulin Lispro"
         rxnorm: "86009"
-        dose_description: "Based on carbohydrate intake"
+        dose_description: "Carb ratio (500 rule) + correction (1800 rule), ISPAD 2022"
         frequency: "With meals"
         route: "subcutaneous"
+      - agent: "Glucagon Emergency Kit"
+        rxnorm: "4832"
+        dose_description: "0.5 mg < 20 kg, 1 mg >= 20 kg (Lilly glucagon label)"
+        frequency: "once PRN severe hypoglycemia"
+        route: "intramuscular"
+        prn: true
+    # Dosing: ISPAD 2022 Ch. 9 (TDD 0.7-1.0 U/kg/day prepubertal, basal 30-50%);
+    # ADA Standards of Care 2026 S14. Computed in src/engines/peds_dosing.py.
     items:
       - category: "medication"
         description: "Insulin therapy required - basal/bolus or pump"
@@ -1867,6 +1970,17 @@ type_2_diabetes:
 
   treatment:
     approach: "metformin_plus_lifestyle"
+    # AAP CPG T2DM in youth (Copeland et al., Pediatrics 2013) KAS 2;
+    # GLUCOPHAGE label 10-16 y: start 500 mg daily, titrate by 500 mg every
+    # 1-2 weeks to 1000 mg BID (max 2000 mg/day).
+    medications:
+      - agent: "Metformin"
+        rxnorm: "6809"
+        fixed_dose_mg: 500
+        frequency: "daily with evening meal"
+        route: "oral"
+        indication: "first-line for T2DM"
+        age_min_months: 120
     items:
       - category: "medication"
         description: "Metformin first-line medication"
@@ -2266,7 +2380,8 @@ insect_bite_reaction:
 acute_cough:
   display_name: "Cough"
   aliases: ["Acute cough", "Cough illness"]
-  icd10: ["R05"]
+  # R05 is a non-billable category since ICD-10-CM FY2022; R05.9 = cough, unspecified.
+  icd10: ["R05.9", "R05.1"]
   category: acute
   system: respiratory
 

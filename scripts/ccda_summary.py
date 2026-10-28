@@ -212,13 +212,13 @@ Please generate the Pre-Visit Executive Summary for this visit."""
 
   # Call Claude
   response = client.messages.create(
-    model="claude-sonnet-4-20250514",
+    model="claude-sonnet-5-5",
     max_tokens=2000,
     system=PROMPT_TEMPLATE,
     messages=[{"role": "user", "content": user_prompt}],
   )
 
-  return response.content[0].text
+  return "".join(b.text for b in response.content if b.type == "text")
 
 
 def main():

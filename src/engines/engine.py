@@ -1452,8 +1452,11 @@ Examples:
             else:
                 timeline_position = "recent"
 
-            # Generate growth measurement if well-child or appropriate
-            if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN):
+            # Measure growth at well visits, and at visits addressing obesity
+            # (diagnosing or following it means measuring BMI)
+            if stub.type in (EncounterType.WELL_CHILD, EncounterType.NEWBORN) or any(
+                    self._get_condition_key(c) == "obesity"
+                    for c in stub.conditions_to_address or []):
                 weight, height, hc, bmi = growth.generate_measurement(days_old / 30.4375)
                 growth_data.append(GrowthMeasurement(
                     date=stub.date,
@@ -2301,7 +2304,18 @@ Examples:
                 )
                 stubs.append(stub)
         
-        # Condition-related visits
+        # Condition-related visits. A provisional label (RAD) stops getting
+        # follow-ups once its successor (asthma) is diagnosed.
+        def _display(cond: str) -> str:
+            key = self._get_condition_key(cond) or cond
+            return (self._conditions.get(key) or {}).get(
+                'display_name', cond.replace('_', ' ').title())
+        onset_by_display = {
+            _display(c).lower(): a for c, a in life_arc.condition_onset_ages.items()}
+        superseded_at = {
+            old: onset_by_display[new]
+            for old, new in self._SUPERSEDED_BY.items() if new in onset_by_display}
+
         for condition, onset_age in life_arc.condition_onset_ages.items():
             if onset_age > current_age_months:
                 continue
@@ -2313,9 +2327,7 @@ Examples:
 
             # Self-limited conditions (bronchiolitis, AOM, ...) are a single
             # acute visit with an acute plan, not a chronic follow-up series.
-            ykey = self._get_condition_key(condition) or condition
-            display = (self._conditions.get(ykey) or {}).get(
-                'display_name', condition.replace('_', ' ').title())
+            display = _display(condition)
 
             if self._abatement_for(condition, diagnosis_date) is not None or \
                     self._is_acute_condition(condition):
@@ -2340,7 +2352,9 @@ Examples:
             
             # Follow-up visits (every 3-6 months)
             follow_up_age = onset_age + self.rng.randint(2, 4)
-            while follow_up_age < current_age_months:
+            last_age = min(current_age_months,
+                           superseded_at.get(display.lower(), current_age_months))
+            while follow_up_age < last_age:
                 fu_date = self._months_to_date(dob, follow_up_age)
                 if fu_date <= today:
                     stubs.append(EncounterStub(
@@ -2661,7 +2675,7 @@ Examples:
         from knowledge.growth.cdc_2000 import (
             generate_normal_vitals, calculate_weight_percentile,
             calculate_height_percentile, calculate_hc_percentile,
-            calculate_bmi_percentile, age_in_months
+            calculate_bmi_percentile, age_in_months, bmi_chart_age
         )
         
         sex = "male" if demographics.sex_at_birth == Sex.MALE else "female"
@@ -2698,7 +2712,8 @@ Examples:
                 weight_result = calculate_weight_percentile(latest_growth.weight_kg, m_age, sex)
                 height_result = calculate_height_percentile(latest_growth.height_cm, m_age, sex) if latest_growth.height_cm else None
                 hc_result = calculate_hc_percentile(latest_growth.head_circumference_cm, m_age, sex) if latest_growth.head_circumference_cm and m_age <= 36 else None
-                bmi_result = calculate_bmi_percentile(latest_growth.bmi, m_age, sex) if latest_growth.bmi and m_age >= 24 else None
+                b_age = bmi_chart_age(m_age)
+                bmi_result = calculate_bmi_percentile(latest_growth.bmi, b_age, sex) if latest_growth.bmi and b_age else None
                 
                 growth_percentiles = GrowthPercentiles(
                     weight_percentile=weight_result.percentile,
@@ -3221,10 +3236,10 @@ Examples:
             for cond, cond_lower in zip(conditions, conditions_lower):
                 if obesity_cond in cond_lower:
                     # BMI must already be >= 95th when obesity is diagnosed, so
-                    # weight gain starts ahead of the diagnosis (never before 2 y,
-                    # when BMI-for-age begins).
+                    # weight gain starts 6 months ahead of the diagnosis (as
+                    # early as 18 mo, so a diagnosis at the 2-year visit holds).
                     onset = (onset_ages or {}).get(cond)
-                    start = max(24, onset - 6) if onset is not None else self.rng.randint(36, 72)
+                    start = max(18, onset - 6) if onset is not None else self.rng.randint(36, 72)
                     return "obesity", {"pattern_onset_age": start}
 
         # Check for prematurity

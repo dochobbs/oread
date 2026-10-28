@@ -65,6 +65,18 @@ def age_in_months(age_days: int | float) -> float:
     return age_days / DAYS_PER_MONTH
 
 
+def bmi_chart_age(age_months: float) -> float | None:
+    """Age to read the BMI-for-age chart at, or None if too young for BMI.
+
+    The 2-year visit lands a few days either side of 24.0 fractional months
+    (730 days is 23.98), and BMI is first plotted there, so a visit within a
+    week before 24 months reads the chart at 24.
+    """
+    if age_months < 24 - 7 / DAYS_PER_MONTH:
+        return None
+    return max(age_months, 24.0)
+
+
 @lru_cache(maxsize=None)
 def _load_who(measure: str, sex: Sex) -> tuple[LmsRow, ...]:
     who_sex = "Boys" if sex == "male" else "Girls"
@@ -616,15 +628,20 @@ class GrowthTrajectory:
         # Obesity is defined by BMI-for-age >= 95th (CDC), so drive BMI rather
         # than weight: ramp to this child's target over the 6 months after the
         # pattern starts (which the engine sets 6 months before diagnosis),
-        # then derive weight from BMI and height.
-        start = max(24.0, float(self.pattern_onset_age))
-        if self.pattern == "obesity" and age_months >= start:
+        # then derive weight from BMI and height. A pattern that starts before
+        # 2 y (no BMI chart yet) is already part-way up the ramp at 24 months.
+        onset = float(self.pattern_onset_age)
+        chart_age = bmi_chart_age(age_months)
+        if self.pattern == "obesity" and chart_age is not None and age_months >= onset:
             if self._obesity_bmi_target is None:
                 self._obesity_bmi_target = self._rng.uniform(96.5, 99.5)
-            natural = calculate_bmi_percentile(calculate_bmi(weight, height), age_months, self.sex).percentile
-            frac = min(1.0, (age_months - start) / 6.0)
-            pct = natural + frac * max(0.0, self._obesity_bmi_target - natural)
-            weight = round(bmi_at_percentile(pct, age_months, self.sex) * (height / 100) ** 2, 2)
+            natural = calculate_bmi_percentile(calculate_bmi(weight, height), chart_age, self.sex).percentile
+            frac = min(1.0, (age_months - onset) / 6.0)
+            # Pull toward the target from either side: left above it, the
+            # drifting weight channel lands BMI in the far tail, where a
+            # fraction of a percentile is a 15-20% swing in weight.
+            pct = natural + frac * (self._obesity_bmi_target - natural)
+            weight = round(bmi_at_percentile(pct, chart_age, self.sex) * (height / 100) ** 2, 2)
             if age_months <= 240:
                 self.weight_percentile = max(PERCENTILE_FLOOR, min(
                     PERCENTILE_CEILING,
@@ -633,7 +650,7 @@ class GrowthTrajectory:
 
         # BMI (only for 24+ months)
         bmi = None
-        if age_months >= 24:
+        if bmi_chart_age(age_months) is not None:
             bmi = calculate_bmi(weight, height)
         
         self._measurements.append((age_months, weight, height, hc))

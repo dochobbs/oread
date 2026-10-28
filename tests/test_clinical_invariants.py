@@ -389,6 +389,44 @@ def test_tier3_has_no_duplicate_problems():
         pytest.fail("\n".join(report), pytrace=False)
 
 
+def test_no_rad_followups_after_asthma():
+    """Regression: RAD resolved on the problem list but kept getting follow-ups."""
+    engine = PedsEngine(use_llm=False)
+    report, checked = [], 0
+    for seed in range(30):
+        p = engine.generate(GenerationSeed(age_months=96 + seed * 3,
+                                           conditions=["reactive_airway_disease", "asthma"],
+                                           random_seed=6000 + seed))
+        probs = {c.display_name.lower(): c for c in p.problem_list}
+        asthma = probs.get("asthma")
+        if not asthma or "reactive airway disease" not in probs:
+            continue
+        checked += 1
+        for e in p.encounters:
+            if (e.date.date() if hasattr(e.date, "date") else e.date) > asthma.onset_date \
+                    and "reactive airway disease follow-up" in (e.chief_complaint or "").lower():
+                report.append(f"  seed={6000 + seed}: RAD follow-up on {e.date} after asthma {asthma.onset_date}")
+    assert checked, "no patient carried both RAD and asthma"
+    if report:
+        pytest.fail("\n".join(report), pytrace=False)
+
+
+def test_obesity_at_two_has_bmi_at_diagnosis():
+    """Regression: obesity diagnosed at 24-30 mo had no BMI (growth was only
+    measured at well visits; 730 days is 23.98 months) or a BMI under the 95th
+    (the weight ramp could not start before 24 mo)."""
+    engine = PedsEngine(use_llm=False)
+    report = []
+    for seed in range(30):
+        p = engine.generate(GenerationSeed(age_months=24 + seed % 7, conditions=["obesity"],
+                                           random_seed=7000 + seed))
+        report += [f"  seed={7000 + seed}: {v}" for v in inv.check_obesity_bmi(p)]
+        if not any(m.bmi_percentile is not None for m in p.growth_data):
+            report.append(f"  seed={7000 + seed}: obesity with no BMI percentile recorded")
+    if report:
+        pytest.fail("\n".join(report), pytrace=False)
+
+
 def test_food_allergy_in_allergy_list(peds):
     _assert_none(peds, inv.check_food_allergy_listed)
 
